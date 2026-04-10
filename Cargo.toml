@@ -1,0 +1,19 @@
+[workspace]
+members = [
+    "crates/base",
+    "crates/pal",
+]
+resolver = "2"
+
+[workspace.dependencies]
+anstream = "1.0.0"
+ecow = "0.2.6"
+expect-test = "1.5.1"
+ignore = "0.4.24"
+notify-debouncer-full = "0.5.0"
+parking_lot = "0.12.5"
+relative-path = "1.9.3"
+serde = "1.0.228"
+tracing = "0.1.44"
+tracing-error = "0.2.1"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }

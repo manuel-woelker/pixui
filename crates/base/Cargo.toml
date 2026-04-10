@@ -1,0 +1,21 @@
+[package]
+name = "pixui-base"
+version = "0.1.0"
+edition = "2024"
+description = "Shared base utilities for the pixui project"
+license = "MIT"
+repository = "https://github.com/manuel-woelker/pixui"
+
+[dev-dependencies]
+annotate-snippets = { version = "0.12.13", features = ["testing-colors"] }
+expect-test = { workspace = true }
+
+[dependencies]
+annotate-snippets = "0.12.13"
+anstream = { workspace = true }
+ecow = { workspace = true }
+parking_lot = { workspace = true }
+serde = { workspace = true }
+tracing = { workspace = true }
+tracing-error = { workspace = true }
+tracing-subscriber = { workspace = true }
