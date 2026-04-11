@@ -15,6 +15,7 @@ notify-debouncer-full = "0.5.0"
 parking_lot = "0.12.5"
 relative-path = "1.9.3"
 serde = "1.0.228"
+slotmap = "1.1.1"
 tracing = "0.1.44"
 tracing-error = "0.2.1"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }

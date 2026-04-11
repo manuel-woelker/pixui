@@ -10,3 +10,4 @@ repository = "https://github.com/manuel-woelker/pixui"
 pixui-base = { path = "../base", version = "0.1.0" }
 
 facet = {workspace = true}
+slotmap = {workspace = true}

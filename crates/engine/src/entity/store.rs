@@ -1,8 +1,13 @@
 use crate::reflection::Reflect;
 use pixui_base::result::{OptionExt, PixuiResult};
+use slotmap::{Key, SlotMap, new_key_type};
 use std::any::{Any, TypeId, type_name};
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
+
+new_key_type! {
+    struct EntityKey;
+}
 
 #[derive(Debug, Copy, Clone)]
 pub struct SliceId(u32);
@@ -10,7 +15,7 @@ pub struct SliceId(u32);
 #[derive(Debug, Copy, Clone)]
 pub struct EntityId {
     slice_id: SliceId,
-    index: u32,
+    key: EntityKey,
 }
 
 impl EntityId {
@@ -20,8 +25,8 @@ impl EntityId {
     }
 
     #[must_use]
-    pub fn index(&self) -> u32 {
-        self.index
+    pub fn key_data(&self) -> u64 {
+        self.key.data().as_ffi()
     }
 }
 
@@ -37,23 +42,22 @@ impl<E: Reflect> DynEntitySlice for EntitySlice<E> {}
 
 struct EntitySlice<E: Reflect> {
     slice_id: SliceId,
-    entities: Vec<Option<E>>,
+    entities: SlotMap<EntityKey, E>,
 }
 
 impl<E: Reflect> EntitySlice<E> {
     pub fn new(slice_id: SliceId) -> Self {
         Self {
             slice_id,
-            entities: Vec::new(),
+            entities: SlotMap::with_key(),
         }
     }
 
     fn add_entity(&mut self, entity: E) -> EntityId {
-        let index = self.entities.len();
-        self.entities.push(Some(entity));
+        let key = self.entities.insert(entity);
         EntityId {
             slice_id: self.slice_id,
-            index: index as u32,
+            key,
         }
     }
 }
@@ -99,12 +103,10 @@ impl EntityStore {
         let slice = (dyn_slice.as_ref() as &dyn Any)
             .downcast_ref::<EntitySlice<E>>()
             .with_context(|| format!("Failed to downcast {}", type_name::<E>()))?;
-        let index = entity_id.index as usize;
-        let entry = slice.entities.get(index);
-        let entry2 = entry.with_context(|| format!("No entry at index {index}"))?;
-        let entity = entry2
-            .as_ref()
-            .with_context(|| format!("Entry at index {index} was remove"))?;
+        let entity = slice
+            .entities
+            .get(entity_id.key)
+            .with_context(|| format!("No entry for key {}", entity_id.key_data()))?;
         Ok(entity)
     }
 
@@ -161,9 +163,8 @@ mod tests {
 
         assert_eq!(entity_ids.len(), 2);
         assert_eq!(entity_ids[0].slice_id().0, slice_id.0);
-        assert_eq!(entity_ids[0].index(), 0);
         assert_eq!(entity_ids[1].slice_id().0, slice_id.0);
-        assert_eq!(entity_ids[1].index(), 1);
+        assert_ne!(entity_ids[0].key_data(), entity_ids[1].key_data());
         assert_eq!(
             store.get_entity::<TestEntity>(entity_ids[0]).unwrap(),
             &TestEntity {
