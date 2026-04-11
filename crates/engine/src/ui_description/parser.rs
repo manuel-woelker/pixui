@@ -1,27 +1,34 @@
 use crate::ui_description::ast::ui_element::UiElement;
 use crate::ui_description::ast::ui_property::UiProperty;
-use crate::ui_description::lexer::lex;
+use crate::ui_description::diagnostic::ui_description_error;
+use crate::ui_description::lexer::lex_source_file;
 use crate::ui_description::token::Token;
 use crate::ui_description::token_kind::TokenKind;
-use pixui_base::bail;
 use pixui_base::result::PixuiResult;
 use pixui_base::shared_string::SharedString;
+use pixui_base::source_file::SourceFile;
 use pixui_base::span::Span;
 
 pub fn parse_ui_description(source: &str) -> PixuiResult<UiElement> {
-    let tokens = lex(source)?;
-    Parser::new(tokens).parse()
+    parse_ui_description_source_file(&SourceFile::new("<ui_description>", source))
+}
+
+pub fn parse_ui_description_source_file(source_file: &SourceFile) -> PixuiResult<UiElement> {
+    let tokens = lex_source_file(source_file)?;
+    Parser::new(source_file, tokens).parse()
 }
 
 /// Parser for the JSX-like UI description language.
-pub struct Parser {
+pub struct Parser<'a> {
+    source_file: &'a SourceFile,
     tokens: Vec<Token>,
     position: usize,
 }
 
-impl Parser {
-    pub fn new(tokens: Vec<Token>) -> Self {
+impl<'a> Parser<'a> {
+    pub fn new(source_file: &'a SourceFile, tokens: Vec<Token>) -> Self {
         Self {
+            source_file,
             tokens,
             position: 0,
         }
@@ -31,7 +38,11 @@ impl Parser {
         let element = self.parse_element()?;
 
         if let Some(token) = self.peek() {
-            bail!("Unexpected trailing token at byte {}", token.span.start());
+            return Err(self.error(
+                token.span.clone(),
+                "Unexpected trailing token",
+                "remove this token or wrap it in a parent element",
+            ));
         }
 
         Ok(element)
@@ -71,14 +82,21 @@ impl Parser {
             match self.peek().map(|token| &token.kind) {
                 Some(TokenKind::LessThan) => children.push(self.parse_element()?),
                 Some(TokenKind::LessThanSlash) => break,
-                Some(_) => bail!(
-                    "Unexpected token inside `<{}>` at byte {}",
-                    tag_name,
-                    self.peek()
-                        .map(|token| token.span.start())
-                        .unwrap_or_default()
-                ),
-                None => bail!("Missing closing tag for `<{}>`", tag_name),
+                Some(_) => {
+                    let token = self.peek().expect("peek matched some token");
+                    return Err(self.error(
+                        token.span.clone(),
+                        format!("Unexpected token inside `<{}>`", tag_name),
+                        "only child elements or a closing tag are allowed here",
+                    ));
+                }
+                None => {
+                    return Err(self.error(
+                        Span::new(start_span.start(), start_span.end()),
+                        format!("Missing closing tag for `<{}>`", tag_name),
+                        "this element is opened here but never closed",
+                    ));
+                }
             }
         }
 
@@ -89,11 +107,15 @@ impl Parser {
         let closing_tag_name = self.expect_identifier("Expected a tag name after `</`")?;
 
         if closing_tag_name != tag_name {
-            bail!(
-                "Mismatched closing tag: expected `</{}>` but found `</{}>`",
-                tag_name,
-                closing_tag_name
-            );
+            let closing_span = self.previous_span();
+            return Err(self.error(
+                closing_span,
+                format!(
+                    "Mismatched closing tag: expected `</{}>` but found `</{}>`",
+                    tag_name, closing_tag_name
+                ),
+                "this closing tag does not match the currently open element",
+            ));
         }
 
         let end_span = self.expect_punctuation(
@@ -143,16 +165,20 @@ impl Parser {
     fn expect_identifier_token(&mut self, message: &str) -> PixuiResult<Token> {
         match self.advance() {
             Some(token) if matches!(token.kind, TokenKind::Identifier(_)) => Ok(token),
-            Some(token) => bail!("{} at byte {}", message, token.span.start()),
-            None => bail!("{message}"),
+            Some(token) => Err(self.error(token.span.clone(), message, "unexpected token here")),
+            None => Err(self.eof_error(message)),
         }
     }
 
     fn expect_string_literal_token(&mut self, message: &str) -> PixuiResult<Token> {
         match self.advance() {
             Some(token) if matches!(token.kind, TokenKind::StringLiteral(_)) => Ok(token),
-            Some(token) => bail!("{} at byte {}", message, token.span.start()),
-            None => bail!("{message}"),
+            Some(token) => Err(self.error(
+                token.span.clone(),
+                message,
+                "expected a quoted string value",
+            )),
+            None => Err(self.eof_error(message)),
         }
     }
 
@@ -163,8 +189,8 @@ impl Parser {
     ) -> PixuiResult<Span> {
         match self.advance() {
             Some(token) if predicate(&token.kind) => Ok(token.span),
-            Some(token) => bail!("{} at byte {}", message, token.span.start()),
-            None => bail!("{message}"),
+            Some(token) => Err(self.error(token.span.clone(), message, "unexpected token here")),
+            None => Err(self.eof_error(message)),
         }
     }
 
@@ -189,14 +215,41 @@ impl Parser {
         }
         token
     }
+
+    fn previous_span(&self) -> Span {
+        self.tokens
+            .get(self.position.saturating_sub(1))
+            .map(|token| token.span.clone())
+            .unwrap_or_default()
+    }
+
+    fn eof_error(&self, message: &str) -> pixui_base::error::PixuiError {
+        let span = self
+            .tokens
+            .last()
+            .map(|token| Span::new(token.span.end(), token.span.end()))
+            .unwrap_or_default();
+        self.error(span, message, "the parser reached the end of the file here")
+    }
+
+    fn error(
+        &self,
+        span: Span,
+        summary: impl Into<String>,
+        annotation: impl Into<String>,
+    ) -> pixui_base::error::PixuiError {
+        ui_description_error(self.source_file, span, summary, annotation)
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::parse_ui_description;
+    use super::{parse_ui_description, parse_ui_description_source_file};
     use crate::ui_description::ast::ui_element::UiElement;
     use crate::ui_description::ast::ui_property::UiProperty;
+    use pixui_base::cli::format_cli_error;
     use pixui_base::shared_string::SharedString;
+    use pixui_base::source_file::SourceFile;
     use pixui_base::span::Span;
 
     #[test]
@@ -245,45 +298,49 @@ mod tests {
 
     #[test]
     fn rejects_mismatched_closing_tags() {
-        let error = parse_ui_description(r#"<Stack></Button>"#).unwrap_err();
+        let source_file = SourceFile::new("examples/ui.pixui", r#"<Stack></Button>"#);
+        let error = parse_ui_description_source_file(&source_file).unwrap_err();
+        let rendered = pixui_base::unansi(&format_cli_error("parsing failed", &error));
 
         assert!(
-            error
-                .to_test_string()
-                .contains("Mismatched closing tag: expected `</Stack>` but found `</Button>`")
+            rendered.contains(
+                "error: Mismatched closing tag: expected `</Stack>` but found `</Button>`"
+            )
         );
+        assert!(rendered.contains("examples/ui.pixui:1:10"));
+        assert!(rendered.contains("does not match the currently open element"));
     }
 
     #[test]
     fn rejects_missing_closing_tags_at_end_of_file() {
-        let error = parse_ui_description(r#"<Stack><Button />"#).unwrap_err();
+        let source_file = SourceFile::new("examples/ui.pixui", r#"<Stack><Button />"#);
+        let error = parse_ui_description_source_file(&source_file).unwrap_err();
+        let rendered = pixui_base::unansi(&format_cli_error("parsing failed", &error));
 
-        assert!(
-            error
-                .to_test_string()
-                .contains("Missing closing tag for `<Stack>`")
-        );
+        assert!(rendered.contains("error: Missing closing tag for `<Stack>`"));
+        assert!(rendered.contains("examples/ui.pixui:1:1"));
+        assert!(rendered.contains("opened here but never closed"));
     }
 
     #[test]
     fn rejects_missing_equals_in_property_syntax() {
-        let error = parse_ui_description(r#"<Button label "Save" />"#).unwrap_err();
+        let source_file = SourceFile::new("examples/ui.pixui", r#"<Button label "Save" />"#);
+        let error = parse_ui_description_source_file(&source_file).unwrap_err();
+        let rendered = pixui_base::unansi(&format_cli_error("parsing failed", &error));
 
-        assert!(
-            error
-                .to_test_string()
-                .contains("Expected `=` after a property name")
-        );
+        assert!(rendered.contains("error: Expected `=` after a property name"));
+        assert!(rendered.contains("examples/ui.pixui:1:15"));
+        assert!(rendered.contains("unexpected token here"));
     }
 
     #[test]
     fn rejects_malformed_string_literals_from_the_parse_api() {
-        let error = parse_ui_description(r#"<Button label="Save />"#).unwrap_err();
+        let source_file = SourceFile::new("examples/ui.pixui", r#"<Button label="Save />"#);
+        let error = parse_ui_description_source_file(&source_file).unwrap_err();
+        let rendered = pixui_base::unansi(&format_cli_error("parsing failed", &error));
 
-        assert!(
-            error
-                .to_test_string()
-                .contains("Unterminated string literal")
-        );
+        assert!(rendered.contains("error: Unterminated string literal"));
+        assert!(rendered.contains("examples/ui.pixui:1:15"));
+        assert!(rendered.contains("missing its closing quote"));
     }
 }

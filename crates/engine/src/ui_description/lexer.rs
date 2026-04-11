@@ -1,24 +1,29 @@
+use crate::ui_description::diagnostic::ui_description_error;
 use crate::ui_description::token::Token;
 use crate::ui_description::token_kind::TokenKind;
-use pixui_base::bail;
 use pixui_base::result::PixuiResult;
 use pixui_base::shared_string::SharedString;
+use pixui_base::source_file::SourceFile;
 use pixui_base::span::Span;
 
 pub fn lex(source: &str) -> PixuiResult<Vec<Token>> {
-    Lexer::new(source).lex()
+    lex_source_file(&SourceFile::new("<ui_description>", source))
+}
+
+pub fn lex_source_file(source_file: &SourceFile) -> PixuiResult<Vec<Token>> {
+    Lexer::new(source_file).lex()
 }
 
 /// Lexer for the JSX-like UI description language.
 pub struct Lexer<'a> {
-    source: &'a str,
+    source_file: &'a SourceFile,
     position: usize,
 }
 
 impl<'a> Lexer<'a> {
-    pub fn new(source: &'a str) -> Self {
+    pub fn new(source_file: &'a SourceFile) -> Self {
         Self {
-            source,
+            source_file,
             position: 0,
         }
     }
@@ -68,7 +73,11 @@ impl<'a> Lexer<'a> {
             Some('/') => {
                 self.advance_char();
                 if self.current_char() != Some('>') {
-                    bail!("Unexpected character `/` at byte {}", start);
+                    return Err(self.error(
+                        Span::new(start, self.position),
+                        "Unexpected character `/`",
+                        "expected `>` to complete `/>`",
+                    ));
                 }
 
                 self.advance_char();
@@ -86,8 +95,16 @@ impl<'a> Lexer<'a> {
             }
             Some('"') => self.lex_string_literal(),
             Some(character) if is_identifier_start(character) => self.lex_identifier(),
-            Some(character) => bail!("Unexpected character `{character}` at byte {}", start),
-            None => bail!("Unexpected end of input"),
+            Some(character) => Err(self.error(
+                Span::new(start, start + character.len_utf8()),
+                format!("Unexpected character `{character}`"),
+                "this character is not valid in the UI description syntax",
+            )),
+            None => Err(self.error(
+                Span::new(self.position, self.position),
+                "Unexpected end of input",
+                "the lexer expected another token here",
+            )),
         }
     }
 
@@ -104,7 +121,7 @@ impl<'a> Lexer<'a> {
         }
 
         Ok(Token {
-            kind: TokenKind::Identifier(self.source[start..self.position].into()),
+            kind: TokenKind::Identifier(self.source()[start..self.position].into()),
             span: Span::new(start, self.position),
         })
     }
@@ -132,25 +149,47 @@ impl<'a> Lexer<'a> {
                         Some('n') => "\n",
                         Some('r') => "\r",
                         Some('t') => "\t",
-                        Some(other) => bail!(
-                            "Unsupported escape sequence `\\{other}` at byte {}",
-                            self.position.saturating_sub(1)
-                        ),
-                        None => bail!("Unterminated string literal starting at byte {}", start),
+                        Some(other) => {
+                            return Err(self.error(
+                                Span::new(
+                                    self.position.saturating_sub(1),
+                                    self.position + other.len_utf8(),
+                                ),
+                                format!("Unsupported escape sequence `\\{other}`"),
+                                "only \\\" \\\\ \\n \\r and \\t are supported",
+                            ));
+                        }
+                        None => {
+                            return Err(self.error(
+                                Span::new(start, self.position),
+                                "Unterminated string literal",
+                                "this string literal is missing its closing quote",
+                            ));
+                        }
                     };
                     value.push_str(escaped);
                     self.advance_char();
                 }
-                '\n' | '\r' => bail!("Unterminated string literal starting at byte {}", start),
+                '\n' | '\r' => {
+                    return Err(self.error(
+                        Span::new(start, self.position),
+                        "Unterminated string literal",
+                        "string literals cannot span multiple lines in this syntax",
+                    ));
+                }
                 _ => {
                     let end = self.position + character.len_utf8();
-                    value.push_str(&self.source[self.position..end]);
+                    value.push_str(&self.source()[self.position..end]);
                     self.position = end;
                 }
             }
         }
 
-        bail!("Unterminated string literal starting at byte {}", start)
+        Err(self.error(
+            Span::new(start, self.position),
+            "Unterminated string literal",
+            "this string literal is missing its closing quote",
+        ))
     }
 
     fn skip_whitespace(&mut self) {
@@ -164,7 +203,7 @@ impl<'a> Lexer<'a> {
     }
 
     fn current_char(&self) -> Option<char> {
-        self.source[self.position..].chars().next()
+        self.source()[self.position..].chars().next()
     }
 
     fn advance_char(&mut self) {
@@ -174,7 +213,20 @@ impl<'a> Lexer<'a> {
     }
 
     fn is_eof(&self) -> bool {
-        self.position >= self.source.len()
+        self.position >= self.source().len()
+    }
+
+    fn source(&self) -> &str {
+        self.source_file.source()
+    }
+
+    fn error(
+        &self,
+        span: Span,
+        summary: impl Into<String>,
+        annotation: impl Into<String>,
+    ) -> pixui_base::error::PixuiError {
+        ui_description_error(self.source_file, span, summary, annotation)
     }
 }
 
@@ -188,9 +240,11 @@ fn is_identifier_continue(character: char) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::lex;
+    use super::{lex, lex_source_file};
     use crate::ui_description::token_kind::TokenKind;
+    use pixui_base::cli::format_cli_error;
     use pixui_base::shared_string::SharedString;
+    use pixui_base::source_file::SourceFile;
     use pixui_base::span::Span;
 
     #[test]
@@ -235,23 +289,24 @@ mod tests {
 
     #[test]
     fn rejects_unterminated_string_literals() {
-        let error = lex(r#"<Button label="Save />"#).unwrap_err();
+        let source_file = SourceFile::new("examples/ui.pixui", r#"<Button label="Save />"#);
+        let error = lex_source_file(&source_file).unwrap_err();
 
-        assert!(
-            error
-                .to_test_string()
-                .contains("Unterminated string literal")
-        );
+        let rendered = pixui_base::unansi(&format_cli_error("lexing failed", &error));
+
+        assert!(rendered.contains("error: Unterminated string literal"));
+        assert!(rendered.contains("examples/ui.pixui:1:15"));
+        assert!(rendered.contains("missing its closing quote"));
     }
 
     #[test]
     fn rejects_unexpected_characters() {
-        let error = lex("{").unwrap_err();
+        let source_file = SourceFile::new("examples/ui.pixui", "{");
+        let error = lex_source_file(&source_file).unwrap_err();
+        let rendered = pixui_base::unansi(&format_cli_error("lexing failed", &error));
 
-        assert!(
-            error
-                .to_test_string()
-                .contains("Unexpected character `{` at byte 0")
-        );
+        assert!(rendered.contains("error: Unexpected character `{`"));
+        assert!(rendered.contains("examples/ui.pixui:1:1"));
+        assert!(rendered.contains("not valid in the UI description syntax"));
     }
 }
