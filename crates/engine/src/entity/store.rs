@@ -4,6 +4,7 @@ use slotmap::{Key, SlotMap, new_key_type};
 use std::any::{Any, TypeId, type_name};
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
+use std::marker::PhantomData;
 
 new_key_type! {
     struct EntityKey;
@@ -30,6 +31,38 @@ impl EntityId {
     }
 }
 
+#[derive(Debug)]
+pub struct TypedEntityKey<E: Reflect> {
+    entity_id: EntityId,
+    entity_marker: PhantomData<fn() -> E>,
+}
+
+impl<E: Reflect> Copy for TypedEntityKey<E> {}
+
+impl<E: Reflect> Clone for TypedEntityKey<E> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<E: Reflect> TypedEntityKey<E> {
+    #[must_use]
+    pub fn slice_id(&self) -> SliceId {
+        self.entity_id.slice_id()
+    }
+
+    #[must_use]
+    pub fn key_data(&self) -> u64 {
+        self.entity_id.key_data()
+    }
+}
+
+impl<E: Reflect> From<TypedEntityKey<E>> for EntityId {
+    fn from(value: TypedEntityKey<E>) -> Self {
+        value.entity_id
+    }
+}
+
 #[derive(Default)]
 pub struct EntityStore {
     slice_map: HashMap<TypeId, SliceId>,
@@ -53,11 +86,14 @@ impl<E: Reflect> EntitySlice<E> {
         }
     }
 
-    fn add_entity(&mut self, entity: E) -> EntityId {
+    fn add_entity(&mut self, entity: E) -> TypedEntityKey<E> {
         let key = self.entities.insert(entity);
-        EntityId {
-            slice_id: self.slice_id,
-            key,
+        TypedEntityKey {
+            entity_id: EntityId {
+                slice_id: self.slice_id,
+                key,
+            },
+            entity_marker: PhantomData,
         }
     }
 }
@@ -86,7 +122,7 @@ impl EntityStore {
     pub fn add_entities<E: Reflect>(
         &mut self,
         entities: impl IntoIterator<Item = E>,
-    ) -> PixuiResult<Vec<EntityId>> {
+    ) -> PixuiResult<Vec<TypedEntityKey<E>>> {
         let slice = self.get_slice_mut::<E>()?;
         Ok(entities
             .into_iter()
@@ -94,7 +130,15 @@ impl EntityStore {
             .collect())
     }
 
-    pub fn get_entity<E: Reflect>(&self, entity_id: EntityId) -> PixuiResult<&E> {
+    pub fn get_entity<E: Reflect>(&self, entity_id: TypedEntityKey<E>) -> PixuiResult<&E> {
+        self.get_entity_untyped::<E>(entity_id)
+    }
+
+    pub fn get_entity_untyped<E: Reflect>(
+        &self,
+        entity_id: impl Into<EntityId>,
+    ) -> PixuiResult<&E> {
+        let entity_id = entity_id.into();
         let slice_id = entity_id.slice_id.0 as usize;
         let dyn_slice = self
             .slices
@@ -124,7 +168,7 @@ impl EntityStore {
 
 #[cfg(test)]
 mod tests {
-    use super::EntityStore;
+    use super::{EntityId, EntityStore};
     use facet::Facet;
 
     #[derive(Debug, Facet, PartialEq, Eq)]
@@ -144,7 +188,7 @@ mod tests {
     }
 
     #[test]
-    fn add_entities_stores_values_that_can_be_loaded_again() {
+    fn get_entity_loads_values_with_typed_entity_keys() {
         let mut store = EntityStore::default();
         let slice_id = store.register_entity_type::<TestEntity>().unwrap();
 
@@ -177,6 +221,33 @@ mod tests {
             &TestEntity {
                 name: "beta".into(),
                 health: 20,
+            }
+        );
+    }
+
+    #[test]
+    fn get_entity_untyped_loads_values_with_untyped_entity_ids() {
+        let mut store = EntityStore::default();
+        store.register_entity_type::<TestEntity>().unwrap();
+
+        let entity_id = store
+            .add_entities([TestEntity {
+                name: "alpha".into(),
+                health: 10,
+            }])
+            .unwrap()[0];
+
+        let untyped_entity_id = EntityId::from(entity_id);
+
+        assert_eq!(untyped_entity_id.slice_id().0, entity_id.slice_id().0);
+        assert_eq!(untyped_entity_id.key_data(), entity_id.key_data());
+        assert_eq!(
+            store
+                .get_entity_untyped::<TestEntity>(untyped_entity_id)
+                .unwrap(),
+            &TestEntity {
+                name: "alpha".into(),
+                health: 10,
             }
         );
     }
