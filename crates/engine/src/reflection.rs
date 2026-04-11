@@ -1,6 +1,6 @@
 use facet::{Facet, Shape};
 
-pub trait Reflect {
+pub trait Reflect: 'static {
     fn shape() -> &'static Shape;
 }
 
