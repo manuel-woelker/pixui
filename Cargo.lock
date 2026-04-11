@@ -422,6 +422,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "pixui-engine"
+version = "0.1.0"
+
+[[package]]
 name = "pixui-pal"
 version = "0.1.0"
 dependencies = [

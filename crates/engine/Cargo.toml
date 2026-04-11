@@ -1,0 +1,9 @@
+[package]
+name = "pixui-engine"
+version = "0.1.0"
+edition = "2024"
+description = "Engine crate for the pixui project"
+license = "MIT"
+repository = "https://github.com/manuel-woelker/pixui"
+
+[dependencies]
