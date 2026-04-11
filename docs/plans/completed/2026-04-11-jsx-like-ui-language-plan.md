@@ -80,22 +80,28 @@ The parser does not need to perform semantic validation beyond syntactic correct
 
 # How will progress be tracked?
 
-- [ ] Add a `ui_description` module to `crates/engine` and expose it from `lib.rs`.
-- [ ] Add AST types for UI elements and string properties.
-- [ ] Add lexer token types and span-aware lexing helpers.
-- [ ] Implement lexing for tag punctuation, identifiers, and quoted string values.
-- [ ] Return structured errors for malformed strings and unexpected characters.
-- [ ] Add colocated lexer tests covering simple tags, self-closing tags, nested tags, properties, and invalid input.
-- [ ] Add parser types or parsing helpers needed to build the AST.
-- [ ] Implement parsing for elements with nested children and string properties.
-- [ ] Validate matching close tags and malformed property syntax.
-- [ ] Add colocated parser tests covering successful parsing and representative syntax failures.
-- [ ] Add a small top-level parse API that callers can use without knowing lexer internals.
-- [ ] Run `nao check`.
+- [x] Add a `ui_description` module to `crates/engine` and expose it from `lib.rs`.
+- [x] Add AST types for UI elements and string properties.
+- [x] Add lexer token types and span-aware lexing helpers.
+- [x] Implement lexing for tag punctuation, identifiers, and quoted string values.
+- [x] Return structured errors for malformed strings and unexpected characters.
+- [x] Add colocated lexer tests covering simple tags, self-closing tags, nested tags, properties, and invalid input.
+- [x] Add parser types or parsing helpers needed to build the AST.
+- [x] Implement parsing for elements with nested children and string properties.
+- [x] Validate matching close tags and malformed property syntax.
+- [x] Add colocated parser tests covering successful parsing and representative syntax failures.
+- [x] Add a small top-level parse API that callers can use without knowing lexer internals.
+- [x] Run `nao check`.
 
 # How should the work be verified?
 
 Verification should rely on colocated unit tests in the lexer and parser modules plus a final repository check.
+
+Completed verification:
+
+- `cargo test -p pixui-engine ui_description`
+- `cargo clippy -p pixui-engine --all-targets --all-features -- -D warnings`
+- `nao check`
 
 Important parser test cases:
 
@@ -110,9 +116,9 @@ Important parser test cases:
 # What assumptions and risks should stay explicit?
 
 - This plan assumes the first consumer only needs an in-memory AST, not direct lowering into component or entity structures.
-- This plan assumes UTF-8 source input and does not attempt JSX-level compatibility beyond the syntax listed above.
+- This implementation accepts raw `&str` input, assumes UTF-8 source text, and does not attempt JSX-level compatibility beyond the syntax listed above.
 - The biggest scope risk is overengineering the grammar too early. Keep the AST and parser narrow so future expression support can be added without dragging in half a compiler up front.
-- Error reporting may need a follow-up pass if the first parser version only reports coarse locations.
+- Error reporting currently uses message-based `PixuiError` values with byte offsets and spans. A later source-diagnostic pass may still be worthwhile if editor integration becomes important.
 
 # What open questions remain after this plan?
 
