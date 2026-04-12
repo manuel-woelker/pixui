@@ -1,35 +1,32 @@
 use crate::component::Component;
-use pixui_base::bail;
 use pixui_base::result::{OptionExt, PixuiResult};
-use std::any::{TypeId, type_name};
-use std::collections::HashMap;
+use pixui_base::type_map::TypeMap;
 
 #[derive(Debug, Copy, Clone)]
 pub struct ComponentId(usize);
+
+impl ComponentId {
+    fn from_index(index: usize) -> Self {
+        Self(index)
+    }
+}
 
 pub struct ComponentHolder {}
 
 #[derive(Default)]
 pub struct ComponentRegistry {
-    component_map: HashMap<TypeId, ComponentId>,
-    components: Vec<ComponentHolder>,
+    components: TypeMap<ComponentHolder>,
 }
 
 impl ComponentRegistry {
-    pub fn register<C: Component + 'static>(&mut self) -> PixuiResult<ComponentId> {
-        let type_id = TypeId::of::<C>();
-        if self.component_map.contains_key(&type_id) {
-            bail!("Component already registered: {:?}", type_name::<C>());
-        }
-        let component_id = ComponentId(self.components.len());
-        self.components.push(ComponentHolder {});
-        self.component_map.insert(type_id, component_id);
-        Ok(component_id)
+    pub fn register<C: Component + 'static>(&mut self) -> ComponentId {
+        let key = self.components.insert::<C>(ComponentHolder {});
+        ComponentId::from_index(key.index())
     }
 
     pub fn get(&self, id: ComponentId) -> PixuiResult<&ComponentHolder> {
         self.components
-            .get(id.0)
+            .get_by_key(id.0.into())
             .with_context(|| format!("no such component: {:?}", id.0))
     }
 }
@@ -61,23 +58,22 @@ mod tests {
     fn register_stores_components_for_later_lookup() {
         let mut registry = ComponentRegistry::default();
 
-        let first_id = registry.register::<TestComponent>().unwrap();
-        let second_id = registry.register::<OtherTestComponent>().unwrap();
+        let first_id = registry.register::<TestComponent>();
+        let second_id = registry.register::<OtherTestComponent>();
 
         assert!(registry.get(first_id).is_ok());
         assert!(registry.get(second_id).is_ok());
     }
 
     #[test]
-    fn register_rejects_duplicate_component_types() {
+    fn register_overwrites_duplicate_component_types_without_changing_the_id() {
         let mut registry = ComponentRegistry::default();
 
-        registry.register::<TestComponent>().unwrap();
-        let error = registry.register::<TestComponent>().unwrap_err();
-        let rendered = error.to_test_string();
+        let first_id = registry.register::<TestComponent>();
+        let second_id = registry.register::<TestComponent>();
 
-        assert!(rendered.contains("Component already registered"));
-        assert!(rendered.contains("TestComponent"));
+        assert_eq!(first_id.0, second_id.0);
+        assert!(registry.get(second_id).is_ok());
     }
 
     #[test]
