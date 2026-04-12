@@ -1,4 +1,4 @@
-pub mod application;
+pub mod app;
 pub mod component;
 pub mod components;
 pub mod engine;

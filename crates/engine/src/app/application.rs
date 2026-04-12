@@ -1,4 +1,4 @@
-use crate::application::event_handler::ApplicationEventHandler;
+use crate::app::event_handler::ApplicationEventHandler;
 use crate::entity::store::EntityStore;
 use pixui_base::type_map::TypeMap;
 use std::any::TypeId;
