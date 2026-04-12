@@ -16,6 +16,7 @@ pub mod source_excerpt;
 pub mod source_file;
 pub mod span;
 pub mod timestamp;
+pub mod type_map;
 
 pub use parking_lot::{Mutex, RwLock};
 
