@@ -222,6 +222,12 @@ impl<V> From<TypeKey<V>> for usize {
     }
 }
 
+impl<V> From<usize> for TypeKey<V> {
+    fn from(value: usize) -> Self {
+        Self::from_index(value)
+    }
+}
+
 /* 📖 # Why does `TypeMap` store values in a `Vec` instead of directly in the hash map?
 The map only needs `TypeId -> index` lookup. Keeping values in a dense vector
 makes `TypeKey` cheap and stable, avoids storing `TypeId` next to each value,

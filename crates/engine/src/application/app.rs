@@ -1,8 +1,7 @@
 use crate::application::event_handler::ApplicationEventHandler;
 use crate::entity::store::EntityStore;
+use pixui_base::type_map::TypeMap;
 use std::any::TypeId;
-use std::collections::HashMap;
-use std::collections::hash_map::Entry;
 use std::marker::PhantomData;
 
 pub struct EventHandlerHolder<E, H: ApplicationEventHandler<Event = E>> {
@@ -43,8 +42,7 @@ where
 #[derive(Default)]
 pub struct Application {
     store: EntityStore,
-    event_handlers: Vec<Vec<Box<dyn DynEventHandlerHolder>>>,
-    event_type_map: HashMap<TypeId, usize>,
+    event_handlers: TypeMap<Vec<Box<dyn DynEventHandlerHolder>>>,
 }
 
 impl Application {
@@ -67,15 +65,8 @@ impl Application {
         let handler = EventHandlerHolder::<E, H>::new(handler.into());
         debug_assert_eq!(handler.event_type_id(), TypeId::of::<E>());
         let _ = handler.handler_type_id();
-        let handler_index = match self.event_type_map.entry(TypeId::of::<E>()) {
-            Entry::Occupied(entry) => *entry.get(),
-            Entry::Vacant(entry) => {
-                let index = self.event_handlers.len();
-                self.event_handlers.push(Vec::new());
-                entry.insert(index);
-                index
-            }
-        };
-        self.event_handlers[handler_index].push(Box::new(handler));
+        self.event_handlers
+            .get_or_insert_default_mut::<E>()
+            .push(Box::new(handler));
     }
 }

@@ -1,9 +1,8 @@
 use crate::reflection::Reflect;
 use pixui_base::result::{OptionExt, PixuiResult};
+use pixui_base::type_map::{TypeKey, TypeMap};
 use slotmap::{Key, SlotMap, new_key_type};
-use std::any::{Any, TypeId, type_name};
-use std::collections::HashMap;
-use std::collections::hash_map::Entry;
+use std::any::{Any, type_name};
 use std::marker::PhantomData;
 
 new_key_type! {
@@ -65,8 +64,7 @@ impl<E: Reflect> From<TypedEntityKey<E>> for EntityId {
 
 #[derive(Default)]
 pub struct EntityStore {
-    slice_map: HashMap<TypeId, SliceId>,
-    slices: Vec<Box<dyn DynEntitySlice>>,
+    slices: TypeMap<Box<dyn DynEntitySlice>>,
 }
 
 trait DynEntitySlice: Any {}
@@ -98,25 +96,29 @@ impl<E: Reflect> EntitySlice<E> {
     }
 }
 
-impl EntityStore {
-    pub fn register_entity_type<E: Reflect>(&mut self) -> PixuiResult<SliceId> {
-        let entity_type_id = match self.slice_map.entry(TypeId::of::<E>()) {
-            Entry::Occupied(entry) => *entry.get(),
-            Entry::Vacant(entry) => {
-                let slice_id = SliceId(self.slices.len() as u32);
-                entry.insert(slice_id);
-                self.slices.push(Box::new(EntitySlice::<E>::new(slice_id)));
-                slice_id
-            }
-        };
-        Ok(entity_type_id)
+type SliceKey = TypeKey<Box<dyn DynEntitySlice>>;
+
+impl SliceId {
+    fn from_key(key: SliceKey) -> Self {
+        Self(key.index() as u32)
     }
 
-    fn get_slice_id<E: Reflect>(&self) -> PixuiResult<SliceId> {
-        Ok(*self
-            .slice_map
-            .get(&TypeId::of::<E>())
-            .with_context(|| format!("Entity store does not contain {}", type_name::<E>()))?)
+    fn index(self) -> usize {
+        self.0 as usize
+    }
+}
+
+impl EntityStore {
+    pub fn register_entity_type<E: Reflect>(&mut self) -> PixuiResult<SliceId> {
+        if let Some(key) = self.slices.key::<E>() {
+            return Ok(SliceId::from_key(key));
+        }
+
+        let slice_id = SliceId(self.slices.len() as u32);
+        let key = self
+            .slices
+            .insert::<E>(Box::new(EntitySlice::<E>::new(slice_id)));
+        Ok(SliceId::from_key(key))
     }
 
     pub fn add_entities<E: Reflect>(
@@ -139,10 +141,10 @@ impl EntityStore {
         entity_id: impl Into<EntityId>,
     ) -> PixuiResult<&E> {
         let entity_id = entity_id.into();
-        let slice_id = entity_id.slice_id.0 as usize;
+        let slice_id = entity_id.slice_id.index();
         let dyn_slice = self
             .slices
-            .get(slice_id)
+            .get_by_key(TypeKey::from(slice_id))
             .with_context(|| format!("Entity store does not contain {}", slice_id))?;
         let slice = (dyn_slice.as_ref() as &dyn Any)
             .downcast_ref::<EntitySlice<E>>()
@@ -155,10 +157,9 @@ impl EntityStore {
     }
 
     fn get_slice_mut<E: Reflect>(&mut self) -> PixuiResult<&mut EntitySlice<E>> {
-        let slice_id = self.get_slice_id::<E>()?;
         let slice = self
             .slices
-            .get_mut(slice_id.0 as usize)
+            .get_mut::<E>()
             .with_context(|| format!("Entity store does not contain {}", type_name::<E>()))?;
         (slice.as_mut() as &mut dyn Any)
             .downcast_mut::<EntitySlice<E>>()
