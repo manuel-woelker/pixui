@@ -348,6 +348,9 @@ mod tests {
         second_value.push_str("value");
 
         assert_eq!(first_key, second_key);
-        assert_eq!(map.get_by_key(second_key).map(String::as_str), Some("value"));
+        assert_eq!(
+            map.get_by_key(second_key).map(String::as_str),
+            Some("value")
+        );
     }
 }
