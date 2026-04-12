@@ -5,6 +5,13 @@ use slotmap::{Key, SlotMap, new_key_type};
 use std::any::{Any, type_name};
 use std::marker::PhantomData;
 
+/// Stores registered entity slices keyed by entity type.
+#[derive(Default)]
+pub struct EntityStore {
+    /// Type-indexed entity slices, one per registered entity type.
+    slices: TypeMap<Box<dyn DynEntitySlice>>,
+}
+
 new_key_type! {
     struct EntityKey;
 }
@@ -12,27 +19,35 @@ new_key_type! {
 #[derive(Debug, Copy, Clone)]
 pub struct SliceId(u32);
 
+/// Identifies a single entity in the store.
 #[derive(Debug, Copy, Clone)]
 pub struct EntityId {
+    /// The slice that owns the entity.
     slice_id: SliceId,
+    /// The slotmap key inside that slice.
     key: EntityKey,
 }
 
 impl EntityId {
+    /// Returns the slice that owns this entity.
     #[must_use]
     pub fn slice_id(&self) -> SliceId {
         self.slice_id
     }
 
+    /// Returns the raw slot key for debugging and persistence-adjacent code.
     #[must_use]
     pub fn key_data(&self) -> u64 {
         self.key.data().as_ffi()
     }
 }
 
+/// A typed handle to an entity stored in an [`EntityStore`].
 #[derive(Debug)]
 pub struct TypedEntityKey<E: Reflect> {
+    /// The untyped entity identifier used by the backing store.
     entity_id: EntityId,
+    /// Tracks the entity type without storing a runtime value.
     entity_marker: PhantomData<fn() -> E>,
 }
 
@@ -45,11 +60,13 @@ impl<E: Reflect> Clone for TypedEntityKey<E> {
 }
 
 impl<E: Reflect> TypedEntityKey<E> {
+    /// Returns the slice that owns this entity.
     #[must_use]
     pub fn slice_id(&self) -> SliceId {
         self.entity_id.slice_id()
     }
 
+    /// Returns the raw slot key for debugging and persistence-adjacent code.
     #[must_use]
     pub fn key_data(&self) -> u64 {
         self.entity_id.key_data()
@@ -62,17 +79,14 @@ impl<E: Reflect> From<TypedEntityKey<E>> for EntityId {
     }
 }
 
-#[derive(Default)]
-pub struct EntityStore {
-    slices: TypeMap<Box<dyn DynEntitySlice>>,
-}
-
 trait DynEntitySlice: Any {}
 
 impl<E: Reflect> DynEntitySlice for EntitySlice<E> {}
 
 struct EntitySlice<E: Reflect> {
+    /// The public slice id associated with this typed slice.
     slice_id: SliceId,
+    /// Entities stored for a single reflected type.
     entities: SlotMap<EntityKey, E>,
 }
 
@@ -98,6 +112,13 @@ impl<E: Reflect> EntitySlice<E> {
 
 type SliceKey = TypeKey<Box<dyn DynEntitySlice>>;
 
+/* 📖 # Why does `SliceId` stay separate from `TypeKey`?
+`TypeMap` is the internal storage primitive, but `EntityStore` exposes a
+domain-specific `SliceId` so callers do not need to know how slices are
+indexed. That keeps the public API stable even if the internal container
+changes later.
+*/
+
 impl SliceId {
     fn from_key(key: SliceKey) -> Self {
         Self(key.index() as u32)
@@ -109,6 +130,9 @@ impl SliceId {
 }
 
 impl EntityStore {
+    /// Registers storage for entity type `E`.
+    ///
+    /// Registering the same type more than once returns the existing slice id.
     pub fn register_entity_type<E: Reflect>(&mut self) -> PixuiResult<SliceId> {
         if let Some(key) = self.slices.key::<E>() {
             return Ok(SliceId::from_key(key));
@@ -121,6 +145,7 @@ impl EntityStore {
         Ok(SliceId::from_key(key))
     }
 
+    /// Appends entities of type `E` to the previously registered slice.
     pub fn add_entities<E: Reflect>(
         &mut self,
         entities: impl IntoIterator<Item = E>,
@@ -132,10 +157,12 @@ impl EntityStore {
             .collect())
     }
 
+    /// Loads an entity using a typed entity key.
     pub fn get_entity<E: Reflect>(&self, entity_id: TypedEntityKey<E>) -> PixuiResult<&E> {
         self.get_entity_untyped::<E>(entity_id)
     }
 
+    /// Loads an entity using an untyped id while still requiring the expected entity type.
     pub fn get_entity_untyped<E: Reflect>(
         &self,
         entity_id: impl Into<EntityId>,
