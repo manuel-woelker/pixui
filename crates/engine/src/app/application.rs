@@ -5,20 +5,49 @@ use pixui_base::type_map::TypeMap;
 use std::any::Any;
 use std::any::TypeId;
 use std::marker::PhantomData;
+use std::sync::mpsc;
+use std::sync::mpsc::Receiver;
+use pixui_base::logging::error;
+use crate::app::application_handle::ApplicationHandle;
+use crate::app::application_message::ApplicationMessage;
 
 /// Stores application-wide state and event handler registrations.
-#[derive(Default)]
 pub struct Application {
     /// The application's entity storage.
     store: EntityStore,
     /// Event handlers grouped by their event type.
     event_handlers: TypeMap<Vec<Box<dyn DynEventHandlerHolder>>>,
+    /// Message receiver
+    message_rx: Receiver<ApplicationMessage>,
 }
 
 impl Application {
     /// Creates an empty application.
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new() -> PixuiResult<ApplicationHandle> {
+        let (tx, rx) = mpsc::sync_channel(1024);
+        std::thread::Builder::new().name("pixui Application".to_string()).spawn(move || {
+            let application = Application {
+                store: EntityStore::default(),
+                event_handlers: TypeMap::default(),
+                message_rx: rx,
+            };
+            match application.run() {
+                Ok(_) => {
+
+                }
+                Err(e) => {
+                    error!("{:?}", e);
+                }
+            }
+        })?;
+        Ok(ApplicationHandle::new(tx))
+    }
+
+    fn run(mut self) -> PixuiResult<()> {
+        loop {
+            let message = self.message_rx.recv()?;
+            match message {}
+        }
     }
 
     /// Returns the entity store owned by this application.

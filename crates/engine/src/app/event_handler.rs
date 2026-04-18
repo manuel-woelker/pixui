@@ -4,7 +4,7 @@ pub struct ApplicationEventContext<E> {
     pub event: E,
 }
 
-pub trait ApplicationEventHandler {
+pub trait ApplicationEventHandler: Send {
     type Event;
     fn handle_event(
         &mut self,
