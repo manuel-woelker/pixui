@@ -19,7 +19,7 @@ pub mod timestamp;
 pub mod type_map;
 
 pub use parking_lot::{Mutex, RwLock};
-pub use std::sync::mpsc::{sync_channel, SyncSender, Receiver };
+pub use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
 pub fn unansi(string: &str) -> String {
     anstream::adapter::strip_str(string).to_string()
 }
