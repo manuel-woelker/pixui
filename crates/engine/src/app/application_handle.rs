@@ -53,10 +53,9 @@ impl ApplicationHandle {
         &self,
         handler: H,
     ) -> PixuiResult<()> {
-        self.send_message(ApplicationMessage::RunOnce(Box::new(|application| {
+        self.run(|application| {
             application.add_event_handler(handler);
-            Ok(())
-        })))
+        })
     }
 
     /// Dispatches `event` to every registered handler for `E`.
@@ -65,9 +64,7 @@ impl ApplicationHandle {
     /// shared mutable [`ApplicationEventContext`], which allows earlier
     /// handlers to affect what later handlers observe.
     pub fn handle_event<E: Send + 'static>(&self, event: E) -> PixuiResult<()> {
-        self.send_message(ApplicationMessage::RunOnce(Box::new(|application| {
-            application.handle_event(event)
-        })))
+        self.run(|application| application.handle_event(event))?
     }
 }
 

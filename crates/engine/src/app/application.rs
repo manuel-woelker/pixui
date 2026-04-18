@@ -229,18 +229,15 @@ mod tests {
     }
 
     #[test]
-    fn handle_event_failure_terminates_the_application_thread() -> PixuiResult<()> {
+    fn handle_event_propagates_handler_errors() -> PixuiResult<()> {
         let application = Application::spawn()?;
         application.add_event_handler(FailingHandler)?;
 
-        application.handle_event(TestEvent { value: 10 })?;
+        let error = application
+            .handle_event(TestEvent { value: 10 })
+            .unwrap_err();
 
-        let error = application.run(|_| ()).unwrap_err().to_test_string();
-
-        assert!(
-            error.contains("application is terminated")
-                || error.contains("Failed to receive application run result")
-        );
+        assert!(error.to_test_string().contains("handler failed"));
         Ok(())
     }
 }
