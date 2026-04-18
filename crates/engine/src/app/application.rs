@@ -1,5 +1,8 @@
+use crate::app::application_handle::ApplicationHandle;
+use crate::app::application_message::ApplicationMessage;
 use crate::app::event_handler::{ApplicationEventContext, ApplicationEventHandler};
 use crate::entity::store::EntityStore;
+use pixui_base::logging::error;
 use pixui_base::result::{OptionExt, PixuiResult};
 use pixui_base::type_map::TypeMap;
 use std::any::Any;
@@ -7,9 +10,6 @@ use std::any::TypeId;
 use std::marker::PhantomData;
 use std::sync::mpsc;
 use std::sync::mpsc::Receiver;
-use pixui_base::logging::error;
-use crate::app::application_handle::ApplicationHandle;
-use crate::app::application_message::ApplicationMessage;
 
 /// Stores application-wide state and event handler registrations.
 pub struct Application {
@@ -23,30 +23,32 @@ pub struct Application {
 
 impl Application {
     /// Creates an empty application.
-    pub fn new() -> PixuiResult<ApplicationHandle> {
+    pub fn spawn() -> PixuiResult<ApplicationHandle> {
         let (tx, rx) = mpsc::sync_channel(1024);
-        std::thread::Builder::new().name("pixui Application".to_string()).spawn(move || {
-            let application = Application {
-                store: EntityStore::default(),
-                event_handlers: TypeMap::default(),
-                message_rx: rx,
-            };
-            match application.run() {
-                Ok(_) => {
-
+        std::thread::Builder::new()
+            .name("pixui Application".to_string())
+            .spawn(move || {
+                let application = Application {
+                    store: EntityStore::default(),
+                    event_handlers: TypeMap::default(),
+                    message_rx: rx,
+                };
+                match application.run() {
+                    Ok(_) => {}
+                    Err(e) => {
+                        error!("{:?}", e);
+                    }
                 }
-                Err(e) => {
-                    error!("{:?}", e);
-                }
-            }
-        })?;
+            })?;
         Ok(ApplicationHandle::new(tx))
     }
 
     fn run(mut self) -> PixuiResult<()> {
         loop {
             let message = self.message_rx.recv()?;
-            match message {}
+            match message {
+                ApplicationMessage::RunOnce(run_once) => run_once(&mut self)?,
+            }
         }
     }
 
@@ -156,6 +158,7 @@ where
 mod tests {
     use super::Application;
     use crate::app::event_handler::{ApplicationEventContext, ApplicationEventHandler};
+    use pixui_base::result::PixuiResult;
     use pixui_base::{Mutex, err};
     use std::sync::Arc;
 
@@ -196,40 +199,48 @@ mod tests {
     }
 
     #[test]
-    fn handle_event_returns_ok_when_no_handler_is_registered() {
-        let mut application = Application::new();
+    fn handle_event_returns_ok_when_no_handler_is_registered() -> PixuiResult<()> {
+        let application = Application::spawn()?;
 
-        application.handle_event(TestEvent { value: 1 }).unwrap();
+        application.handle_event(TestEvent { value: 1 })?;
+        application.run(|_| ())?;
+        Ok(())
     }
 
     #[test]
-    fn handle_event_dispatches_handlers_in_registration_order() {
-        let mut application = Application::new();
+    fn handle_event_dispatches_handlers_in_registration_order() -> PixuiResult<()> {
+        let application = Application::spawn()?;
         let seen_values = Arc::new(Mutex::new(Vec::new()));
 
         application.add_event_handler(RecordingHandler {
             seen_values: Arc::clone(&seen_values),
             delta: 5,
-        });
+        })?;
         application.add_event_handler(RecordingHandler {
             seen_values: Arc::clone(&seen_values),
             delta: 7,
-        });
+        })?;
 
-        application.handle_event(TestEvent { value: 10 }).unwrap();
+        application.handle_event(TestEvent { value: 10 })?;
+        application.run(|_| ())?;
 
         assert_eq!(*seen_values.lock(), vec![10, 15]);
+        Ok(())
     }
 
     #[test]
-    fn handle_event_propagates_handler_errors() {
-        let mut application = Application::new();
-        application.add_event_handler(FailingHandler);
+    fn handle_event_failure_terminates_the_application_thread() -> PixuiResult<()> {
+        let application = Application::spawn()?;
+        application.add_event_handler(FailingHandler)?;
 
-        let error = application
-            .handle_event(TestEvent { value: 10 })
-            .unwrap_err();
+        application.handle_event(TestEvent { value: 10 })?;
 
-        assert!(error.to_test_string().contains("handler failed"));
+        let error = application.run(|_| ()).unwrap_err().to_test_string();
+
+        assert!(
+            error.contains("application is terminated")
+                || error.contains("Failed to receive application run result")
+        );
+        Ok(())
     }
 }
