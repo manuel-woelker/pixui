@@ -71,7 +71,7 @@ impl ApplicationHandle {
 
 #[cfg(test)]
 mod tests {
-    use crate::app::Application;
+    use crate::engine::Engine;
     use facet::Facet;
     use pixui_base::result::PixuiResult;
 
@@ -82,7 +82,8 @@ mod tests {
 
     #[test]
     fn run_executes_callback_on_application_thread_and_returns_result() -> PixuiResult<()> {
-        let application = Application::spawn()?;
+        let engine = Engine::new()?;
+        let application = engine.application();
 
         let entity_store_ptr =
             application.run(|application| Ok(application.entity_store() as *const _ as usize))?;
@@ -93,7 +94,8 @@ mod tests {
 
     #[test]
     fn run_returns_callback_result_after_mutating_application() -> PixuiResult<()> {
-        let application = Application::spawn()?;
+        let engine = Engine::new()?;
+        let application = engine.application();
 
         let entity_count = application.run(|application| -> PixuiResult<usize> {
             let store = application.entity_store_mut();
