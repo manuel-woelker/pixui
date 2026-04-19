@@ -1,5 +1,1 @@
-
-
-pub struct Viewport {
-    
-}
+pub struct Viewport {}
