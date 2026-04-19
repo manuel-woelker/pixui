@@ -1,21 +1,22 @@
+use pixui_base::result::PixuiResult;
+use crate::app::{Application, ApplicationHandle};
+
 /// Core engine entry point for the pixui project.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub struct Engine;
+pub struct Engine {
+    application: ApplicationHandle,
+}
 
 impl Engine {
     /// Creates a new engine instance.
-    #[must_use]
-    pub fn new() -> Self {
-        Self
+    pub fn new() -> PixuiResult<Self> {
+        Ok(Self {
+            application: Application::spawn()?,
+        })
     }
+
 }
 
 #[cfg(test)]
 mod tests {
-    use super::Engine;
 
-    #[test]
-    fn new_returns_default_engine() {
-        assert_eq!(Engine::new(), Engine);
-    }
 }
