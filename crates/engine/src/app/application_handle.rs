@@ -27,7 +27,7 @@ impl ApplicationHandle {
     pub fn run<T, F>(&self, callback: F) -> PixuiResult<T>
     where
         T: Send + 'static,
-        F: FnOnce(&mut Application) -> T + Send + 'static,
+        F: FnOnce(&mut Application) -> PixuiResult<T> + Send + 'static,
     {
         let (result_tx, result_rx) = mpsc::sync_channel(1);
         self.send_message(ApplicationMessage::RunOnce(Box::new(move |application| {
@@ -42,7 +42,7 @@ impl ApplicationHandle {
         })))?;
         result_rx
             .recv()
-            .with_context(|| "Failed to receive application run result")
+            .with_context(|| "Failed to receive application run result")?
     }
 
     /// Registers an event handler for `E`.
@@ -55,6 +55,7 @@ impl ApplicationHandle {
     ) -> PixuiResult<()> {
         self.run(|application| {
             application.add_event_handler(handler);
+            Ok(())
         })
     }
 
@@ -64,7 +65,7 @@ impl ApplicationHandle {
     /// shared mutable [`ApplicationEventContext`], which allows earlier
     /// handlers to affect what later handlers observe.
     pub fn handle_event<E: Send + 'static>(&self, event: E) -> PixuiResult<()> {
-        self.run(|application| application.handle_event(event))?
+        self.run(|application| application.handle_event(event))
     }
 }
 
@@ -84,7 +85,7 @@ mod tests {
         let application = Application::spawn()?;
 
         let entity_store_ptr =
-            application.run(|application| application.entity_store() as *const _ as usize)?;
+            application.run(|application| Ok(application.entity_store() as *const _ as usize))?;
 
         assert_ne!(entity_store_ptr, 0);
         Ok(())
@@ -102,7 +103,7 @@ mod tests {
                     name: "alpha".to_string(),
                 }])?
                 .len())
-        })??;
+        })?;
 
         assert_eq!(entity_count, 1);
         Ok(())

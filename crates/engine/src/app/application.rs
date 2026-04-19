@@ -203,7 +203,7 @@ mod tests {
         let application = Application::spawn()?;
 
         application.handle_event(TestEvent { value: 1 })?;
-        application.run(|_| ())?;
+        application.run(|_| Ok(()))?;
         Ok(())
     }
 
@@ -222,7 +222,7 @@ mod tests {
         })?;
 
         application.handle_event(TestEvent { value: 10 })?;
-        application.run(|_| ())?;
+        application.run(|_| Ok(()))?;
 
         assert_eq!(*seen_values.lock(), vec![10, 15]);
         Ok(())
