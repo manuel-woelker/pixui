@@ -5,7 +5,6 @@ pub mod draw;
 pub mod engine;
 pub mod engine_event_context;
 pub mod engine_event_handler;
-pub mod engine_handle;
 mod engine_message;
 mod engine_state;
 pub mod entity;
