@@ -1,3 +1,5 @@
+use crate::draw::style_id::StyleId;
+
 /// A drawing command emitted by the engine.
 #[derive(Debug, Clone, PartialEq)]
 pub enum DrawCommand {
@@ -23,25 +25,10 @@ pub enum DrawCommand {
     },
 }
 
-/// Identifier for a style in the draw command stream.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct StyleId(usize);
-
-impl StyleId {
-    /// Creates a new style identifier.
-    pub fn new(index: usize) -> Self {
-        Self(index)
-    }
-
-    /// Returns the raw style index.
-    pub fn index(self) -> usize {
-        self.0
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{DrawCommand, StyleId};
+    use super::DrawCommand;
+    use crate::draw::style_id::StyleId;
 
     #[test]
     fn rounded_rectangle_commands_do_not_embed_style() {
