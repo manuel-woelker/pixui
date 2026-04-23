@@ -16,7 +16,6 @@ impl SvgRenderer {
     pub fn render(draw_list: &DrawList) -> PixuiResult<SharedString> {
         let mut active_style = None;
         let mut body = String::new();
-        let mut bounds: Option<(f32, f32, f32, f32)> = None;
 
         for command in &draw_list.commands {
             match command {
@@ -39,7 +38,6 @@ impl SvgRenderer {
                     let style = active_style.context(
                         "Draw command requires an active style before drawing a filled rounded rectangle",
                     )?;
-                    Self::update_bounds(&mut bounds, *x, *y, *width, *height);
                     Self::write_filled_rounded_rectangle(
                         &mut body, style, *x, *y, *width, *height, *radius,
                     )?;
@@ -54,14 +52,6 @@ impl SvgRenderer {
                     let style = active_style.context(
                         "Draw command requires an active style before drawing an outlined rounded rectangle",
                     )?;
-                    let half_width = style.width / 2.0;
-                    Self::update_bounds(
-                        &mut bounds,
-                        *x - half_width,
-                        *y - half_width,
-                        *width + style.width,
-                        *height + style.width,
-                    );
                     Self::write_outlined_rounded_rectangle(
                         &mut body, style, *x, *y, *width, *height, *radius,
                     )?;
@@ -69,18 +59,14 @@ impl SvgRenderer {
             }
         }
 
-        let (min_x, min_y, max_x, max_y) = bounds.unwrap_or((0.0, 0.0, 0.0, 0.0));
-        let width = max_x - min_x;
-        let height = max_y - min_y;
-
         Ok(SharedString::from(format!(
             "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"{} {} {} {}\" width=\"{}\" height=\"{}\">{}</svg>",
-            Self::format_number(min_x),
-            Self::format_number(min_y),
-            Self::format_number(width),
-            Self::format_number(height),
-            Self::format_number(width),
-            Self::format_number(height),
+            Self::format_number(draw_list.bounds.x),
+            Self::format_number(draw_list.bounds.y),
+            Self::format_number(draw_list.bounds.width),
+            Self::format_number(draw_list.bounds.height),
+            Self::format_number(draw_list.bounds.width),
+            Self::format_number(draw_list.bounds.height),
             body
         )))
     }
@@ -159,29 +145,6 @@ impl SvgRenderer {
         }
     }
 
-    fn update_bounds(
-        bounds: &mut Option<(f32, f32, f32, f32)>,
-        x: f32,
-        y: f32,
-        width: f32,
-        height: f32,
-    ) {
-        let next_min_x = x;
-        let next_min_y = y;
-        let next_max_x = x + width;
-        let next_max_y = y + height;
-
-        *bounds = Some(match *bounds {
-            Some((min_x, min_y, max_x, max_y)) => (
-                min_x.min(next_min_x),
-                min_y.min(next_min_y),
-                max_x.max(next_max_x),
-                max_y.max(next_max_y),
-            ),
-            None => (next_min_x, next_min_y, next_max_x, next_max_y),
-        });
-    }
-
     fn format_number(value: f32) -> String {
         let mut formatted = format!("{value:.3}");
         while formatted.contains('.') && formatted.ends_with('0') {
@@ -204,12 +167,13 @@ mod tests {
     use crate::draw::brush::Brush;
     use crate::draw::color::Color;
     use crate::draw::command::DrawCommand;
+    use crate::draw::draw_bounds::DrawBounds;
     use crate::draw::draw_list::DrawList;
     use crate::draw::draw_style::DrawStyle;
 
     #[test]
     fn render_outputs_svg_for_filled_and_outlined_rounded_rectangles() {
-        let mut draw_list = DrawList::default();
+        let mut draw_list = DrawList::new(DrawBounds::new(5.0, 6.0, 100.0, 80.0));
         let fill_style_id = draw_list.push_style(DrawStyle {
             brush: Brush::SolidColor(Color::rgba(10, 20, 30, 255)),
             width: 2.0,
@@ -244,13 +208,13 @@ mod tests {
 
         assert_eq!(
             svg.as_str(),
-            "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"10 12 67 20\" width=\"67\" height=\"20\"><rect x=\"10\" y=\"12\" width=\"30\" height=\"20\" rx=\"6\" ry=\"6\" fill=\"rgb(10, 20, 30)\" /><rect x=\"50\" y=\"15\" width=\"25\" height=\"10\" rx=\"4\" ry=\"4\" fill=\"none\" stroke=\"rgb(40, 50, 60)\" stroke-width=\"4\" stroke-opacity=\"0.502\" /></svg>"
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"5 6 100 80\" width=\"100\" height=\"80\"><rect x=\"10\" y=\"12\" width=\"30\" height=\"20\" rx=\"6\" ry=\"6\" fill=\"rgb(10, 20, 30)\" /><rect x=\"50\" y=\"15\" width=\"25\" height=\"10\" rx=\"4\" ry=\"4\" fill=\"none\" stroke=\"rgb(40, 50, 60)\" stroke-width=\"4\" stroke-opacity=\"0.502\" /></svg>"
         );
     }
 
     #[test]
     fn render_requires_an_active_style_before_drawing() {
-        let mut draw_list = DrawList::default();
+        let mut draw_list = DrawList::new(DrawBounds::new(0.0, 0.0, 100.0, 80.0));
         draw_list.push_command(DrawCommand::FillRoundedRectangle {
             x: 10.0,
             y: 12.0,
@@ -270,7 +234,7 @@ mod tests {
 
     #[test]
     fn render_rejects_unknown_style_ids() {
-        let mut draw_list = DrawList::default();
+        let mut draw_list = DrawList::new(DrawBounds::new(0.0, 0.0, 100.0, 80.0));
         draw_list.push_command(DrawCommand::SelectStyle {
             style_id: crate::draw::style_id::StyleId::new(3),
         });
