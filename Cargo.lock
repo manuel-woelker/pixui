@@ -1622,6 +1622,8 @@ dependencies = [
  "femtovg",
  "glutin",
  "glutin-winit",
+ "pixui-base",
+ "pixui-engine",
  "raw-window-handle",
  "winit",
 ]

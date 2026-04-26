@@ -10,5 +10,7 @@ repository = "https://github.com/manuel-woelker/pixui"
 femtovg = { workspace = true }
 glutin = { workspace = true }
 glutin-winit = { workspace = true }
+pixui-base = { path = "../base", version = "0.1.0" }
+pixui-engine = { path = "../engine", version = "0.1.0" }
 raw-window-handle = { workspace = true }
 winit = { workspace = true }
