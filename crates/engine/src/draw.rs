@@ -6,3 +6,4 @@ pub mod draw_list;
 pub mod draw_style;
 pub mod style_id;
 pub mod svg_renderer;
+pub mod text_style;

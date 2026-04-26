@@ -45,6 +45,7 @@ mod tests {
     use crate::draw::command::DrawCommand;
     use crate::draw::draw_bounds::DrawBounds;
     use crate::draw::draw_style::DrawStyle;
+    use crate::draw::text_style::TextStyle;
 
     #[test]
     fn push_style_returns_the_inserted_style_id() {
@@ -53,6 +54,7 @@ mod tests {
         let style_id = draw_list.push_style(DrawStyle {
             brush: Brush::SolidColor(Color::rgba(10, 20, 30, 255)),
             width: 2.0,
+            text_style: TextStyle::new("Inter", 14.0),
         });
 
         assert_eq!(style_id.index(), 0);
