@@ -3,6 +3,7 @@ use pixui_base::result::{OptionExt, PixuiResult};
 use pixui_base::type_map::{TypeKey, TypeMap};
 use slotmap::{Key, SlotMap, new_key_type};
 use std::any::{Any, type_name};
+use std::fmt;
 use std::marker::PhantomData;
 
 /// Stores registered entity slices keyed by entity type.
@@ -43,7 +44,6 @@ impl EntityId {
 }
 
 /// A typed handle to an entity stored in an [`EntityStore`].
-#[derive(Debug)]
 pub struct TypedEntityKey<E: Reflect> {
     /// The untyped entity identifier used by the backing store.
     entity_id: EntityId,
@@ -56,6 +56,13 @@ impl<E: Reflect> Copy for TypedEntityKey<E> {}
 impl<E: Reflect> Clone for TypedEntityKey<E> {
     fn clone(&self) -> Self {
         *self
+    }
+}
+
+impl<E: Reflect> fmt::Debug for TypedEntityKey<E> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let entity_type = type_name::<E>().rsplit("::").next().unwrap_or("unknown");
+        write!(formatter, "⟨{entity_type}#{:?}⟩", self.entity_id.key.data())
     }
 }
 
@@ -336,5 +343,22 @@ mod tests {
         store.get_entity_mut(entity_key).unwrap().health = 25;
 
         assert_eq!(store.get_entity(entity_key).unwrap().health, 25);
+    }
+
+    #[test]
+    fn typed_entity_key_debug_shows_raw_id_and_short_type_name() {
+        let mut store = EntityStore::default();
+        store.register_entity_type::<TestEntity>().unwrap();
+
+        let entity_key = store
+            .add_entities([TestEntity {
+                name: "alpha".into(),
+                health: 10,
+            }])
+            .unwrap()[0];
+
+        let debug_output = format!("{entity_key:?}");
+
+        assert_eq!(debug_output, "⟨TestEntity#1v1⟩");
     }
 }
