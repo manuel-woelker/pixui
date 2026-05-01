@@ -136,6 +136,7 @@ mod tests {
 
         fn handle_event(
             &mut self,
+            _application: &mut crate::app::Application,
             context: &mut EngineEventContext<Self::Event>,
         ) -> pixui_base::result::PixuiResult<()> {
             self.seen_values.lock().push(context.event.value);
@@ -151,6 +152,7 @@ mod tests {
 
         fn handle_event(
             &mut self,
+            _application: &mut crate::app::Application,
             _context: &mut EngineEventContext<Self::Event>,
         ) -> pixui_base::result::PixuiResult<()> {
             Err(err!("handler failed"))

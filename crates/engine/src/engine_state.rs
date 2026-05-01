@@ -55,7 +55,7 @@ impl EngineState {
 
         let mut context = EngineEventContext { event };
         for handler in handlers {
-            handler.handle_event(&mut context)?;
+            handler.handle_event(&mut self.application, &mut context)?;
         }
 
         Ok(())
@@ -89,7 +89,11 @@ trait DynEventHandlerHolder {
     fn handler_type_id(&self) -> TypeId;
 
     /// Dispatches a type-erased event context to the stored handler.
-    fn handle_event(&mut self, context: &mut dyn Any) -> PixuiResult<()>;
+    fn handle_event(
+        &mut self,
+        application: &mut Application,
+        context: &mut dyn Any,
+    ) -> PixuiResult<()>;
 }
 
 impl<E, H> DynEventHandlerHolder for EventHandlerHolder<E, H>
@@ -106,7 +110,11 @@ where
         TypeId::of::<H>()
     }
 
-    fn handle_event(&mut self, context: &mut dyn Any) -> PixuiResult<()> {
+    fn handle_event(
+        &mut self,
+        application: &mut Application,
+        context: &mut dyn Any,
+    ) -> PixuiResult<()> {
         let context = context
             .downcast_mut::<EngineEventContext<E>>()
             .with_context(|| {
@@ -115,15 +123,18 @@ where
                     TypeId::of::<H>()
                 )
             })?;
-        self.event_handler.handle_event(context)
+        self.event_handler.handle_event(application, context)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::EngineState;
+    use crate::app::Application;
     use crate::engine_event_context::EngineEventContext;
     use crate::engine_event_handler::EngineEventHandler;
+    use crate::entity::store::TypedEntityKey;
+    use facet::Facet;
     use pixui_base::result::PixuiResult;
     use pixui_base::{Mutex, err};
     use std::sync::Arc;
@@ -138,15 +149,41 @@ mod tests {
         delta: i32,
     }
 
+    #[derive(Debug, Facet, PartialEq, Eq)]
+    struct TestEntity {
+        value: i32,
+    }
+
+    struct ApplicationMutatingHandler {
+        entity_key: TypedEntityKey<TestEntity>,
+    }
+
     impl EngineEventHandler for RecordingHandler {
         type Event = TestEvent;
 
         fn handle_event(
             &mut self,
+            _application: &mut Application,
             context: &mut EngineEventContext<Self::Event>,
         ) -> PixuiResult<()> {
             self.seen_values.lock().push(context.event.value);
             context.event.value += self.delta;
+            Ok(())
+        }
+    }
+
+    impl EngineEventHandler for ApplicationMutatingHandler {
+        type Event = TestEvent;
+
+        fn handle_event(
+            &mut self,
+            application: &mut Application,
+            context: &mut EngineEventContext<Self::Event>,
+        ) -> PixuiResult<()> {
+            let entity = application
+                .entity_store_mut()
+                .get_entity_mut(self.entity_key)?;
+            entity.value += context.event.value;
             Ok(())
         }
     }
@@ -158,6 +195,7 @@ mod tests {
 
         fn handle_event(
             &mut self,
+            _application: &mut Application,
             _context: &mut EngineEventContext<Self::Event>,
         ) -> PixuiResult<()> {
             Err(err!("handler failed"))
@@ -189,6 +227,27 @@ mod tests {
         engine.submit_event(TestEvent { value: 10 })?;
 
         assert_eq!(*seen_values.lock(), vec![10, 15]);
+        Ok(())
+    }
+
+    #[test]
+    fn submit_event_handlers_can_mutate_application_state() -> PixuiResult<()> {
+        let mut engine = EngineState::new();
+        let entity_key = engine
+            .application_mut()
+            .add_entity(TestEntity { value: 1 })?;
+
+        engine.register_event_handler(ApplicationMutatingHandler { entity_key });
+        engine.submit_event(TestEvent { value: 4 })?;
+
+        assert_eq!(
+            engine
+                .application_mut()
+                .entity_store()
+                .get_entity(entity_key)?
+                .value,
+            5
+        );
         Ok(())
     }
 

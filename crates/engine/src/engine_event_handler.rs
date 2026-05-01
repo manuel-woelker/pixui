@@ -1,3 +1,4 @@
+use crate::app::Application;
 use crate::engine_event_context::EngineEventContext;
 use pixui_base::result::PixuiResult;
 
@@ -7,5 +8,9 @@ pub trait EngineEventHandler: Send {
     type Event;
 
     /// Handles a submitted event.
-    fn handle_event(&mut self, context: &mut EngineEventContext<Self::Event>) -> PixuiResult<()>;
+    fn handle_event(
+        &mut self,
+        application: &mut Application,
+        context: &mut EngineEventContext<Self::Event>,
+    ) -> PixuiResult<()>;
 }

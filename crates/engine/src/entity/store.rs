@@ -162,6 +162,14 @@ impl EntityStore {
         self.get_entity_untyped::<E>(entity_id)
     }
 
+    /// Loads a mutable entity using a typed entity key.
+    pub fn get_entity_mut<E: Reflect>(
+        &mut self,
+        entity_id: TypedEntityKey<E>,
+    ) -> PixuiResult<&mut E> {
+        self.get_entity_untyped_mut::<E>(entity_id)
+    }
+
     /// Loads an entity using an untyped id while still requiring the expected entity type.
     pub fn get_entity_untyped<E: Reflect>(
         &self,
@@ -179,6 +187,20 @@ impl EntityStore {
         let entity = slice
             .entities
             .get(entity_id.key)
+            .with_context(|| format!("No entry for key {}", entity_id.key_data()))?;
+        Ok(entity)
+    }
+
+    /// Loads a mutable entity using an untyped id while still requiring the expected entity type.
+    pub fn get_entity_untyped_mut<E: Reflect>(
+        &mut self,
+        entity_id: impl Into<EntityId>,
+    ) -> PixuiResult<&mut E> {
+        let entity_id = entity_id.into();
+        let slice = self.get_slice_mut::<E>()?;
+        let entity = slice
+            .entities
+            .get_mut(entity_id.key)
             .with_context(|| format!("No entry for key {}", entity_id.key_data()))?;
         Ok(entity)
     }
@@ -297,5 +319,22 @@ mod tests {
                 .contains("Entity store does not contain")
         );
         assert!(error.to_test_string().contains("TestEntity"));
+    }
+
+    #[test]
+    fn get_entity_mut_updates_values_with_typed_entity_keys() {
+        let mut store = EntityStore::default();
+        store.register_entity_type::<TestEntity>().unwrap();
+
+        let entity_key = store
+            .add_entities([TestEntity {
+                name: "alpha".into(),
+                health: 10,
+            }])
+            .unwrap()[0];
+
+        store.get_entity_mut(entity_key).unwrap().health = 25;
+
+        assert_eq!(store.get_entity(entity_key).unwrap().health, 25);
     }
 }
