@@ -1,7 +1,6 @@
 use crate::winit_adapter_application::WinitAdapterApplication;
 use pixui_base::result::{PixuiResult, ResultExt};
 use pixui_base::shared_string::SharedString;
-use pixui_engine::draw::component_draw_renderer::ComponentDrawRenderer;
 use pixui_engine::draw::component_draw_system::ComponentDrawSystem;
 use pixui_engine::draw::draw_list::DrawList;
 use pixui_engine::draw::painter::ComponentPainter;
@@ -24,25 +23,13 @@ impl WinitAdapter {
         })
     }
 
-    /// Registers a named component renderer with the adapter-owned draw system.
-    pub fn register_component_renderer<R>(
-        &self,
-        component_name: impl Into<SharedString>,
-        renderer: R,
-    ) where
-        R: ComponentDrawRenderer + 'static,
-    {
-        self.component_draw_system
-            .register_component_renderer(component_name, renderer);
-    }
-
-    /// Registers a named component painter with the adapter.
-    pub fn register_painter<P>(&self, component_name: impl Into<SharedString>)
+    /// Registers a named component painter with the adapter-owned draw system.
+    pub fn register_component_painter<P>(&self, component_name: impl Into<SharedString>, painter: P)
     where
         P: ComponentPainter + Send + Sync + 'static,
     {
         self.component_draw_system
-            .register_painter::<P>(component_name);
+            .register_component_painter(component_name, painter);
     }
 
     /// Renders a named component through the adapter-owned draw system.
@@ -85,11 +72,11 @@ mod tests {
     use pixui_engine::viewport::Viewport;
 
     #[test]
-    fn register_painter_registers_a_named_component_renderer() {
+    fn register_component_painter_registers_a_named_component_renderer() {
         let engine = Engine::new().unwrap();
         let adapter = WinitAdapter::new(&engine).unwrap();
 
-        adapter.register_painter::<LabelPainter>("Label");
+        adapter.register_component_painter("Label", LabelPainter);
 
         let draw_list = adapter
             .render_component("Label", Viewport::new(320.0, 240.0, 1.0))
@@ -97,7 +84,10 @@ mod tests {
 
         assert!(matches!(
             draw_list.commands.as_slice(),
-            [DrawCommand::DrawText { text, .. }] if text == "Label"
+            [
+                DrawCommand::SelectStyle { .. },
+                DrawCommand::DrawText { text, .. }
+            ] if text == "Label"
         ));
     }
 }

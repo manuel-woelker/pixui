@@ -9,7 +9,6 @@ use pixui_base::RwLock;
 use pixui_base::result::{OptionExt, PixuiResult};
 use pixui_base::shared_string::SharedString;
 use std::collections::HashMap;
-use std::marker::PhantomData;
 use std::sync::Arc;
 
 /// Winit-agnostic component drawing system that maps names to draw-list producers.
@@ -32,13 +31,13 @@ impl ComponentDrawSystem {
             .insert(component_name.into(), Arc::new(renderer));
     }
 
-    /// Registers a named painter by wrapping it in a draw-list renderer.
-    pub fn register_painter<P>(&self, component_name: impl Into<SharedString>)
+    /// Registers a named component painter by wrapping it in a draw-list renderer.
+    pub fn register_component_painter<P>(&self, component_name: impl Into<SharedString>, painter: P)
     where
         P: ComponentPainter + Send + Sync + 'static,
         P::Component: Component,
     {
-        self.register_component_renderer(component_name, PainterRenderer::<P>::default());
+        self.register_component_renderer(component_name, PainterRenderer { painter });
     }
 
     /// Renders a named component for the provided viewport.
@@ -59,15 +58,7 @@ impl ComponentDrawSystem {
 }
 
 struct PainterRenderer<P: ComponentPainter> {
-    marker: PhantomData<fn() -> P>,
-}
-
-impl<P: ComponentPainter> Default for PainterRenderer<P> {
-    fn default() -> Self {
-        Self {
-            marker: PhantomData,
-        }
-    }
+    painter: P,
 }
 
 impl<P> ComponentDrawRenderer for PainterRenderer<P>
@@ -79,7 +70,7 @@ where
         let mut draw_list =
             DrawList::new(DrawBounds::new(0.0, 0.0, viewport.width, viewport.height));
         let mut paint_context = PaintContext::<P::Component>::new(&mut draw_list);
-        P::paint(&mut paint_context)?;
+        self.painter.paint(&mut paint_context)?;
         Ok(draw_list)
     }
 }

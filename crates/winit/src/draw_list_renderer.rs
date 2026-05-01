@@ -9,6 +9,7 @@ use pixui_engine::draw::draw_list::DrawList;
 use pixui_engine::draw::draw_style::DrawStyle;
 use pixui_engine::draw::style_id::StyleId;
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 /// Renders engine draw lists on a femtovg canvas.
 #[derive(Default)]
@@ -117,6 +118,7 @@ fn load_font(canvas: &mut Canvas<OpenGl>, font_family: &str) -> PixuiResult<Font
 fn font_candidates(font_family: &str) -> Vec<String> {
     let family = font_family.to_lowercase();
     let mut candidates = vec![
+        bundled_font_path(font_family),
         format!("/usr/share/fonts/truetype/dejavu/{font_family}.ttf"),
         format!("/usr/share/fonts/truetype/liberation2/{font_family}.ttf"),
         format!("/Library/Fonts/{font_family}.ttf"),
@@ -139,9 +141,17 @@ fn font_candidates(font_family: &str) -> Vec<String> {
     candidates
 }
 
+fn bundled_font_path(font_family: &str) -> String {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../assets/fonts")
+        .join(format!("{font_family}.ttf"))
+        .to_string_lossy()
+        .into_owned()
+}
+
 #[cfg(test)]
 mod tests {
-    use super::current_style;
+    use super::{bundled_font_path, current_style, font_candidates};
     use pixui_engine::draw::brush::Brush;
     use pixui_engine::draw::color::Color;
     use pixui_engine::draw::draw_style::DrawStyle;
@@ -172,5 +182,14 @@ mod tests {
         let error = current_style(&[style()], Some(StyleId::new(3))).unwrap_err();
 
         assert!(error.to_test_string().contains("unknown style id 3"));
+    }
+
+    #[test]
+    fn font_candidates_prefer_the_bundled_repo_font() {
+        let bundled_path = bundled_font_path("DejaVuSans");
+        let candidates = font_candidates("DejaVuSans");
+
+        assert_eq!(candidates[0], bundled_path);
+        assert!(std::path::Path::new(&bundled_path).exists());
     }
 }

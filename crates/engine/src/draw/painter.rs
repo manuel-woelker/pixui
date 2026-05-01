@@ -36,10 +36,10 @@ impl<'a, T: Component> DerefMut for PaintContext<'a, T> {
 }
 
 /// Emits draw commands for a component.
-pub trait ComponentPainter {
+pub trait ComponentPainter: Send + Sync {
     /// Component type painted by this implementation.
     type Component: Component;
 
     /// Appends draw commands for the component to the paint context.
-    fn paint(paint_context: &mut PaintContext<Self::Component>) -> PixuiResult<()>;
+    fn paint(&self, paint_context: &mut PaintContext<Self::Component>) -> PixuiResult<()>;
 }
