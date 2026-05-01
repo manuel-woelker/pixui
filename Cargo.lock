@@ -1625,6 +1625,7 @@ dependencies = [
  "glutin-winit",
  "pixui-base",
  "pixui-engine",
+ "pixui-pal",
  "raw-window-handle",
  "winit",
 ]

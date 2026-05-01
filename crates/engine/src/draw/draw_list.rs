@@ -35,6 +35,19 @@ impl DrawList {
     pub fn push_command(&mut self, command: DrawCommand) {
         self.commands.push(command);
     }
+
+    /// Appends another draw list, remapping its style identifiers into this list.
+    pub fn append(&mut self, other: DrawList) {
+        let style_offset = self.styles.len();
+        self.styles.extend(other.styles);
+        self.commands
+            .extend(other.commands.into_iter().map(|command| match command {
+                DrawCommand::SelectStyle { style_id } => DrawCommand::SelectStyle {
+                    style_id: StyleId::new(style_id.index() + style_offset),
+                },
+                other => other,
+            }));
+    }
 }
 
 #[cfg(test)]
@@ -45,6 +58,7 @@ mod tests {
     use crate::draw::command::DrawCommand;
     use crate::draw::draw_bounds::DrawBounds;
     use crate::draw::draw_style::DrawStyle;
+    use crate::draw::style_id::StyleId;
     use crate::draw::text_style::TextStyle;
 
     #[test]
@@ -81,5 +95,35 @@ mod tests {
         let draw_list = DrawList::new(DrawBounds::new(10.0, 20.0, 300.0, 200.0));
 
         assert_eq!(draw_list.bounds, DrawBounds::new(10.0, 20.0, 300.0, 200.0));
+    }
+
+    #[test]
+    fn append_remaps_style_identifiers() {
+        let mut first = DrawList::new(DrawBounds::new(0.0, 0.0, 100.0, 50.0));
+        first.push_style(DrawStyle {
+            brush: Brush::SolidColor(Color::rgba(10, 20, 30, 255)),
+            width: 1.0,
+            text_style: TextStyle::new("Inter", 12.0),
+        });
+
+        let mut second = DrawList::new(DrawBounds::new(0.0, 0.0, 100.0, 50.0));
+        second.push_style(DrawStyle {
+            brush: Brush::SolidColor(Color::rgba(40, 50, 60, 255)),
+            width: 2.0,
+            text_style: TextStyle::new("Inter", 14.0),
+        });
+        second.push_command(DrawCommand::SelectStyle {
+            style_id: StyleId::new(0),
+        });
+
+        first.append(second);
+
+        assert_eq!(first.styles.len(), 2);
+        assert_eq!(
+            first.commands,
+            vec![DrawCommand::SelectStyle {
+                style_id: StyleId::new(1)
+            }]
+        );
     }
 }

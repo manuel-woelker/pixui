@@ -1,25 +1,36 @@
 use crate::winit_adapter_application::WinitAdapterApplication;
+use pixui_base::file_path::FilePath;
 use pixui_base::result::{PixuiResult, ResultExt};
 use pixui_base::shared_string::SharedString;
+use pixui_base::source_file::SourceFile;
 use pixui_engine::draw::component_draw_system::ComponentDrawSystem;
 use pixui_engine::draw::draw_list::DrawList;
 use pixui_engine::draw::painter::ComponentPainter;
 use pixui_engine::engine::Engine;
 use pixui_engine::viewport::Viewport;
+use pixui_pal::pal::PalHandle;
+use pixui_pal::pal_real::PalReal;
 use winit::event_loop::{ControlFlow, EventLoop};
 
 /// Bridges the engine draw-command API to a native winit window.
 pub struct WinitAdapter {
     component_draw_system: ComponentDrawSystem,
     engine: Engine,
+    pal: PalHandle,
 }
 
 impl WinitAdapter {
     /// Creates a new adapter that can render engine-managed components.
     pub fn new(engine: &Engine) -> PixuiResult<Self> {
+        Self::new_with_pal(engine, PalReal::new_handle()?)
+    }
+
+    /// Creates a new adapter with an explicit platform abstraction.
+    pub fn new_with_pal(engine: &Engine, pal: impl Into<PalHandle>) -> PixuiResult<Self> {
         Ok(Self {
             component_draw_system: ComponentDrawSystem::default(),
             engine: engine.clone(),
+            pal: pal.into(),
         })
     }
 
@@ -30,6 +41,22 @@ impl WinitAdapter {
     {
         self.component_draw_system
             .register_component_painter(component_name, painter);
+    }
+
+    /// Registers a composite component backed by a UI description file.
+    pub fn register_component_description_file(
+        &self,
+        component_name: impl Into<SharedString>,
+        path: impl Into<FilePath>,
+    ) -> PixuiResult<()> {
+        let path = path.into();
+        let source = self
+            .pal
+            .read_file_to_string(&path)
+            .with_context(|| format!("failed to read ui_description file `{path}`"))?;
+        let source_file = SourceFile::new(path, source);
+        self.component_draw_system
+            .register_component_description_source_file(component_name, &source_file)
     }
 
     /// Renders a named component through the adapter-owned draw system.
@@ -70,11 +97,13 @@ mod tests {
     use pixui_engine::draw::command::DrawCommand;
     use pixui_engine::engine::Engine;
     use pixui_engine::viewport::Viewport;
+    use pixui_pal::pal::PalHandle;
+    use pixui_pal::pal_mock::PalMock;
 
     #[test]
     fn register_component_painter_registers_a_named_component_renderer() {
         let engine = Engine::new().unwrap();
-        let adapter = WinitAdapter::new(&engine).unwrap();
+        let adapter = WinitAdapter::new_with_pal(&engine, PalHandle::new(PalMock::new())).unwrap();
 
         adapter.register_component_painter("Label", LabelPainter);
 
@@ -89,5 +118,28 @@ mod tests {
                 DrawCommand::DrawText { text, .. }
             ] if text == "Label"
         ));
+    }
+
+    #[test]
+    fn register_component_description_renders_composite_components() {
+        let engine = Engine::new().unwrap();
+        let pal = PalMock::new();
+        pal.set_file("examples/app.pixui", "<Root><Label /><Header /></Root>");
+        pal.set_file("examples/header.pixui", "<Stack><Label /></Stack>");
+        let adapter = WinitAdapter::new_with_pal(&engine, PalHandle::new(pal)).unwrap();
+
+        adapter.register_component_painter("Label", LabelPainter);
+        adapter
+            .register_component_description_file("App", "examples/app.pixui")
+            .unwrap();
+        adapter
+            .register_component_description_file("Header", "examples/header.pixui")
+            .unwrap();
+
+        let draw_list = adapter
+            .render_component("App", Viewport::new(320.0, 240.0, 1.0))
+            .unwrap();
+
+        assert_eq!(draw_list.commands.len(), 4);
     }
 }

@@ -8,6 +8,10 @@ fn main() -> PixuiResult<()> {
     let winit_adapter = WinitAdapter::new(&engine)?;
 
     winit_adapter.register_component_painter("label", LabelPainter);
-    winit_adapter.create_window("label")?;
+    winit_adapter
+        .register_component_description_file("header", "crates/winit/examples/header.pixui")?;
+    winit_adapter
+        .register_component_description_file("counter", "crates/winit/examples/counter.pixui")?;
+    winit_adapter.create_window("counter")?;
     Ok(())
 }
