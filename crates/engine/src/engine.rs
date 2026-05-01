@@ -43,7 +43,7 @@ impl Engine {
     ///
     /// Multiple handlers can be registered for the same event type. Handlers
     /// are invoked in registration order when matching events are submitted.
-    pub fn register_event_handler<E: 'static, H: EngineEventHandler<Event = E> + 'static>(
+    pub fn register_event_handler<E: 'static, H: EngineEventHandler<E> + 'static>(
         &self,
         handler: H,
     ) -> PixuiResult<()> {
@@ -51,6 +51,18 @@ impl Engine {
             engine.register_event_handler(handler);
             Ok(())
         })
+    }
+
+    /// Registers a closure as an event handler for `E`.
+    pub fn on_event<E: 'static>(
+        &self,
+        handler: impl FnMut(
+            &mut crate::engine_event_context::EngineEventContext<'_, E>,
+        ) -> PixuiResult<()>
+        + Send
+        + 'static,
+    ) -> PixuiResult<()> {
+        self.register_event_handler(handler)
     }
 
     /// Submits `event` to every registered handler for `E`.
@@ -131,13 +143,10 @@ mod tests {
         delta: i32,
     }
 
-    impl EngineEventHandler for RecordingHandler {
-        type Event = TestEvent;
-
+    impl EngineEventHandler<TestEvent> for RecordingHandler {
         fn handle_event(
             &mut self,
-            _application: &mut crate::app::Application,
-            context: &mut EngineEventContext<Self::Event>,
+            context: &mut EngineEventContext<'_, TestEvent>,
         ) -> pixui_base::result::PixuiResult<()> {
             self.seen_values.lock().push(context.event.value);
             context.event.value += self.delta;
@@ -147,13 +156,10 @@ mod tests {
 
     struct FailingHandler;
 
-    impl EngineEventHandler for FailingHandler {
-        type Event = TestEvent;
-
+    impl EngineEventHandler<TestEvent> for FailingHandler {
         fn handle_event(
             &mut self,
-            _application: &mut crate::app::Application,
-            _context: &mut EngineEventContext<Self::Event>,
+            _context: &mut EngineEventContext<'_, TestEvent>,
         ) -> pixui_base::result::PixuiResult<()> {
             Err(err!("handler failed"))
         }
@@ -205,6 +211,23 @@ mod tests {
         engine.submit_event(TestEvent { value: 10 })?;
 
         assert_eq!(*seen_values.lock(), vec![10, 15]);
+        Ok(())
+    }
+
+    #[test]
+    fn register_event_handler_accepts_closures() -> PixuiResult<()> {
+        let engine = Engine::new()?;
+        let seen_values = Arc::new(Mutex::new(Vec::new()));
+        let seen_values_for_handler = Arc::clone(&seen_values);
+
+        engine.on_event::<TestEvent>(move |context| {
+            seen_values_for_handler.lock().push(context.event.value);
+            Ok(())
+        })?;
+
+        engine.submit_event(TestEvent { value: 10 })?;
+
+        assert_eq!(*seen_values.lock(), vec![10]);
         Ok(())
     }
 
