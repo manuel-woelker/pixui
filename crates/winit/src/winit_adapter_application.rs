@@ -1,4 +1,5 @@
 use crate::window_runtime::WindowRuntime;
+use pixui_engine::draw::component_draw_system::ComponentDrawSystem;
 use pixui_engine::engine::Engine;
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalSize;
@@ -9,6 +10,7 @@ use winit::window::WindowId;
 
 /// Winit application wrapper that owns a single adapter window runtime.
 pub struct WinitAdapterApplication {
+    component_draw_system: ComponentDrawSystem,
     component_name: String,
     engine: Engine,
     runtime: Option<WindowRuntime>,
@@ -16,8 +18,13 @@ pub struct WinitAdapterApplication {
 
 impl WinitAdapterApplication {
     /// Creates an application that renders a single named component.
-    pub fn new(engine: Engine, component_name: String) -> Self {
+    pub fn new(
+        component_draw_system: ComponentDrawSystem,
+        engine: Engine,
+        component_name: String,
+    ) -> Self {
         Self {
+            component_draw_system,
             component_name,
             engine,
             runtime: None,
@@ -74,7 +81,11 @@ impl ApplicationHandler for WinitAdapterApplication {
                 }
             }
             WindowEvent::RedrawRequested => {
-                if let Err(error) = runtime.render_component(&self.engine, &self.component_name) {
+                if let Err(error) = runtime.render_component(
+                    &self.component_draw_system,
+                    &self.engine,
+                    &self.component_name,
+                ) {
                     eprintln!("render failed: {error:?}");
                     event_loop.exit();
                 }

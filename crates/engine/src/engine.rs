@@ -1,13 +1,10 @@
 use crate::app::Application;
-use crate::draw::draw_list::DrawList;
 use crate::engine_event_handler::EngineEventHandler;
 use crate::engine_message::EngineMessage;
 use crate::engine_state::EngineState;
-use crate::viewport::Viewport;
 use pixui_base::bail;
 use pixui_base::logging::error;
 use pixui_base::result::{PixuiResult, ResultExt};
-use pixui_base::shared_string::SharedString;
 use std::sync::mpsc;
 use std::sync::mpsc::Receiver;
 use std::sync::mpsc::SyncSender;
@@ -66,36 +63,6 @@ impl Engine {
         + 'static,
     ) -> PixuiResult<()> {
         self.register_event_handler(handler)
-    }
-
-    /// Registers a named component renderer that can produce draw commands.
-    pub fn register_component_renderer<R>(
-        &self,
-        component_name: impl Into<SharedString>,
-        renderer: R,
-    ) -> PixuiResult<()>
-    where
-        R: for<'a, 'b> Fn(&'a Application, &'b Viewport) -> PixuiResult<DrawList> + Send + 'static,
-    {
-        let component_name = component_name.into();
-        self.run(move |engine| {
-            engine
-                .application_mut()
-                .register_component_renderer(component_name, renderer);
-            Ok(())
-        })
-    }
-
-    /// Renders a named component for the provided viewport.
-    pub fn render_component(
-        &self,
-        component_name: impl Into<SharedString>,
-        viewport: Viewport,
-    ) -> PixuiResult<DrawList> {
-        let component_name = component_name.into();
-        self.run_application(move |application| {
-            application.render_component(component_name.as_ref(), &viewport)
-        })
     }
 
     /// Submits `event` to every registered handler for `E`.

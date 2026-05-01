@@ -1,5 +1,6 @@
 use facet::Facet;
 use pixui_base::result::PixuiResult;
+use pixui_engine::app::Application;
 use pixui_engine::draw::brush::Brush;
 use pixui_engine::draw::color::Color;
 use pixui_engine::draw::command::DrawCommand;
@@ -45,13 +46,15 @@ fn main() -> PixuiResult<()> {
         counter.count = counter.count.saturating_add(1);
         Ok(())
     })?;
-    engine.register_component_renderer("CounterApp", move |application, viewport| {
-        let count = application.entity_store().get_entity(count_ref)?.count;
-        Ok(build_counter_draw_list(count, viewport))
-    })?;
-    engine.submit_event(IncrementCount)?;
-
     let winit_adapter = WinitAdapter::new(&engine)?;
+    winit_adapter.register_component_renderer(
+        "CounterApp",
+        move |application: &Application, viewport: &Viewport| {
+            let count = application.entity_store().get_entity(count_ref)?.count;
+            Ok(build_counter_draw_list(count, viewport))
+        },
+    );
+    engine.submit_event(IncrementCount)?;
     winit_adapter.create_window("CounterApp")?;
     Ok(())
 }

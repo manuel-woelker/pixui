@@ -1,9 +1,12 @@
 pub mod brush;
 pub mod color;
 pub mod command;
+pub mod component_draw_renderer;
+pub mod component_draw_system;
 pub mod draw_bounds;
 pub mod draw_list;
 pub mod draw_style;
+pub mod painter;
 pub mod style_id;
 pub mod svg_renderer;
 pub mod text_style;

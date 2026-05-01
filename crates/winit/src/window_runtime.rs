@@ -11,6 +11,7 @@ use glutin::surface::{Surface, SurfaceAttributesBuilder, SwapInterval, WindowSur
 use glutin_winit::DisplayBuilder;
 use pixui_base::err;
 use pixui_base::result::{OptionExt, PixuiResult, ResultExt};
+use pixui_engine::draw::component_draw_system::ComponentDrawSystem;
 use pixui_engine::engine::Engine;
 use pixui_engine::viewport::Viewport;
 use raw_window_handle::HasWindowHandle;
@@ -84,7 +85,12 @@ impl WindowRuntime {
     }
 
     /// Renders the named component into the current window.
-    pub fn render_component(&mut self, engine: &Engine, component_name: &str) -> PixuiResult<()> {
+    pub fn render_component(
+        &mut self,
+        component_draw_system: &ComponentDrawSystem,
+        engine: &Engine,
+        component_name: &str,
+    ) -> PixuiResult<()> {
         let size = self.window.inner_size();
         if size.width == 0 || size.height == 0 {
             return Ok(());
@@ -95,13 +101,18 @@ impl WindowRuntime {
             size.height as f32,
             self.window.scale_factor() as f32,
         );
-        let draw_list = engine.render_component(component_name.to_string(), viewport)?;
+        let draw_system = component_draw_system.clone();
+        let component_name = component_name.to_string();
+        let component_name_for_error = component_name.clone();
+        let draw_list = engine.run_application(move |application| {
+            draw_system.render_component(application, &component_name, &viewport)
+        })?;
 
         self.canvas
             .clear_rect(0, 0, size.width, size.height, Color::rgb(15, 18, 26));
         self.draw_list_renderer
             .render(&mut self.canvas, &draw_list)
-            .with_context(|| format!("failed to render component {component_name}"))?;
+            .with_context(|| format!("failed to render component {component_name_for_error}"))?;
         self.canvas.flush();
         self.surface
             .swap_buffers(&self.context)
