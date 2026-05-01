@@ -114,17 +114,17 @@ If extra types are needed for window state, renderer state, or adapter commands,
 
 # How will progress be tracked?
 
-- [ ] Add a `WinitAdapter` public entry point in `crates/winit/src` and expose it from `lib.rs`.
-- [ ] Extract reusable `winit`/`glutin`/`femtovg` window bootstrap code from the standalone example into adapter-owned modules.
-- [ ] Add a `DrawList` renderer in `crates/winit` for the existing engine draw-command set.
-- [ ] Add tests for draw-command rendering helpers where they can be verified without driving a full interactive window.
-- [ ] Add or expose an engine API that resolves a component name into a `DrawList` for a given viewport.
-- [ ] Keep the component-name-to-renderable-content mapping explicit instead of hiding string lookups inside the adapter.
-- [ ] Implement `WinitAdapter::create_window` so it creates a window using the requested component name.
-- [ ] Render the component content on redraw using engine draw commands executed through the adapter renderer.
-- [ ] Update `crates/winit/examples/counter.rs` to use the implemented adapter API end-to-end.
-- [ ] Run focused tests for `pixui-engine` and `pixui-winit`.
-- [ ] Run `nao check`.
+- [x] Add a `WinitAdapter` public entry point in `crates/winit/src` and expose it from `lib.rs`.
+- [x] Extract reusable `winit`/`glutin`/`femtovg` window bootstrap code from the standalone example into adapter-owned modules.
+- [x] Add a `DrawList` renderer in `crates/winit` for the existing engine draw-command set.
+- [x] Add tests for draw-command rendering helpers where they can be verified without driving a full interactive window.
+- [x] Add or expose an engine API that resolves a component name into a `DrawList` for a given viewport.
+- [x] Keep the component-name-to-renderable-content mapping explicit instead of hiding string lookups inside the adapter.
+- [x] Implement `WinitAdapter::create_window` so it creates a window using the requested component name.
+- [x] Render the component content on redraw using engine draw commands executed through the adapter renderer.
+- [x] Update `crates/winit/examples/counter.rs` to use the implemented adapter API end-to-end.
+- [x] Run focused tests for `pixui-engine` and `pixui-winit`.
+- [x] Run `nao check`.
 
 # How should the work be verified?
 
@@ -137,7 +137,7 @@ Recommended verification:
 - compile `crates/winit/examples/counter.rs` against the real adapter
 - run `nao check`
 
-Concrete commands should likely include:
+Completed verification:
 
 - `cargo test -p pixui-engine`
 - `cargo test -p pixui-winit`
@@ -146,15 +146,14 @@ Concrete commands should likely include:
 
 # What assumptions and risks should stay explicit?
 
-- The biggest missing piece today is not window creation but component rendering: the engine does not yet appear to expose a complete string-name-to-`DrawList` path.
+- The implementation now uses an explicit engine-side named component renderer registry that maps a component name to a `DrawList` closure.
 - Interactive `winit` behavior is harder to test than pure engine code. Keep logic that can be unit tested outside the live event loop.
 - The standalone `counter_winit_only.rs` example is a good bootstrap reference, but copying it wholesale into the adapter would be overengineered junk debt almost immediately.
-- Font loading and text rendering details may need pragmatic defaults in the first slice. Those defaults should be documented rather than hidden.
+- Font loading and text rendering currently use pragmatic path-based fallback lookup in the `winit` renderer. That is good enough for this first slice, but it is still a follow-up hotspot if the project wants deterministic font assets.
 - This plan assumes a single-window first slice. If multi-window support is needed soon, the runtime state should still be structured so it can grow into that later.
 
-# What open questions need answers during implementation?
+# What follow-up questions remain after implementation?
 
-- Where should component-name registration live: entirely in `engine`, partly in `winit`, or behind a dedicated adapter-facing registry?
-- What engine API should produce the `DrawList`: a direct render function, a component instance API, or some future scene/layout abstraction?
-- Should `create_window("CounterApp")` also start the event loop immediately, or should adapter construction and event-loop execution be separate operations?
-- What viewport or layout inputs are required to render a component correctly once a real window size is known?
+- Should the named component renderer registry stay as the long-term engine abstraction, or should it later be replaced by a richer component/scene runtime?
+- Should `create_window("CounterApp")` keep owning the event loop directly, or should adapter construction and event-loop execution be split once multi-window or embedding scenarios matter?
+- Should font loading move to bundled assets or an engine-managed font registry so text rendering becomes deterministic across machines?
