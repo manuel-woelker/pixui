@@ -17,6 +17,11 @@ pub type RefMethodInvoker =
 pub type MutMethodInvoker =
     dyn for<'a> Fn(&'a mut dyn Any, &[&dyn Any]) -> PixuiResult<DynamicObject<'a>> + Send + Sync;
 
+/// Typed adapter for methods returning owned values with mutable receiver access.
+pub type TypedMethodInvoker<T> = fn(&mut T, &[&dyn Any]) -> PixuiResult<Box<dyn Any>>;
+/// Typed adapter for methods returning owned values with shared receiver access.
+pub type TypedSharedMethodInvoker<T> = fn(&T, &[&dyn Any]) -> PixuiResult<Box<dyn Any>>;
+
 pub(super) enum Invocation {
     Owned(Box<MethodInvoker>),
     SharedOwned(Box<SharedMethodInvoker>),
@@ -34,11 +39,7 @@ pub struct Method {
 
 impl Method {
     /// Erases a typed method adapter. Validate arguments before mutation.
-    pub fn new<T: Any>(
-        name: &'static str,
-        arity: usize,
-        invoke: fn(&mut T, &[&dyn Any]) -> PixuiResult<Box<dyn Any>>,
-    ) -> Self {
+    pub fn new<T: Any>(name: &'static str, arity: usize, invoke: TypedMethodInvoker<T>) -> Self {
         Self {
             name,
             arity,
@@ -55,7 +56,7 @@ impl Method {
     pub fn shared<T: Any>(
         name: &'static str,
         arity: usize,
-        invoke: fn(&T, &[&dyn Any]) -> PixuiResult<Box<dyn Any>>,
+        invoke: TypedSharedMethodInvoker<T>,
     ) -> Self {
         Self {
             name,

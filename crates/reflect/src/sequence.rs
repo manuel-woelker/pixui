@@ -39,7 +39,7 @@ fn cached<T: ?Sized + 'static>(build: impl FnOnce() -> TypeDescriptor) -> &'stat
         .get_or_init(|| Mutex::new(HashMap::new()))
         .lock()
         .expect("descriptor cache poisoned");
-    *cache
+    cache
         .entry(TypeId::of::<T>())
         .or_insert_with(|| Box::leak(Box::new(build())))
 }

@@ -307,7 +307,7 @@ fn heterogeneous_objects_share_a_single_non_generic_api() {
     static COUNTER: OnceLock<TypeDescriptor> = OnceLock::new();
     let label_descriptor =
         LABEL.get_or_init(|| type_descriptor!(Label, fields: [name], methods: []).unwrap());
-    let objects = vec![
+    let objects = [
         DynamicObject::new(
             Counter {
                 name: "counter".into(),
