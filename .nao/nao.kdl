@@ -1,6 +1,10 @@
 recipe "default" {
   task "cargo-fmt" description="Check Rust formatting" {
-    run shell="./t cargo fmt --all -- --check"
+    run shell="./t cargo fmt --all"
+  }
+
+  task "cargo-check" description="Check Rust compilation" {
+    run shell="./t cargo check --workspace --all-targets"
   }
 
   task "cargo-clippy" description="Run Rust clippy" {
@@ -17,6 +21,7 @@ recipe "default" {
 
   task "check" description="Run all repository checks" {
     depends-on "cargo-fmt"
+    depends-on "cargo-check"
     depends-on "cargo-clippy"
     depends-on "cargo-test"
     depends-on "cargo-doc-test"

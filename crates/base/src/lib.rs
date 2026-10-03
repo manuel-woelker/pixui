@@ -1,6 +1,9 @@
-//! Shared string, error, and result types for pixui.
+//! Shared arena, string, error, and result types for pixui.
 
+mod arena;
 mod error;
+
+pub use arena::{Arena, Key};
 
 pub use error::{BoxedError, MessageError, PixuiError, PixuiResult, message, report};
 pub use hipstr::HipStr;

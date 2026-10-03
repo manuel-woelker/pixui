@@ -2,10 +2,11 @@
 name = "pixui-base"
 version.workspace = true
 edition.workspace = true
-description = "Shared string, error, and result types for pixui"
+description = "Shared arena, string, error, and result types for pixui"
 license = "MIT"
 publish = false
 
 [dependencies]
 error-stack = "0.8"
 hipstr = { version = "0.8", features = ["serde"] }
+tracing = { version = "0.1", default-features = false, features = ["std"] }

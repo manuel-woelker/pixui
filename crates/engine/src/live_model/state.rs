@@ -1,4 +1,3 @@
-
 /*
 pub struct LiveState {
     part_states: Vec<PartState>,
@@ -10,9 +9,9 @@ pub enum PartState {
 }
 
  */
-use std::any::Any;
 use crate::live_model::component::Component;
+use std::any::Any;
 
 pub struct GenericComponentState {
-    state: Box<dyn Any>
+    state: Box<dyn Any>,
 }

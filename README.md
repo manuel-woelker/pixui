@@ -11,13 +11,20 @@ and method invocation; see its [API and assumptions](crates/reflect/README.md).
 `pixui_error!`, `pixui_result!`, and `pixui_bail!` macros. These are adapted
 from Joi's `joi-base` and `joi-error` libraries.
 
+The base crate also provides a typed `Arena<T>` and an eight-byte `Key<T>`
+containing a slot index, arena identity, and generation. See its
+[arena documentation](crates/base/README.md) for usage and limits.
+
 ## Development
 
 Run commands from the repository root:
 
+Always run `./n check` after completing each unit of work. It runs Rust
+formatting, compilation checks, clippy, nextest, and documentation tests.
+
 ```bash
 ./n --list                            # List available tasks
-./n check                             # Formatting, clippy, tests, and doc tests
+./n check                             # Formatting, compilation, clippy, and tests
 ./n ci                                # Run the same checks for CI
 ./t cargo build --workspace            # Build all crates
 ./t cargo-nextest nextest run -p pixui-engine # Test the engine

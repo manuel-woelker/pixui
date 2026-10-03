@@ -163,6 +163,7 @@ version = "0.1.0"
 dependencies = [
  "error-stack",
  "hipstr",
+ "tracing",
 ]
 
 [[package]]
