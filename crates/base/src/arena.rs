@@ -306,7 +306,7 @@ impl<T> Arena<T> {
 }
 
 fn allocate_id(next: &AtomicU32) -> Option<u16> {
-    next.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |id| {
+    next.try_update(Ordering::Relaxed, Ordering::Relaxed, |id| {
         (id <= u32::from(u16::MAX)).then_some(id + 1)
     })
     .ok()

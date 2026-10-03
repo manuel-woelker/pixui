@@ -1,6 +1,6 @@
 sha512sums{
 "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-0.9.144/cargo-nextest-0.9.144-x86_64-unknown-linux-gnu.tar.gz" "ba5a10e0f418041ff1fe662bd6645c4db3cc30f87a6e4d005493b7aaab8238de626bca189fdbd981face690b08a699faae345b3f127c116b9c0b72b1886d4d81"
 "https://github.com/manuel-woelker/nao/releases/download/v0.1.7/nao-v0.1.7-x86_64-unknown-linux-musl.tar.gz" "454640c6621615d8ee642b8004b132303144d0595b84e035794c66e1d40a2aa0db04bf3cd84c1e54c1b60ba596b7640eb09dc8bf444b072c5879b4da6055cfbf"
-"https://static.rust-lang.org/dist/rust-1.98.1-x86_64-unknown-linux-gnu.tar.gz" "9a3d49b1749a7cb829189ec314c3280671e32a15cdbc49705c4271e229d2463843a917cdbe7fed4e85b977a8429ff7292c0c11fded481aad8d8a0a38ea434ec7"
+"https://static.rust-lang.org/dist/rust-1.99.0-x86_64-unknown-linux-gnu.tar.gz" "d6ed0431db18885cd10f344dcd285d521c182baf18edf975ab3de8d88c7813cdfcd5fdb573c3fd5dfb349ef48450453b2387169faf3cd63d53cc29f83a3291dc"
 "https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz" "7883953b20974c487318a134d826bf87e76e9c80f9be1aebf63a0cf362c7e03291842ed3acff61b1892efa85dc72ef37bd60da301f266675c47623e4808a4895"
 }

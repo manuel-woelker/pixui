@@ -8,7 +8,7 @@ recipe "default" {
   }
 
   task "cargo-clippy" description="Run Rust clippy" {
-    run shell="./t cargo clippy --workspace --all-targets -- -D warnings"
+    run shell="./t clippy clippy --workspace --all-targets -- -D warnings"
   }
 
   task "cargo-test" description="Run Rust tests" {

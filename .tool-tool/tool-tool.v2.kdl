@@ -38,7 +38,7 @@ tools {
 			ZIG_LOCAL_CACHE_DIR "${base_path}/.cache/zig/local"
 		}
 	}
-	rust "1.98.1" {
+	rust "1.99.0" {
 		download {
 			linux "https://static.rust-lang.org/dist/rust-${version}-x86_64-unknown-linux-gnu.tar.gz"
 		}
