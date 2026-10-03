@@ -35,3 +35,9 @@ sha256sum, and archive extraction tools. No Node or JavaScript tooling is used.
 
 Tests run through nextest and fail if no tests are discovered. Documentation
 tests run separately through Cargo because nextest does not run them.
+
+## Decision records
+
+Significant technical and product decisions are recorded in
+[`docs/decisions`](docs/decisions). See [DR-000](docs/decisions/DR-000.md)
+for the required format and conventions.
