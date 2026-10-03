@@ -164,7 +164,7 @@ fn fresh_ident(signature: &syn::Signature, prefix: &str) -> syn::Ident {
     format_ident!("{name}")
 }
 
-fn arena_element(ty: &Type) -> syn::Result<Option<&Type>> {
+pub(super) fn arena_element(ty: &Type) -> syn::Result<Option<&Type>> {
     let Type::Path(path) = ty else {
         return Ok(None);
     };

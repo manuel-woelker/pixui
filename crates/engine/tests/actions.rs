@@ -42,7 +42,7 @@ fn dispatches_without_collection_injection_and_avoids_parameter_name_collisions(
     let id = slice.id();
     let key: Key<i32> = slice.collection_mut::<i32>("numbers").unwrap().insert(1);
     let mut application = Application::default();
-    application.slices.push(slice);
+    application.add_slice(slice).unwrap();
     let reference = application.object_ref(id, "numbers", key).unwrap();
     let call = application
         .action_call(
@@ -115,7 +115,7 @@ fn rejects_keys_from_another_collection_and_checks_object_type() {
         .unwrap()
         .insert("text".into());
     let mut application = Application::default();
-    application.slices.push(slice);
+    application.add_slice(slice).unwrap();
     assert!(application.object_ref(id, "other", key).is_err());
     assert!(application.object_ref(id, "strings", key).is_err());
     assert!(application.object_ref(id, "missing", key).is_err());

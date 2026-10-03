@@ -21,10 +21,10 @@ fn slices_hold_collections_with_different_homogeneous_item_types() {
     slice.add_collection(records).unwrap();
     slice.add_collection(labels).unwrap();
     let mut application = Application::default();
-    application.slices.push(slice);
+    application.add_slice(slice).unwrap();
 
-    let collections = application.slices[0].collections();
-    assert_eq!(application.slices[0].name, "main");
+    let collections = application.slices()[0].collections();
+    assert_eq!(application.slices()[0].name(), "main");
     assert_eq!(collections[0].name(), "records");
     assert_eq!(
         collections[0]

@@ -5,6 +5,7 @@ use quote::{format_ident, quote};
 use syn::{Fields, FnArg, ImplItem, Item, ItemMod, Type, spanned::Spanned};
 
 mod action_macro;
+mod slice_actions_macro;
 
 /// Generates an owned request schema and a dispatch adapter for an action function.
 /// Mutable arenas are injected by argument name; mutable items become ObjectRef fields.
@@ -17,6 +18,17 @@ pub fn action(attribute: TokenStream, input: TokenStream) -> TokenStream {
     }
     let function = syn::parse_macro_input!(input as syn::ItemFn);
     match action_macro::expand(function) {
+        Ok(output) => output.into(),
+        Err(error) => error.into_compile_error().into(),
+    }
+}
+
+/// Generates a typed, cloneable action facade for an inline slice module.
+#[proc_macro_attribute]
+pub fn slice_actions(attribute: TokenStream, input: TokenStream) -> TokenStream {
+    let options = syn::parse_macro_input!(attribute as slice_actions_macro::Options);
+    let module = syn::parse_macro_input!(input as ItemMod);
+    match slice_actions_macro::expand(options, module) {
         Ok(output) => output.into(),
         Err(error) => error.into_compile_error().into(),
     }

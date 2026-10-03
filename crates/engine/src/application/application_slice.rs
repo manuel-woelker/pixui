@@ -18,7 +18,7 @@ pub struct SliceId(u64);
 /// Registration is append-only: bindings cannot be invalidated by replacement,
 /// removal, or renaming. Multiple collections may contain the same item type.
 pub struct ApplicationSlice {
-    pub name: PixuiString,
+    name: PixuiString,
     id: SliceId,
     collections: Vec<Collection>,
     actions: Vec<&'static ActionDescriptor>,
@@ -37,6 +37,11 @@ impl ApplicationSlice {
             collections: vec![],
             actions: vec![],
         }
+    }
+
+    /// Immutable name used for facade binding.
+    pub fn name(&self) -> &str {
+        &self.name
     }
 
     pub fn id(&self) -> SliceId {
@@ -101,6 +106,13 @@ impl ApplicationSlice {
         &mut self,
         action: &'static ActionDescriptor,
     ) -> PixuiResult<ActionIndex> {
+        self.validate_action(action)?;
+        let index = ActionIndex(self.actions.len());
+        self.actions.push(action);
+        Ok(index)
+    }
+
+    fn validate_action(&self, action: &ActionDescriptor) -> PixuiResult<()> {
         if action.name().is_empty()
             || self
                 .actions
@@ -123,9 +135,37 @@ impl ApplicationSlice {
                 ));
             }
         }
-        let index = ActionIndex(self.actions.len());
-        self.actions.push(action);
-        Ok(index)
+        Ok(())
+    }
+
+    /// Registers a batch atomically, validating all collection bindings and names first.
+    pub fn register_actions(&mut self, actions: &[&'static ActionDescriptor]) -> PixuiResult<()> {
+        for (index, action) in actions.iter().enumerate() {
+            self.validate_action(action)?;
+            if actions[..index]
+                .iter()
+                .any(|other| other.name() == action.name())
+            {
+                return Err(pixui_error!("duplicate action name `{}`", action.name()));
+            }
+        }
+        self.actions.extend_from_slice(actions);
+        Ok(())
+    }
+
+    /// Verifies the exact handler descriptor, rather than trusting a matching action name.
+    pub fn action_handle_checked(
+        &self,
+        expected: &'static ActionDescriptor,
+    ) -> PixuiResult<ActionHandle> {
+        let handle = self.action_handle_named(expected.name())?;
+        if !std::ptr::eq(handle.descriptor(), expected) {
+            return Err(pixui_error!(
+                "action `{}` has a different descriptor",
+                expected.name()
+            ));
+        }
+        Ok(handle)
     }
 
     /// Resolves an exact, case-sensitive action name.

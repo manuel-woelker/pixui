@@ -1,3 +1,4 @@
+use super::actions::*;
 use super::*;
 use pixui_engine::application::{
     action::{ActionCall, ActionIndex},
@@ -9,7 +10,7 @@ use pixui_engine::application::app::Application;
 
 fn create_application() -> PixuiResult<Application> {
     let mut application = Application::default();
-    application.slices.push(create_slice()?);
+    application.add_slice(create_slice()?)?;
     Ok(application)
 }
 
@@ -27,7 +28,7 @@ fn add(application: &mut Application, slice: SliceId, title: &str) -> Key<TodoIt
 #[test]
 fn discovers_constructs_and_dispatches_owned_requests() {
     let mut application = create_application().unwrap();
-    let slice = application.slices[0].id();
+    let slice = application.slices()[0].id();
     let action = application
         .slice(slice)
         .unwrap()
@@ -121,11 +122,9 @@ fn registration_requires_named_collection_with_correct_type() {
 #[test]
 fn parameter_name_disambiguates_collections_with_same_item_type() {
     let mut application = create_application().unwrap();
-    let slice = application.slices[0].id();
+    let slice = application.slices()[0].id();
     application
-        .slice_mut(slice)
-        .unwrap()
-        .add_collection(Collection::new::<TodoItem>("archived"))
+        .add_collection(slice, Collection::new::<TodoItem>("archived"))
         .unwrap();
     add(&mut application, slice, "task");
     assert_eq!(
@@ -154,7 +153,7 @@ fn parameter_name_disambiguates_collections_with_same_item_type() {
 #[test]
 fn invalid_requests_and_titles_do_not_mutate_the_collection() {
     let mut application = create_application().unwrap();
-    let slice = application.slices[0].id();
+    let slice = application.slices()[0].id();
     assert!(application.action_call(slice, "add_todo", vec![]).is_err());
     assert!(
         application
@@ -209,14 +208,14 @@ fn invalid_requests_and_titles_do_not_mutate_the_collection() {
 #[test]
 fn stale_foreign_and_removed_slice_references_are_rejected() {
     let mut application = create_application().unwrap();
-    let slice = application.slices[0].id();
+    let slice = application.slices()[0].id();
     let key = add(&mut application, slice, "task");
     let reference = application.object_ref(slice, "todos", key).unwrap();
     let call = application
         .action_call(slice, "mark_done", vec![Box::new(reference)])
         .unwrap();
     let mut other = create_application().unwrap();
-    let other_slice = other.slices[0].id();
+    let other_slice = other.slices()[0].id();
     assert!(other.resolve_mut(reference).is_err());
     assert!(other.object_ref(other_slice, "todos", key).is_err());
     application
@@ -230,7 +229,7 @@ fn stale_foreign_and_removed_slice_references_are_rejected() {
     let call = application
         .action_call(slice, "mark_done", vec![Box::new(reference)])
         .unwrap();
-    application.slices.clear();
+    application.remove_slice(slice).unwrap();
     assert!(application.dispatch(call).is_err());
     assert!(application.resolve_mut(reference).is_err());
 }
@@ -238,14 +237,16 @@ fn stale_foreign_and_removed_slice_references_are_rejected() {
 #[test]
 fn handles_and_calls_survive_slice_reordering() {
     let mut application = create_application().unwrap();
-    let slice = application.slices[0].id();
+    let slice = application.slices()[0].id();
     let key = add(&mut application, slice, "task");
     let reference = application.object_ref(slice, "todos", key).unwrap();
     let call = application
         .action_call(slice, "mark_done", vec![Box::new(reference)])
         .unwrap();
-    application.slices.push(ApplicationSlice::new("other"));
-    application.slices.swap(0, 1);
+    let other = application
+        .add_slice(ApplicationSlice::new("other"))
+        .unwrap();
+    application.swap_slices(slice, other).unwrap();
     application.dispatch(call).unwrap();
     assert!(application.resolve_mut(reference).unwrap().completed);
     assert!(

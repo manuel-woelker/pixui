@@ -14,7 +14,7 @@ use super::{
 /// `Default` creates bare state for adapters and tests that need direct access.
 #[derive(Default)]
 pub struct Application {
-    pub slices: Vec<ApplicationSlice>,
+    slices: Vec<ApplicationSlice>,
 }
 
 impl Application {
@@ -34,6 +34,65 @@ impl Application {
         ApplicationHandle::start(capacity)
     }
 
+    /// Slices have unique, nonempty, immutable names.
+    pub fn slices(&self) -> &[ApplicationSlice] {
+        &self.slices
+    }
+
+    /// Adds a slice without changing state on an empty or duplicate name.
+    pub fn add_slice(&mut self, slice: ApplicationSlice) -> PixuiResult<SliceId> {
+        if slice.name().is_empty() || self.slices.iter().any(|other| other.name() == slice.name()) {
+            return Err(pixui_error!(
+                "empty or duplicate slice name `{}`",
+                slice.name()
+            ));
+        }
+        let id = slice.id();
+        self.slices.push(slice);
+        Ok(id)
+    }
+
+    /// Resolves an exact, case-sensitive slice name.
+    pub fn slice_named(&self, name: &str) -> PixuiResult<&ApplicationSlice> {
+        self.slices
+            .iter()
+            .find(|slice| slice.name() == name)
+            .ok_or_else(|| pixui_error!("unknown slice `{name}`"))
+    }
+
+    /// Removes a slice; existing calls and object references then fail at dispatch.
+    pub fn remove_slice(&mut self, id: SliceId) -> PixuiResult<ApplicationSlice> {
+        let index = self
+            .slices
+            .iter()
+            .position(|slice| slice.id() == id)
+            .ok_or_else(|| pixui_error!("unknown slice"))?;
+        Ok(self.slices.remove(index))
+    }
+
+    /// Reorders slices without changing identities or names.
+    pub fn swap_slices(&mut self, first: SliceId, second: SliceId) -> PixuiResult<()> {
+        let position = |id| {
+            self.slices
+                .iter()
+                .position(|slice| slice.id() == id)
+                .ok_or_else(|| pixui_error!("unknown slice"))
+        };
+        let first = position(first)?;
+        let second = position(second)?;
+        self.slices.swap(first, second);
+        Ok(())
+    }
+
+    /// Adds a collection while preserving slice identity and naming invariants.
+    pub fn add_collection(
+        &mut self,
+        slice: SliceId,
+        collection: super::collection::Collection,
+    ) -> PixuiResult<()> {
+        self.slice_mut(slice)?.add_collection(collection)
+    }
+
     pub fn slice(&self, id: SliceId) -> PixuiResult<&ApplicationSlice> {
         self.slices
             .iter()
@@ -41,7 +100,7 @@ impl Application {
             .ok_or_else(|| pixui_error!("unknown slice"))
     }
 
-    pub fn slice_mut(&mut self, id: SliceId) -> PixuiResult<&mut ApplicationSlice> {
+    fn slice_mut(&mut self, id: SliceId) -> PixuiResult<&mut ApplicationSlice> {
         self.slices
             .iter_mut()
             .find(|slice| slice.id() == id)

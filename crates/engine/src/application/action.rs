@@ -8,7 +8,7 @@ use pixui_reflect::{Reflect, TypeDescriptor};
 
 use super::{app::Application, application_slice::SliceId};
 
-pub use pixui_reflect_macros::action;
+pub use pixui_reflect_macros::{action, slice_actions};
 
 /// An injected collection selected by the handler parameter's name.
 /// Registration checks both the name and concrete item type.

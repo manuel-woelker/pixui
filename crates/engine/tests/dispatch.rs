@@ -111,7 +111,7 @@ fn construction_starts_worker_and_cloned_handles_register_slices() {
         .unwrap();
     assert_eq!(
         application
-            .inspect(move |state| Ok(state.slice(id)?.name.to_string()))
+            .inspect(move |state| Ok(state.slice(id)?.name().to_string()))
             .unwrap(),
         "new"
     );
@@ -138,7 +138,7 @@ fn last_handle_drop_stops_worker_and_drops_application_state() {
         .insert(DropSignal(dropped));
     application.add_slice(slice).unwrap();
     drop(application);
-    clone.inspect(|state| Ok(state.slices.len())).unwrap();
+    clone.inspect(|state| Ok(state.slices().len())).unwrap();
     assert!(notification.try_recv().is_err());
     drop(clone);
     notification

@@ -191,3 +191,74 @@ use canonical `pixui_engine` and `pixui_reflect` dependency names.
 `Application::default` creates bare state without starting a worker, for direct
 adapter tests and advanced integrations. The primary API is `Application::new`
 and its sender-only handle.
+
+## Generated slice facades
+
+Use an inline module to collect ordinary action functions and generate a typed
+client facade. The macro is available alongside `action` in
+`pixui_engine::application::action`. Consumers need the `pixui_base`,
+`pixui_engine`, and `pixui_reflect` crate names, as with standalone actions.
+
+```rust
+use pixui_base::Key;
+use pixui_engine::application::{
+    action::slice_actions, app::Application,
+    application_slice::ApplicationSlice, collection::Collection,
+};
+
+#[slice_actions(slice = "notes", facade = NoteActions)]
+mod actions {
+    use pixui_base::{Arena, Key};
+
+    /// Adds a note to the injected notes collection.
+    #[action]
+    pub fn add(notes: &mut Arena<String>, title: String) -> Key<String> {
+        notes.insert(title)
+    }
+}
+
+let mut slice = ApplicationSlice::new("notes");
+slice.add_collection(Collection::new::<String>("notes"))?;
+actions::NoteActions::register(&mut slice)?;
+let application = Application::new();
+application.add_slice(slice)?;
+let actions = actions::NoteActions::bind(&application)?;
+let key: Key<String> = actions.add("A note")?;
+# Ok::<(), pixui_base::PixuiError>(())
+```
+
+The facade is generated **inside the annotated module**, with a public method for
+each `#[action]` function. Other module items remain ordinary Rust items.
+Registration discovers enabled actions automatically and validates the whole
+batch before adding any action. Configure collections first.
+
+`bind` uses the attribute's exact slice name; application slice names must be
+nonempty, unique, and immutable. `bind_to` accepts a `SliceId` to use another
+instance of the same actions. Both check all exact handler descriptors in one
+worker round trip, then cache their indices. A matching action name alone is
+insufficient: binding to a different handler returns an error.
+
+Generated parameters follow the request schema:
+
+- `&mut Arena<T>` is injected and omitted.
+- `&mut T` becomes an owned `ObjectRef<T>`; resolve it with the application's
+  `object_ref` method and the facade's `slice_id()`.
+- Owned `String` becomes `impl Into<String>`, accepting string literals,
+  owned strings, and custom conversions. Qualified `std::string::String` works;
+  type aliases retain their original parameter type.
+- Other owned parameters retain their concrete types.
+
+Calls construct the generated typed request locally, enqueue it through the
+bounded channel, and wait for completion. They return `PixuiResult<T>` for an
+owned output `T`, `PixuiResult<()>` for no output, and flatten a handler's
+syntactically named `PixuiResult<T>`. Other result types are ordinary outputs.
+Handler errors and worker failures propagate. No reflective field vector or name
+lookup is needed per call.
+
+Facades can be cloned and called from multiple threads. A facade retains a
+sender, keeping its worker alive. Calls are synchronous and may wait for queue
+capacity; never call them from that application's worker, including an inspect
+callback. Existing standalone action restrictions still apply, including at
+most one mutable argument. The method names `bind`, `bind_to`, `bind_target`,
+`register`, and `slice_id` are reserved. Conditional compilation attributes
+on action functions also apply to their generated facade members.

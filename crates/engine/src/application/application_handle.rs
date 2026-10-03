@@ -43,12 +43,8 @@ impl ApplicationHandle {
     /// Transfers a configured slice to the worker and waits for registration.
     /// The returned identity is stable and can be retained by every caller.
     pub fn add_slice(&self, slice: ApplicationSlice) -> PixuiResult<SliceId> {
-        self.request(move |application| {
-            let id = slice.id();
-            application.slices.push(slice);
-            Ok(id)
-        })?
-        .wait()
+        self.request(move |application| application.add_slice(slice))?
+            .wait()
     }
 
     /// Resolves an action through one worker round trip. Cache the returned handle

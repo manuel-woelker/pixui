@@ -1,27 +1,19 @@
 mod todo;
 
-use pixui_base::{Key, PixuiResult, pixui_error};
+use pixui_base::{PixuiResult, pixui_error};
 use pixui_engine::application::app::Application;
-use todo::{TodoItem, create_slice};
+use todo::{TodoItem, actions::TodoActions, create_slice};
 
 fn main() -> PixuiResult<()> {
     let application = Application::new();
-    let todo_slice = create_slice()?;
-    let add_todo = todo_slice.action_handle_named("add_todo")?;
-    let mark_done = todo_slice.action_handle_named("mark_done")?;
-    let slice = application.add_slice(todo_slice)?;
-    let call = add_todo.call(vec![Box::new(String::from("Create a todo application"))])?;
-    let key = *application
-        .dispatch(call)?
-        .wait()?
-        .downcast::<Key<TodoItem>>()
-        .expect("add_todo returns a todo key");
+    application.add_slice(create_slice()?)?;
+    let actions = TodoActions::bind(&application)?;
+    let slice = actions.slice_id();
+    let key = actions.add_todo("Create a todo application")?;
     let todo = application.object_ref(slice, "todos", key)?;
-    let mark_done_call = mark_done.call(vec![Box::new(todo)])?;
-    let caller_handle = application.clone();
-    let caller = std::thread::spawn(move || caller_handle.dispatch(mark_done_call)?.wait());
-    let call = add_todo.call(vec![Box::new(String::from("Add another task"))])?;
-    application.dispatch(call)?.wait()?;
+    let caller_actions = actions.clone();
+    let caller = std::thread::spawn(move || caller_actions.mark_done(todo));
+    actions.add_todo("Add another task")?;
     caller
         .join()
         .map_err(|_| pixui_error!("todo caller panicked"))??;
