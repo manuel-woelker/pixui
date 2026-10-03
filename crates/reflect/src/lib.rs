@@ -1,9 +1,11 @@
 #![doc = include_str!("../README.md")]
 
+pub mod construction;
 mod dynamic_object;
 mod field;
 mod macros;
 mod method;
+mod primitives;
 mod reflect;
 mod sequence;
 mod type_descriptor;

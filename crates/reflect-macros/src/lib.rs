@@ -4,6 +4,24 @@ use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::{Fields, FnArg, ImplItem, Item, ItemMod, Type, spanned::Spanned};
 
+mod action_macro;
+
+/// Generates an owned request schema and a dispatch adapter for an action function.
+/// Mutable arenas are injected by argument name; mutable items become ObjectRef fields.
+#[proc_macro_attribute]
+pub fn action(attribute: TokenStream, input: TokenStream) -> TokenStream {
+    if !attribute.is_empty() {
+        return syn::Error::new(proc_macro2::Span::call_site(), "action takes no arguments")
+            .into_compile_error()
+            .into();
+    }
+    let function = syn::parse_macro_input!(input as syn::ItemFn);
+    match action_macro::expand(function) {
+        Ok(output) => output.into(),
+        Err(error) => error.into_compile_error().into(),
+    }
+}
+
 /// Discovers named struct fields and methods in ordinary inherent impl blocks.
 #[proc_macro_attribute]
 pub fn reflect(attribute: TokenStream, input: TokenStream) -> TokenStream {
@@ -39,6 +57,7 @@ fn expand(module: &mut ItemMod) -> syn::Result<()> {
         let fields = match &structure.fields {
             Fields::Named(fields) => fields.named.iter().map(|field| {
                 let name = field.ident.as_ref().unwrap();
+                let ty = &field.ty;
                 let attrs = conditional_attributes(&field.attrs);
                 if let Type::Path(path) = &field.ty
                     && let Some(segment) = path.path.segments.last().filter(|segment| segment.ident == "Vec")
@@ -46,10 +65,32 @@ fn expand(module: &mut ItemMod) -> syn::Result<()> {
                             && let Some(syn::GenericArgument::Type(element)) = arguments.args.first() {
                                 return quote!(#(#attrs)* ::pixui_reflect::Field::sequence::<Self, #element>(stringify!(#name), |receiver| &receiver.#name));
                             }
-                quote!(#(#attrs)* ::pixui_reflect::Field::new::<Self>(stringify!(#name), |receiver| &receiver.#name))
+                quote!(#(#attrs)* ::pixui_reflect::Field::typed::<Self, #ty>(stringify!(#name), |receiver| &receiver.#name))
             }).collect::<Vec<_>>(),
             Fields::Unit => Vec::new(),
             Fields::Unnamed(_) => return Err(syn::Error::new(structure.span(), "reflect supports named or unit structs")),
+        };
+        let mut constructor_fields = Vec::new();
+        if let Fields::Named(fields) = &structure.fields {
+            for field in &fields.named {
+                let field_name = field.ident.as_ref().unwrap();
+                let ty = &field.ty;
+                let attrs = conditional_attributes(&field.attrs);
+                constructor_fields.push(quote!(
+                    #(#attrs)* #field_name: {
+                        let index = field_index;
+                        field_index += 1;
+                        values.next().expect("field count validated")
+                            .into_owned::<#ty>()
+                            .map_err(|_| ::pixui_reflect::construction::field_error::<#ty>(index, stringify!(#field_name)))?
+                    }
+                ));
+            }
+        }
+        let construct_value = if matches!(structure.fields, Fields::Unit) {
+            quote!(Self)
+        } else {
+            quote!(Self { #(#constructor_fields),* })
         };
         let mut methods = Vec::new();
         for item in items.iter() {
@@ -204,6 +245,13 @@ fn expand(module: &mut ItemMod) -> syn::Result<()> {
                         ::pixui_reflect::TypeDescriptor::new::<Self>(
                             ::std::vec![#(#fields),*], ::std::vec![#(#methods),*]
                         ).expect("automatically generated member names must be unique")
+                        .with_constructor(|fields| {
+                            let mut values = fields.into_iter();
+                            let mut field_index = 0usize;
+                            let value = #construct_value;
+                            let _ = (&mut values, field_index);
+                            Ok(::pixui_reflect::DynamicObject::from_reflect(value))
+                        })
                     )
                 }
             }

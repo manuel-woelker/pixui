@@ -173,13 +173,16 @@ dependencies = [
  "expect-test",
  "pixui-base",
  "pixui-reflect",
+ "pixui-reflect-macros",
 ]
 
 [[package]]
 name = "pixui-example-todo"
 version = "0.1.0"
 dependencies = [
+ "pixui-base",
  "pixui-engine",
+ "pixui-reflect",
 ]
 
 [[package]]

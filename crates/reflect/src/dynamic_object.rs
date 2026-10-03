@@ -144,6 +144,20 @@ impl<'a> DynamicObject<'a> {
         })
     }
 
+    /// Consumes owned storage without cloning. Borrowed values are rejected.
+    pub fn into_owned<T: Any>(self) -> PixuiResult<T> {
+        match self.storage {
+            Storage::Owned(value) => value
+                .downcast::<T>()
+                .map(|value| *value)
+                .map_err(|_| pixui_error!("expected owned `{}`", std::any::type_name::<T>())),
+            _ => Err(pixui_error!(
+                "expected owned `{}`",
+                std::any::type_name::<T>()
+            )),
+        }
+    }
+
     pub fn is_mutable(&self) -> bool {
         !matches!(
             self.storage,

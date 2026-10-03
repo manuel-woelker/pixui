@@ -12,7 +12,8 @@ use pixui_base::{Arena, PixuiString};
 /// Typed accessors return `None` for the wrong item type. Arena keys remain
 /// typed and retain the arena's checks for stale and foreign handles.
 pub struct Collection {
-    pub name: PixuiString,
+    name: PixuiString,
+    pub(super) id: u16,
     arena: Box<dyn Any>,
     item_type_id: TypeId,
     item_type_name: &'static str,
@@ -21,12 +22,19 @@ pub struct Collection {
 impl Collection {
     /// Creates an empty collection of `T`. Uses the arena's normal ID allocation.
     pub fn new<T: Any>(name: impl Into<PixuiString>) -> Self {
+        let arena = Arena::<T>::new();
         Self {
             name: name.into(),
-            arena: Box::new(Arena::<T>::new()),
+            id: arena.arena_id(),
+            arena: Box::new(arena),
             item_type_id: TypeId::of::<T>(),
             item_type_name: type_name::<T>(),
         }
+    }
+
+    /// Immutable binding name. Names must be unique within a slice.
+    pub fn name(&self) -> &str {
+        &self.name
     }
 
     pub fn item_type_id(&self) -> TypeId {

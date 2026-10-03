@@ -9,9 +9,11 @@ use crate::{SequenceDescriptor, TypeKind};
 /// Immutable registration for a concrete receiver type.
 ///
 /// Register once and reuse. Name lookup is O(n); indexed dispatch is O(1).
-/// Only registered members are visible. The module attribute automates registration.
+/// Only registered members are visible. The module attribute automates registration
+/// and field-ordered construction; manual descriptors opt in to construction.
 /// There is no inheritance, overload resolution, coercion, or field mutation.
 pub struct TypeDescriptor {
+    constructor: Option<fn(Vec<DynamicObject<'static>>) -> PixuiResult<DynamicObject<'static>>>,
     kind: TypeKind,
     type_id: TypeId,
     type_name: &'static str,
@@ -35,6 +37,7 @@ impl TypeDescriptor {
 
     pub(super) fn sequence<T: ?Sized + 'static>(sequence: SequenceDescriptor) -> Self {
         Self {
+            constructor: None,
             kind: TypeKind::Sequence(sequence),
             type_id: TypeId::of::<T>(),
             type_name: type_name::<T>(),
@@ -75,12 +78,60 @@ impl TypeDescriptor {
         validate_names(fields.iter().map(|field| field.name), "field")?;
         validate_names(methods.iter().map(|method| method.name), "method")?;
         Ok(Self {
+            constructor: None,
             kind: TypeKind::Struct,
             fields,
             methods,
             type_id: TypeId::of::<T>(),
             type_name: type_name::<T>(),
         })
+    }
+
+    /// Registers a field-ordered constructor. The callback must return this type.
+    pub fn with_constructor(
+        mut self,
+        constructor: fn(Vec<DynamicObject<'static>>) -> PixuiResult<DynamicObject<'static>>,
+    ) -> Self {
+        self.constructor = Some(constructor);
+        self
+    }
+
+    pub fn is_constructible(&self) -> bool {
+        self.constructor.is_some()
+    }
+
+    /// Consumes exactly one owned value per field, in descriptor order.
+    /// No coercions or defaults are applied. Borrowed storage is rejected even
+    /// when its lifetime is static. Errors consume and drop the supplied values.
+    pub fn construct(
+        &self,
+        fields: Vec<DynamicObject<'static>>,
+    ) -> PixuiResult<DynamicObject<'static>> {
+        let constructor = self
+            .constructor
+            .ok_or_else(|| pixui_error!("type `{}` has no constructor", self.type_name))?;
+        if fields.len() != self.fields.len() {
+            pixui_bail!(
+                "type `{}` expects {} fields, got {}",
+                self.type_name,
+                self.fields.len(),
+                fields.len()
+            );
+        }
+        for (index, value) in fields.iter().enumerate() {
+            if !value.is_owned() {
+                pixui_bail!(
+                    "field {} `{}` requires an owned value",
+                    index,
+                    self.fields[index].name
+                );
+            }
+        }
+        let result = constructor(fields)?;
+        if !result.is_owned() || result.descriptor().type_id() != self.type_id {
+            pixui_bail!("constructor must return an owned `{}`", self.type_name);
+        }
+        Ok(result)
     }
 
     pub fn fields(&self) -> &[Field] {

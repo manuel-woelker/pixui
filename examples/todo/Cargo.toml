@@ -5,4 +5,6 @@ edition.workspace = true
 publish = false
 
 [dependencies]
+pixui-base = { path = "../../crates/base" }
+pixui-reflect = { path = "../../crates/reflect" }
 pixui-engine = { path = "../../crates/engine" }

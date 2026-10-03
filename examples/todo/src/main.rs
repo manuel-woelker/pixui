@@ -1,48 +1,45 @@
-use pixui_engine::application::{
-    app::Application, application_slice::ApplicationSlice, collection::Collection,
-};
+mod todo;
 
-/// One task in the todo collection.
-struct TodoItem {
-    title: String,
-    completed: bool,
-}
+use pixui_base::{Key, PixuiResult};
+use pixui_reflect::DynamicObject;
+use todo::{TodoItem, create_application};
 
-/// Builds a todo slice with a homogeneous collection of sample tasks.
-fn create_application() -> Application {
-    let mut items = Collection::new::<TodoItem>("items");
-    let arena = items
-        .arena_mut::<TodoItem>()
-        .expect("the collection was created for TodoItem");
-    arena.insert(TodoItem {
-        title: "Create a todo application".into(),
-        completed: true,
-    });
-    arena.insert(TodoItem {
-        title: "Add another task".into(),
-        completed: false,
-    });
+fn main() -> PixuiResult<()> {
+    let mut application = create_application()?;
+    let slice = application.slices[0].id();
+    let call = application.action_call(
+        slice,
+        "add_todo",
+        vec![DynamicObject::from_reflect(String::from(
+            "Create a todo application",
+        ))],
+    )?;
+    let key = *application
+        .dispatch(call)?
+        .downcast::<Key<TodoItem>>()
+        .expect("add_todo returns a todo key");
+    let todo = application.object_ref(slice, "todos", key)?;
+    let call =
+        application.action_call(slice, "mark_done", vec![DynamicObject::from_reflect(todo)])?;
+    application.dispatch(call)?;
+    let call = application.action_call(
+        slice,
+        "add_todo",
+        vec![DynamicObject::from_reflect(String::from(
+            "Add another task",
+        ))],
+    )?;
+    application.dispatch(call)?;
 
-    let mut todo = ApplicationSlice::new("todo");
-    todo.collections.push(items);
-
-    let mut application = Application::new();
-    application.slices.push(todo);
-    application
-}
-
-fn main() {
-    let application = create_application();
-    for slice in &application.slices {
-        println!("{}:", slice.name);
-        for collection in &slice.collections {
-            let items = collection
-                .arena::<TodoItem>()
-                .expect("the todo slice contains TodoItem collections");
-            for (_, item) in items.iter() {
-                let marker = if item.completed { "x" } else { " " };
-                println!("  [{marker}] {}", item.title);
-            }
-        }
+    let slice = application.slice(slice)?;
+    println!("{}:", slice.name);
+    let todos = slice
+        .collection("todos")?
+        .arena::<TodoItem>()
+        .expect("todo collection");
+    for (_, item) in todos.iter() {
+        let marker = if item.completed { "x" } else { " " };
+        println!("  [{marker}] {}", item.title);
     }
+    Ok(())
 }

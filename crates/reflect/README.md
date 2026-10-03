@@ -1,6 +1,6 @@
 # pixui-reflect
 
-Small, explicit reflection for reading struct fields and invoking methods.
+Small, explicit reflection for constructing structs, reading fields, and invoking methods.
 A non-generic `TypeDescriptor` holds immutable lists of erased field getters
 and method adapters, plus the receiver’s Rust `TypeId` and diagnostic type name. Automatic registration uses a module attribute, without a global registry.
 
@@ -76,6 +76,56 @@ An owned method's entire return value is boxed, including `Result<T, E>`. An
 application error is therefore an ordinary reflected return value, while
 `PixuiResult` from invocation represents dispatch or argument errors. Methods
 without a return value produce boxed `()`.
+
+## Field-ordered construction
+
+Automatic registration generates a constructor for every named or unit struct.
+It constructs the struct directly from its fields, without `Default`, cloning,
+field setters, or calls to inherent constructors. This exposes construction of
+private fields as well as reads; use manual registration for types whose
+invariants must be enforced by a special constructor.
+
+```rust
+use pixui_reflect::{reflect, Reflect, DynamicObject};
+#[reflect]
+mod model {
+    pub struct AddTodoArgs { pub title: String, pub completed: bool }
+}
+let descriptor = model::AddTodoArgs::type_descriptor();
+assert!(descriptor.is_constructible());
+assert_eq!(descriptor.fields()[0].name, "title");
+assert_eq!(descriptor.fields()[1].type_name(), Some("bool"));
+let args = descriptor.construct(vec![
+    DynamicObject::from_reflect(String::from("Buy milk")),
+    DynamicObject::from_reflect(false),
+])?.into_owned::<model::AddTodoArgs>()?;
+assert_eq!(args.title, "Buy milk");
+assert!(!args.completed);
+# Ok::<(), pixui_base::PixuiError>(())
+```
+
+`construct` consumes a `Vec<DynamicObject<'static>>` in `fields()` order.
+The exact field count is required. Borrowed objects, including static borrows
+and slice adapters, are rejected. Generated constructors check exact Rust
+field types and report the index, name, and expected type on mismatch. There
+are no defaults or coercions. Both success and failure consume the inputs;
+unused values are dropped normally. Successful construction returns an owned
+object; `into_owned::<T>()` consumes it and recovers `T` without cloning.
+Conditional fields participate only when enabled by their `cfg` conditions.
+
+Automatically registered fields expose `type_id()` and `type_name()` for input
+selection. Manual `Field::typed` and `Field::sequence` also provide that metadata;
+`Field::new` accepts an erased getter and therefore leaves it unavailable.
+Field names and order describe the current build, not a persistent schema.
+
+`TypeDescriptor::new` does not register a constructor. Use `with_constructor`
+for a custom callback; the descriptor checks count and ownership before calling
+it, and checks that its result is an owned object of the registered type.
+Custom callbacks must validate field types and uphold their type's invariants.
+`is_constructible()` allows callers to check availability. Scalars, vectors,
+and slices currently have no registered constructor. `String`, `bool`, common
+integer and floating-point types, and `()` implement `Reflect` as opaque values
+with no fields or methods, so they can be supplied as constructor inputs.
 
 ## Manual registration and erased objects
 
@@ -234,8 +284,7 @@ assert_eq!(slice.len()?, 1);
 Out-of-bounds indices return errors. `get` always returns a shared element;
 `get_mut` requires mutable storage and returns an exclusive element. Element
 objects borrow the sequence, preventing resize, destruction, or conflicting
-access while those objects are in use. Elements currently require `Reflect`;
-primitive element descriptors are not supplied automatically.
+access while those objects are in use. Elements require `Reflect`; common scalar element descriptors are provided.
 
 Generated struct descriptors still use a per-type `OnceLock`. Generic vector
 and slice descriptors use a synchronized cache keyed by `TypeId`, retaining

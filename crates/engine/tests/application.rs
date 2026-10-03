@@ -18,13 +18,14 @@ fn slices_hold_collections_with_different_homogeneous_item_types() {
     let label_key = labels.arena_mut::<String>().unwrap().insert("hello".into());
 
     let mut slice = ApplicationSlice::new("main");
-    slice.collections.extend([records, labels]);
+    slice.add_collection(records).unwrap();
+    slice.add_collection(labels).unwrap();
     let mut application = Application::new();
     application.slices.push(slice);
 
-    let collections = &application.slices[0].collections;
+    let collections = application.slices[0].collections();
     assert_eq!(application.slices[0].name, "main");
-    assert_eq!(collections[0].name, "records");
+    assert_eq!(collections[0].name(), "records");
     assert_eq!(
         collections[0]
             .arena::<Record>()
