@@ -176,6 +176,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "pixui-example-todo"
+version = "0.1.0"
+dependencies = [
+ "pixui-engine",
+]
+
+[[package]]
 name = "pixui-reflect"
 version = "0.1.0"
 dependencies = [
