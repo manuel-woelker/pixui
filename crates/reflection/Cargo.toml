@@ -1,0 +1,10 @@
+[package]
+name = "pixui-reflection"
+version.workspace = true
+edition.workspace = true
+publish = false
+description = "Explicit indexed field access and method invocation"
+
+[dependencies]
+pixui-base = { path = "../base" }
+pixui-reflection-macros = { path = "../reflection-macros" }
