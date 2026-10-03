@@ -265,8 +265,9 @@ fn mismatched_manual_registration_returns_errors() {
 #[test]
 fn dynamic_object_supports_indexed_and_named_operations() {
     use pixui_reflection::DynamicObject;
-    let descriptor = std::sync::Arc::new(reflection());
-    let mut object = DynamicObject::new(Counter::default(), descriptor.clone()).unwrap();
+    static DESCRIPTOR: std::sync::OnceLock<TypeDescriptor> = std::sync::OnceLock::new();
+    let descriptor = DESCRIPTOR.get_or_init(reflection);
+    let mut object = DynamicObject::new(Counter::default(), descriptor).unwrap();
     let add = object.method_index("add").unwrap();
     let value = object.field_index("value").unwrap();
     object.invoke(add, &[&3_i32]).unwrap();
@@ -281,7 +282,7 @@ fn dynamic_object_supports_indexed_and_named_operations() {
     assert!(object.downcast_mut::<i32>().is_none());
     object.downcast_mut::<Counter>().unwrap().value = 11;
     assert_eq!(object.read(value).unwrap().downcast_ref::<i32>(), Some(&11));
-    assert!(std::ptr::eq(object.descriptor(), descriptor.as_ref()));
+    assert!(std::ptr::eq(object.descriptor(), descriptor));
     assert!(object.read(FieldIndex(99)).is_err());
     assert!(object.invoke(MethodIndex(99), &[]).is_err());
     assert!(object.read_named("missing").is_err());
@@ -298,18 +299,21 @@ fn dynamic_object_supports_indexed_and_named_operations() {
 #[test]
 fn heterogeneous_objects_share_a_single_non_generic_api() {
     use pixui_reflection::{DynamicObject, type_descriptor};
-    use std::sync::Arc;
+    use std::sync::OnceLock;
     struct Label {
         name: String,
     }
-    let label_descriptor = Arc::new(type_descriptor!(Label, fields: [name], methods: []).unwrap());
+    static LABEL: OnceLock<TypeDescriptor> = OnceLock::new();
+    static COUNTER: OnceLock<TypeDescriptor> = OnceLock::new();
+    let label_descriptor =
+        LABEL.get_or_init(|| type_descriptor!(Label, fields: [name], methods: []).unwrap());
     let objects = vec![
         DynamicObject::new(
             Counter {
                 name: "counter".into(),
                 value: 0,
             },
-            Arc::new(reflection()),
+            COUNTER.get_or_init(reflection),
         )
         .unwrap(),
         DynamicObject::new(

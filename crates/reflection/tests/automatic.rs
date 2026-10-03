@@ -1,5 +1,24 @@
 use pixui_reflection::{DynamicObject, Reflect};
 
+#[test]
+fn descriptor_is_shared_across_threads_and_outlives_objects() {
+    let descriptors: Vec<_> = (0..8)
+        .map(|_| std::thread::spawn(model::Counter::type_descriptor))
+        .map(|thread| thread.join().unwrap())
+        .collect();
+    let descriptor = descriptors[0];
+    assert!(
+        descriptors
+            .iter()
+            .all(|other| std::ptr::eq(descriptor, *other))
+    );
+    let object = DynamicObject::from_reflect(model::Counter::new());
+    let retained = object.descriptor();
+    drop(object);
+    assert!(std::ptr::eq(retained, descriptor));
+    assert!(retained.field_index("value").is_ok());
+}
+
 #[pixui_reflection::reflect]
 mod model {
     #[derive(Default)]
@@ -87,10 +106,7 @@ fn discovers_fields_and_methods_without_enumeration() {
     );
     assert!(descriptor.method_index("new").is_err());
     assert!(descriptor.method_index("disabled").is_err());
-    assert!(std::sync::Arc::ptr_eq(
-        &descriptor,
-        &model::Counter::type_descriptor()
-    ));
+    assert!(std::ptr::eq(descriptor, model::Counter::type_descriptor()));
 }
 
 #[test]

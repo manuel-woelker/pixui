@@ -2,7 +2,8 @@ use std::any::{Any, TypeId, type_name};
 
 use pixui_base::{PixuiResult, pixui_bail, pixui_error};
 
-use crate::{Field, FieldIndex, Method, MethodIndex};
+use crate::method::Invocation;
+use crate::{DynamicObject, Field, FieldIndex, Method, MethodIndex};
 
 /// Immutable registration for a concrete receiver type.
 ///
@@ -98,6 +99,18 @@ impl TypeDescriptor {
         arguments: &[&dyn Any],
     ) -> PixuiResult<Box<dyn Any>> {
         self.check_receiver(receiver)?;
+        let method = self.checked_method(index, arguments)?;
+        match &method.invocation {
+            Invocation::Owned(invoke) => invoke(receiver, arguments),
+            Invocation::SharedOwned(invoke) => invoke(receiver, arguments),
+            _ => Err(pixui_error!(
+                "method `{}` does not return an owned value",
+                method.name
+            )),
+        }
+    }
+
+    fn checked_method(&self, index: MethodIndex, arguments: &[&dyn Any]) -> PixuiResult<&Method> {
         let method = self
             .methods
             .get(index.0)
@@ -110,7 +123,92 @@ impl TypeDescriptor {
                 arguments.len()
             );
         }
-        (method.invoke)(receiver, arguments)
+        Ok(method)
+    }
+
+    /// Calls an owned-returning method with a shared receiver.
+    pub fn invoke_shared(
+        &self,
+        receiver: &dyn Any,
+        index: MethodIndex,
+        arguments: &[&dyn Any],
+    ) -> PixuiResult<Box<dyn Any>> {
+        self.check_receiver(receiver)?;
+        let method = self.checked_method(index, arguments)?;
+        match &method.invocation {
+            Invocation::SharedOwned(invoke) => invoke(receiver, arguments),
+            Invocation::Owned(_) => Err(pixui_error!(
+                "method `{}` requires mutable receiver access",
+                method.name
+            )),
+            _ => Err(pixui_error!(
+                "method `{}` does not return an owned value",
+                method.name
+            )),
+        }
+    }
+
+    /// Returns a reflected shared reference borrowed only from the receiver.
+    pub fn invoke_ref<'a>(
+        &self,
+        receiver: &'a dyn Any,
+        index: MethodIndex,
+        arguments: &[&dyn Any],
+    ) -> PixuiResult<DynamicObject<'a>> {
+        self.check_receiver(receiver)?;
+        let method = self.checked_method(index, arguments)?;
+        match &method.invocation {
+            Invocation::Ref(invoke) => invoke(receiver, arguments),
+            _ => Err(pixui_error!(
+                "method `{}` does not return a shared reference",
+                method.name
+            )),
+        }
+    }
+
+    /// Returns a reflected exclusive reference borrowed only from the receiver.
+    pub fn invoke_mut<'a>(
+        &self,
+        receiver: &'a mut dyn Any,
+        index: MethodIndex,
+        arguments: &[&dyn Any],
+    ) -> PixuiResult<DynamicObject<'a>> {
+        self.check_receiver(receiver)?;
+        let method = self.checked_method(index, arguments)?;
+        match &method.invocation {
+            Invocation::Mut(invoke) => invoke(receiver, arguments),
+            _ => Err(pixui_error!(
+                "method `{}` does not return a mutable reference",
+                method.name
+            )),
+        }
+    }
+
+    pub fn invoke_shared_named(
+        &self,
+        receiver: &dyn Any,
+        name: &str,
+        arguments: &[&dyn Any],
+    ) -> PixuiResult<Box<dyn Any>> {
+        self.invoke_shared(receiver, self.method_index(name)?, arguments)
+    }
+
+    pub fn invoke_ref_named<'a>(
+        &self,
+        receiver: &'a dyn Any,
+        name: &str,
+        arguments: &[&dyn Any],
+    ) -> PixuiResult<DynamicObject<'a>> {
+        self.invoke_ref(receiver, self.method_index(name)?, arguments)
+    }
+
+    pub fn invoke_mut_named<'a>(
+        &self,
+        receiver: &'a mut dyn Any,
+        name: &str,
+        arguments: &[&dyn Any],
+    ) -> PixuiResult<DynamicObject<'a>> {
+        self.invoke_mut(receiver, self.method_index(name)?, arguments)
     }
 
     /// Resolves the name and delegates to [`Self::invoke`].

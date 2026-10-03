@@ -1,5 +1,6 @@
 use std::any::{Any, type_name};
 
+use crate::DynamicObject;
 use pixui_base::{PixuiResult, pixui_error};
 
 /// A method adapter with borrowed arguments and an owned return value.
@@ -9,12 +10,26 @@ use pixui_base::{PixuiResult, pixui_error};
 pub type MethodInvoker =
     dyn Fn(&mut dyn Any, &[&dyn Any]) -> PixuiResult<Box<dyn Any>> + Send + Sync;
 
+pub type SharedMethodInvoker =
+    dyn Fn(&dyn Any, &[&dyn Any]) -> PixuiResult<Box<dyn Any>> + Send + Sync;
+pub type RefMethodInvoker =
+    dyn for<'a> Fn(&'a dyn Any, &[&dyn Any]) -> PixuiResult<DynamicObject<'a>> + Send + Sync;
+pub type MutMethodInvoker =
+    dyn for<'a> Fn(&'a mut dyn Any, &[&dyn Any]) -> PixuiResult<DynamicObject<'a>> + Send + Sync;
+
+pub(super) enum Invocation {
+    Owned(Box<MethodInvoker>),
+    SharedOwned(Box<SharedMethodInvoker>),
+    Ref(Box<RefMethodInvoker>),
+    Mut(Box<MutMethodInvoker>),
+}
+
 /// A named method exposed by a descriptor.
 pub struct Method {
     pub name: &'static str,
     /// Exact number of arguments, checked before invoking the adapter.
     pub arity: usize,
-    pub(super) invoke: Box<MethodInvoker>,
+    pub(super) invocation: Invocation,
 }
 
 impl Method {
@@ -27,12 +42,66 @@ impl Method {
         Self {
             name,
             arity,
-            invoke: Box::new(move |receiver, arguments| {
+            invocation: Invocation::Owned(Box::new(move |receiver, arguments| {
                 let receiver = receiver.downcast_mut::<T>().ok_or_else(|| {
                     pixui_error!("method `{name}` requires receiver `{}`", type_name::<T>())
                 })?;
                 invoke(receiver, arguments)
-            }),
+            })),
+        }
+    }
+
+    /// Registers an owned-returning method callable with shared receiver access.
+    pub fn shared<T: Any>(
+        name: &'static str,
+        arity: usize,
+        invoke: fn(&T, &[&dyn Any]) -> PixuiResult<Box<dyn Any>>,
+    ) -> Self {
+        Self {
+            name,
+            arity,
+            invocation: Invocation::SharedOwned(Box::new(move |receiver, args| {
+                let receiver = receiver.downcast_ref::<T>().ok_or_else(|| {
+                    pixui_error!("method `{name}` requires receiver `{}`", type_name::<T>())
+                })?;
+                invoke(receiver, args)
+            })),
+        }
+    }
+
+    /// Registers a reflected shared result whose lifetime follows the receiver.
+    pub fn returning_ref<T: Any>(
+        name: &'static str,
+        arity: usize,
+        invoke: for<'a> fn(&'a T, &[&dyn Any]) -> PixuiResult<DynamicObject<'a>>,
+    ) -> Self {
+        Self {
+            name,
+            arity,
+            invocation: Invocation::Ref(Box::new(move |receiver, args| {
+                let receiver = receiver.downcast_ref::<T>().ok_or_else(|| {
+                    pixui_error!("method `{name}` requires receiver `{}`", type_name::<T>())
+                })?;
+                invoke(receiver, args)
+            })),
+        }
+    }
+
+    /// Registers a reflected mutable result whose lifetime follows the receiver.
+    pub fn returning_mut<T: Any>(
+        name: &'static str,
+        arity: usize,
+        invoke: for<'a> fn(&'a mut T, &[&dyn Any]) -> PixuiResult<DynamicObject<'a>>,
+    ) -> Self {
+        Self {
+            name,
+            arity,
+            invocation: Invocation::Mut(Box::new(move |receiver, args| {
+                let receiver = receiver.downcast_mut::<T>().ok_or_else(|| {
+                    pixui_error!("method `{name}` requires receiver `{}`", type_name::<T>())
+                })?;
+                invoke(receiver, args)
+            })),
         }
     }
 }

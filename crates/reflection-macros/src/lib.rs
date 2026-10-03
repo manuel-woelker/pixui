@@ -122,11 +122,58 @@ fn expand(module: &mut ItemMod) -> syn::Result<()> {
                 let arity = arguments.len();
                 let attrs = conditional_attributes(&method.attrs);
                 let block_attrs = conditional_attributes(&block.attrs);
+                let (constructor, result) = match &signature.output {
+                    syn::ReturnType::Type(_, ty) if matches!(ty.as_ref(), Type::Reference(_)) => {
+                        let Type::Reference(reference) = ty.as_ref() else {
+                            unreachable!()
+                        };
+                        if reference.lifetime.is_some() {
+                            return Err(syn::Error::new(
+                                ty.span(),
+                                "reflected return references must use the receiver's elided lifetime",
+                            ));
+                        }
+                        if reference.mutability.is_some() {
+                            if receiver.mutability.is_none() {
+                                return Err(syn::Error::new(
+                                    ty.span(),
+                                    "mutable reflected returns require &mut self",
+                                ));
+                            }
+                            (
+                                quote!(returning_mut),
+                                quote!(::pixui_reflection::DynamicObject::from_mut(receiver.#method_name(#(#arguments),*))),
+                            )
+                        } else {
+                            if receiver.mutability.is_some() {
+                                return Err(syn::Error::new(
+                                    ty.span(),
+                                    "shared reflected returns currently require &self",
+                                ));
+                            }
+                            (
+                                quote!(returning_ref),
+                                quote!(::pixui_reflection::DynamicObject::from_ref(receiver.#method_name(#(#arguments),*))),
+                            )
+                        }
+                    }
+                    _ => {
+                        let constructor = if receiver.mutability.is_some() {
+                            quote!(new)
+                        } else {
+                            quote!(shared)
+                        };
+                        (
+                            constructor,
+                            quote!(::std::boxed::Box::new(receiver.#method_name(#(#arguments),*))),
+                        )
+                    }
+                };
                 methods.push(quote!(
                     #(#block_attrs)* #(#attrs)*
-                    ::pixui_reflection::Method::new::<Self>(stringify!(#method_name), #arity, |receiver, arguments| {
+                    ::pixui_reflection::Method::#constructor::<Self>(stringify!(#method_name), #arity, |receiver, arguments| {
                         #(#bindings)*
-                        Ok(::std::boxed::Box::new(receiver.#method_name(#(#arguments),*)))
+                        Ok(#result)
                     })
                 ));
             }
@@ -135,13 +182,13 @@ fn expand(module: &mut ItemMod) -> syn::Result<()> {
         generated.push(syn::parse2::<Item>(quote!(
             #(#attrs)*
             impl ::pixui_reflection::Reflect for #name {
-                fn type_descriptor() -> ::std::sync::Arc<::pixui_reflection::TypeDescriptor> {
-                    static DESCRIPTOR: ::std::sync::OnceLock<::std::sync::Arc<::pixui_reflection::TypeDescriptor>> = ::std::sync::OnceLock::new();
-                    DESCRIPTOR.get_or_init(|| ::std::sync::Arc::new(
+                fn type_descriptor() -> &'static ::pixui_reflection::TypeDescriptor {
+                    static DESCRIPTOR: ::std::sync::OnceLock<::pixui_reflection::TypeDescriptor> = ::std::sync::OnceLock::new();
+                    DESCRIPTOR.get_or_init(||
                         ::pixui_reflection::TypeDescriptor::new::<Self>(
                             ::std::vec![#(#fields),*], ::std::vec![#(#methods),*]
                         ).expect("automatically generated member names must be unique")
-                    )).clone()
+                    )
                 }
             }
         ))?);

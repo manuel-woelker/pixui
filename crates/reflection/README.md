@@ -46,8 +46,8 @@ Associated functions (including constructors) and trait impls are ignored.
 `cfg` conditions on structs, fields, impls, and methods are preserved.
 
 Each struct implements `Reflect`. Import that trait to call
-`MyStruct::type_descriptor()`, which returns an `Arc<TypeDescriptor>` cached
-with `OnceLock`. `DynamicObject::from_reflect(value)` erases the value and obtains
+`MyStruct::type_descriptor()`, which returns a `&'static TypeDescriptor` stored
+in a `OnceLock<TypeDescriptor>`. `DynamicObject::from_reflect(value)` erases the value and obtains
 its descriptor automatically. No member lists or adapters are necessary.
 
 The module attribute is intentional: a derive on a struct cannot inspect
@@ -64,9 +64,13 @@ clones run before the method is called. Mutable references, explicit argument
 lifetimes, generic structs/impls/methods, tuple structs, consuming receivers,
 async methods, and unsafe methods are unsupported. Unsupported signatures get
 macro diagnostics; non-`Clone` arguments and non-`'static` return types get Rust
-compiler errors. Return values must be owned and `'static`.
+compiler errors. Owned return values must have `'static` types. Shared `&T`
+returns from `&self` and mutable `&mut T` returns from `&mut self` are also
+supported when `T: Reflect`. Return references must use elided receiver
+lifetimes; references borrowed from arguments, shared returns from `&mut self`,
+and unsized return targets such as `str` and slices are unsupported.
 
-The method's entire return value is boxed, including `Result<T, E>`. An
+An owned method's entire return value is boxed, including `Result<T, E>`. An
 application error is therefore an ordinary reflected return value, while
 `PixuiResult` from invocation represents dispatch or argument errors. Methods
 without a return value produce boxed `()`.
@@ -82,13 +86,109 @@ the receiver type before dispatch. Each erased adapter also checks its receiver
 when downcasting. Mismatched manual registrations return errors when accessed.
 There are no unsafe casts. Erased callbacks are boxed once during registration.
 
-`DynamicObject` owns a `Box<dyn Any>` and an `Arc<TypeDescriptor>`. Its manual
-constructor rejects a mismatched value and descriptor. Different concrete types
-can coexist in `Vec<DynamicObject>` and use the same API. `descriptor()` exposes
+`DynamicObject<'a>` stores an owned `Box<dyn Any>`, a shared `&'a dyn Any`,
+or an exclusive `&'a mut dyn Any`, alongside a `&'static TypeDescriptor`. Its manual
+constructor requires a descriptor in static storage and rejects mismatched types.
+For manual registration, initialize a static `OnceLock<TypeDescriptor>` and
+pass the reference returned by `get_or_init`. Generated descriptors initialize
+once and live for the process lifetime without `Arc` or explicit leaking. Different
+concrete types and storage variants can coexist in `Vec<DynamicObject<'a>>`,
+using a common borrow lifetime. `descriptor()` exposes
 metadata; `downcast_ref` and `downcast_mut` optionally recover concrete access.
 Reading a field borrows the object, so mutable invocation cannot overlap that
 borrow. Objects need not be `Send` or `Sync`; descriptors can be shared across
 threads.
+
+## Owned and borrowed storage
+
+`from_reflect` and `new` return `DynamicObject<'static>`: no receiver borrows
+are stored. This does not make the value immortal; dropping the object drops
+its owned value normally. `from_ref` / `from_mut` borrow reflected values;
+`borrow` / `borrow_mut` do the same with explicit descriptors. Dropping a
+borrowed wrapper never drops its underlying value. The concrete value's type
+must satisfy `Any` (`'static`), but the wrapper's borrow may be short-lived.
+
+All variants support field reads and shared method calls. `is_owned()` reports
+ownership and `is_mutable()` reports write capability. `downcast_mut()` returns
+`None` for shared storage. Even `&mut DynamicObject` cannot turn a shared
+underlying reference into a mutable one.
+
+| Invocation | Result | Receiver capability |
+|---|---|---|
+| `invoke` | Owned `Box<dyn Any>` | Either; mutable methods require write access |
+| `invoke_shared` | Owned `Box<dyn Any>` | Shared |
+| `invoke_ref` | Shared `DynamicObject<'_>` | Shared |
+| `invoke_mut` | Mutable `DynamicObject<'_>` | Mutable |
+
+Each has a corresponding `*_named` convenience method. Index lookup is shared
+across all paths. Calling the wrong return path, or requesting mutable access
+through shared storage, returns an error before the method runs. Manual adapters
+can use `Method::shared`, `Method::returning_ref`, and `Method::returning_mut`.
+
+```rust
+use pixui_reflection::{reflect, DynamicObject};
+#[reflect]
+mod model {
+    pub struct Child { pub value: i32 }
+    impl Child {
+        pub fn increment(&mut self) { self.value += 1; }
+        pub fn value(&self) -> i32 { self.value }
+    }
+    pub struct Parent { pub child: Child }
+    impl Parent {
+        pub fn child(&self) -> &Child { &self.child }
+        pub fn child_mut(&mut self) -> &mut Child { &mut self.child }
+    }
+}
+let mut parent: DynamicObject<'static> = DynamicObject::from_reflect(
+    model::Parent { child: model::Child { value: 7 } }
+);
+{
+    let child = parent.invoke_ref_named("child", &[])?;
+    assert!(!child.is_mutable());
+    assert_eq!(*child.invoke_shared_named("value", &[])?.downcast::<i32>().unwrap(), 7);
+}
+{
+    let mut child = parent.invoke_mut_named("child_mut", &[])?;
+    child.invoke_named("increment", &[])?;
+}
+assert_eq!(parent.downcast_ref::<model::Parent>().unwrap().child.value, 8);
+# Ok::<(), pixui_base::PixuiError>(())
+```
+
+Returned objects borrow the receiver, not the argument list. Rust prevents
+dropping or mutably accessing the receiver while a borrowed result is used:
+
+```compile_fail
+use pixui_reflection::{reflect, DynamicObject};
+#[reflect]
+mod model {
+    pub struct Child;
+    pub struct Parent { pub child: Child }
+    impl Parent { pub fn child(&self) -> &Child { &self.child } }
+}
+let parent = DynamicObject::from_reflect(model::Parent { child: model::Child });
+let child = parent.invoke_ref_named("child", &[]).unwrap();
+drop(parent); // Cannot move the receiver while its result is borrowed.
+assert!(!child.is_mutable());
+```
+
+```compile_fail
+use pixui_reflection::{reflect, DynamicObject};
+#[reflect]
+mod model {
+    pub struct Child;
+    pub struct Parent { pub child: Child }
+    impl Parent {
+        pub fn child(&self) -> &Child { &self.child }
+        pub fn child_mut(&mut self) -> &mut Child { &mut self.child }
+    }
+}
+let mut parent = DynamicObject::from_reflect(model::Parent { child: model::Child });
+let shared = parent.invoke_ref_named("child", &[]).unwrap();
+let mutable = parent.invoke_mut_named("child_mut", &[]).unwrap();
+assert!(!shared.is_mutable()); // Shared and exclusive borrows cannot overlap.
+```
 
 ## Mechanism and assumptions
 
@@ -108,14 +208,15 @@ threads.
   No coercions occur: `String`, `&str`, and numeric types remain distinct.
 - Arity is checked before calling the adapter. Return values are owned
   `Box<dyn Any>` and must have `'static` types. Return `Box::new(())` for void
-  methods. Borrowed return values and consuming receivers are unsupported.
+  methods. Borrowed reflected returns use separate invocation paths; consuming
+  receivers are unsupported.
 - Errors use `PixuiResult` and adapters can return application errors unchanged.
   Validate all arguments before mutation. Errors do not roll back mutations;
   panics propagate. Registration callbacks are trusted to expose the intended
   members and behavior; the library does not inspect actual struct definitions.
-- Only registered fields and methods exist in the reflection API. Methods
-  use a typed `&mut T` adapter behind an erased `&mut dyn Any` callback, even if their underlying Rust method needs only `&T`.
-  Field writes, overloads are outside the current API.
+- Only registered fields and methods exist in the reflection API. Shared methods
+  use `&T` adapters; mutable methods use `&mut T` adapters.
+  Direct field writes and overloads are outside the current API.
 
 Register descriptors once and reuse them. For frequent access, cache indices
 rather than repeating name lookup. Use `#[reflect]` for ordinary structs and methods; manual adapters remain useful
