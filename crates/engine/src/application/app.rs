@@ -5,19 +5,33 @@ use pixui_base::{Arena, Key, PixuiResult, pixui_error};
 
 use super::{
     action::{ActionCall, ActionResult},
+    application_handle::ApplicationHandle,
     application_slice::{ApplicationSlice, SliceId},
     object_ref::ObjectRef,
 };
 
-/// An application's ordered slices of data.
+/// Worker-owned application state. `new` starts the worker and returns its handle.
+/// `Default` creates bare state for adapters and tests that need direct access.
 #[derive(Default)]
 pub struct Application {
     pub slices: Vec<ApplicationSlice>,
 }
 
 impl Application {
-    pub fn new() -> Self {
-        Self::default()
+    /// Starts an owner thread immediately, using a bounded queue of 128 commands.
+    /// Panics if the worker thread cannot be started.
+    #[allow(
+        clippy::new_ret_no_self,
+        reason = "the application constructor returns access to its internally owned worker"
+    )]
+    pub fn new() -> ApplicationHandle {
+        Self::with_capacity(128)
+    }
+
+    /// Starts an owner thread with the supplied bounded command capacity.
+    /// Zero selects rendezvous. Panics if thread creation or queue allocation fails.
+    pub fn with_capacity(capacity: usize) -> ApplicationHandle {
+        ApplicationHandle::start(capacity)
     }
 
     pub fn slice(&self, id: SliceId) -> PixuiResult<&ApplicationSlice> {
@@ -41,14 +55,7 @@ impl Application {
         name: &str,
         fields: SendValues,
     ) -> PixuiResult<ActionCall> {
-        let target = self.slice(slice)?;
-        let action = target.action_index(name)?;
-        let request = target.action(action)?.arguments().construct_send(fields)?;
-        Ok(ActionCall {
-            slice,
-            action,
-            request,
-        })
+        self.slice(slice)?.action_handle_named(name)?.call(fields)
     }
 
     /// Dispatches to a registered action, resolving borrows only for the call's duration.

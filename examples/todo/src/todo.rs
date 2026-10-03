@@ -1,6 +1,6 @@
 use pixui_base::{Arena, Key, PixuiResult, pixui_error};
 use pixui_engine::application::{
-    action::action, app::Application, application_slice::ApplicationSlice, collection::Collection,
+    action::action, application_slice::ApplicationSlice, collection::Collection,
 };
 
 /// One task in the homogeneous todo collection.
@@ -30,14 +30,12 @@ pub fn mark_done(todo: &mut TodoItem) {
 }
 
 /// Builds a todo slice with a named collection and validated action bindings.
-pub fn create_application() -> PixuiResult<Application> {
+pub fn create_slice() -> PixuiResult<ApplicationSlice> {
     let mut slice = ApplicationSlice::new("todo");
     slice.add_collection(Collection::new::<TodoItem>("todos"))?;
     slice.register_action(add_todo_action::descriptor())?;
     slice.register_action(mark_done_action::descriptor())?;
-    let mut application = Application::new();
-    application.slices.push(slice);
-    Ok(application)
+    Ok(slice)
 }
 
 #[cfg(test)]

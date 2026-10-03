@@ -5,6 +5,14 @@ use pixui_engine::application::{
 };
 use pixui_reflect::Reflect;
 
+use pixui_engine::application::app::Application;
+
+fn create_application() -> PixuiResult<Application> {
+    let mut application = Application::default();
+    application.slices.push(create_slice()?);
+    Ok(application)
+}
+
 fn add(application: &mut Application, slice: SliceId, title: &str) -> Key<TodoItem> {
     let call = application
         .action_call(slice, "add_todo", vec![Box::new(title.to_owned())])

@@ -20,7 +20,7 @@ fn slices_hold_collections_with_different_homogeneous_item_types() {
     let mut slice = ApplicationSlice::new("main");
     slice.add_collection(records).unwrap();
     slice.add_collection(labels).unwrap();
-    let mut application = Application::new();
+    let mut application = Application::default();
     application.slices.push(slice);
 
     let collections = application.slices[0].collections();

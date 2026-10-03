@@ -6,6 +6,7 @@ use std::{
 use pixui_base::{Arena, PixuiResult, PixuiString, pixui_error};
 
 use super::action::{ActionDescriptor, ActionIndex};
+use super::action_handle::ActionHandle;
 use super::collection::Collection;
 
 /// Process-local slice identity. Never reused, and stable across reordering.
@@ -145,6 +146,17 @@ impl ApplicationSlice {
 
     pub fn action_named(&self, name: &str) -> PixuiResult<&'static ActionDescriptor> {
         self.action(self.action_index(name)?)
+    }
+
+    /// Caches an indexed action's metadata without communicating with a worker.
+    /// Handles remain valid when more actions are appended or the slice is moved.
+    pub fn action_handle(&self, index: ActionIndex) -> PixuiResult<ActionHandle> {
+        Ok(ActionHandle::new(self.id, index, self.action(index)?))
+    }
+
+    /// Resolves a name and returns a handle for local request construction.
+    pub fn action_handle_named(&self, name: &str) -> PixuiResult<ActionHandle> {
+        self.action_handle(self.action_index(name)?)
     }
 
     pub(super) fn check_type<T: Any>(&self, collection: &str) -> PixuiResult<()> {
