@@ -39,5 +39,5 @@ tests run separately through Cargo because nextest does not run them.
 ## Decision records
 
 Significant technical and product decisions are recorded in
-[`docs/decisions`](docs/decisions). See [DR-000](docs/decisions/DR-000.md)
+[`docs/decisions`](docs/decisions). See [DR-000](<docs/decisions/DR-000 Record decisions in the repository.md>)
 for the required format and conventions.
