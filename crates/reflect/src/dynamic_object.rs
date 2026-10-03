@@ -2,27 +2,31 @@ use std::any::Any;
 
 use pixui_base::{PixuiResult, pixui_error};
 
+use crate::sequence::{MutableSequence, SharedSequence, SliceMut, SliceRef, slice_descriptor};
 use crate::{FieldIndex, MethodIndex, Reflect, TypeDescriptor};
 
 enum Storage<'a> {
     Owned(Box<dyn Any>),
     Shared(&'a dyn Any),
     Mutable(&'a mut dyn Any),
+    SharedSequence(Box<dyn SharedSequence + 'a>),
+    MutableSequence(Box<dyn MutableSequence + 'a>),
 }
 
 impl Storage<'_> {
-    fn as_any(&self) -> &dyn Any {
+    fn as_any(&self) -> Option<&dyn Any> {
         match self {
-            Self::Owned(value) => value.as_ref(),
-            Self::Shared(value) => *value,
-            Self::Mutable(value) => &**value,
+            Self::Owned(value) => Some(value.as_ref()),
+            Self::Shared(value) => Some(*value),
+            Self::Mutable(value) => Some(&**value),
+            Self::SharedSequence(_) | Self::MutableSequence(_) => None,
         }
     }
 
     fn as_any_mut(&mut self) -> Option<&mut dyn Any> {
         match self {
             Self::Owned(value) => Some(value.as_mut()),
-            Self::Shared(_) => None,
+            Self::Shared(_) | Self::SharedSequence(_) | Self::MutableSequence(_) => None,
             Self::Mutable(value) => Some(&mut **value),
         }
     }
@@ -56,6 +60,61 @@ impl DynamicObject<'static> {
 }
 
 impl<'a> DynamicObject<'a> {
+    /// Slice adapters borrow their elements; slices cannot be downcast through Any.
+    pub fn from_slice<T: Reflect>(value: &'a [T]) -> Self {
+        Self {
+            storage: Storage::SharedSequence(Box::new(SliceRef(value))),
+            descriptor: slice_descriptor::<T>(),
+        }
+    }
+    pub fn from_slice_mut<T: Reflect>(value: &'a mut [T]) -> Self {
+        Self {
+            storage: Storage::MutableSequence(Box::new(SliceMut(value))),
+            descriptor: slice_descriptor::<T>(),
+        }
+    }
+
+    fn as_any(&self) -> PixuiResult<&dyn Any> {
+        self.storage.as_any().ok_or_else(|| {
+            pixui_error!(
+                "slice storage supports sequence operations, not struct or method operations"
+            )
+        })
+    }
+
+    pub fn len(&self) -> PixuiResult<usize> {
+        match &self.storage {
+            Storage::SharedSequence(value) => Ok(value.len()),
+            Storage::MutableSequence(value) => Ok(value.len()),
+            _ => (self.descriptor.sequence_access()?.len)(self.as_any()?),
+        }
+    }
+    pub fn is_empty(&self) -> PixuiResult<bool> {
+        Ok(self.len()? == 0)
+    }
+    pub fn get(&self, index: usize) -> PixuiResult<DynamicObject<'_>> {
+        match &self.storage {
+            Storage::SharedSequence(value) => value.get(index),
+            Storage::MutableSequence(value) => value.get(index),
+            _ => (self.descriptor.sequence_access()?.get)(self.as_any()?, index),
+        }
+    }
+    pub fn get_mut(&mut self, index: usize) -> PixuiResult<DynamicObject<'_>> {
+        match &mut self.storage {
+            Storage::MutableSequence(value) => value.get_mut(index),
+            Storage::SharedSequence(_) | Storage::Shared(_) => Err(pixui_error!(
+                "object is shared; mutable access is unavailable"
+            )),
+            storage => {
+                let access = self.descriptor.sequence_access()?;
+                (access.get_mut)(
+                    storage.as_any_mut().expect("owned or mutable storage"),
+                    index,
+                )
+            }
+        }
+    }
+
     /// Borrows a reflected value without taking ownership.
     pub fn from_ref<T: Reflect>(value: &'a T) -> Self {
         Self::borrow(value, T::type_descriptor()).expect("Reflect must describe its own type")
@@ -86,7 +145,10 @@ impl<'a> DynamicObject<'a> {
     }
 
     pub fn is_mutable(&self) -> bool {
-        !matches!(self.storage, Storage::Shared(_))
+        !matches!(
+            self.storage,
+            Storage::Shared(_) | Storage::SharedSequence(_)
+        )
     }
     pub fn is_owned(&self) -> bool {
         matches!(self.storage, Storage::Owned(_))
@@ -96,7 +158,7 @@ impl<'a> DynamicObject<'a> {
         self.descriptor
     }
     pub fn downcast_ref<T: Any>(&self) -> Option<&T> {
-        self.storage.as_any().downcast_ref()
+        self.storage.as_any()?.downcast_ref()
     }
     pub fn downcast_mut<T: Any>(&mut self) -> Option<&mut T> {
         self.storage.as_any_mut()?.downcast_mut()
@@ -108,7 +170,7 @@ impl<'a> DynamicObject<'a> {
         self.descriptor.method_index(name)
     }
     pub fn read(&self, index: FieldIndex) -> PixuiResult<&dyn Any> {
-        self.descriptor.read(self.storage.as_any(), index)
+        self.descriptor.read(self.as_any()?, index)
     }
     pub fn read_named(&self, name: &str) -> PixuiResult<&dyn Any> {
         self.read(self.field_index(name)?)
@@ -122,7 +184,7 @@ impl<'a> DynamicObject<'a> {
             Some(value) => self.descriptor.invoke(value, index, arguments),
             None => self
                 .descriptor
-                .invoke_shared(self.storage.as_any(), index, arguments),
+                .invoke_shared(self.as_any()?, index, arguments),
         }
     }
     /// Calls an owned-returning method requiring only shared receiver access.
@@ -132,7 +194,7 @@ impl<'a> DynamicObject<'a> {
         arguments: &[&dyn Any],
     ) -> PixuiResult<Box<dyn Any>> {
         self.descriptor
-            .invoke_shared(self.storage.as_any(), index, arguments)
+            .invoke_shared(self.as_any()?, index, arguments)
     }
 
     pub fn invoke_shared_named(
@@ -149,8 +211,7 @@ impl<'a> DynamicObject<'a> {
         index: MethodIndex,
         arguments: &[&dyn Any],
     ) -> PixuiResult<DynamicObject<'_>> {
-        self.descriptor
-            .invoke_ref(self.storage.as_any(), index, arguments)
+        self.descriptor.invoke_ref(self.as_any()?, index, arguments)
     }
 
     pub fn invoke_ref_named(

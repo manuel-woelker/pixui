@@ -68,7 +68,9 @@ compiler errors. Owned return values must have `'static` types. Shared `&T`
 returns from `&self` and mutable `&mut T` returns from `&mut self` are also
 supported when `T: Reflect`. Return references must use elided receiver
 lifetimes; references borrowed from arguments, shared returns from `&mut self`,
-and unsized return targets such as `str` and slices are unsupported.
+and unsized return targets such as `str` are unsupported. Slice returns
+`&[T]` and `&mut [T]` are supported when `T: Reflect`; slice arguments remain
+unsupported by generated adapters.
 
 An owned method's entire return value is boxed, including `Result<T, E>`. An
 application error is therefore an ordinary reflected return value, while
@@ -188,6 +190,67 @@ let mut parent = DynamicObject::from_reflect(model::Parent { child: model::Child
 let shared = parent.invoke_ref_named("child", &[]).unwrap();
 let mutable = parent.invoke_mut_named("child_mut", &[]).unwrap();
 assert!(!shared.is_mutable()); // Shared and exclusive borrows cannot overlap.
+```
+
+## Type kinds and sequences
+
+`TypeDescriptor::kind()` returns `TypeKind::Struct` or
+`TypeKind::Sequence(SequenceDescriptor)`. `is_sequence()` and `element_type()`
+allow capability discovery without accessing a value. Reference ownership is
+an object storage property, not a type kind. Map reflection is not implemented.
+
+`Vec<T>` implements `Reflect` when `T: Reflect`. Owned, shared, and mutable
+vectors keep their ordinary `Any` storage and support concrete downcasting.
+Slices use separate shared/mutable sequence storage adapters because `[T]` is
+unsized and cannot use the existing `Any` storage. Slice wrappers support
+sequence operations, not `Any` downcasting or struct/method dispatch. Construct
+them with `from_slice` and `from_slice_mut`; the module macro also generates
+adapters for methods returning slices.
+
+```rust
+use pixui_reflect::{reflect, DynamicObject, TypeKind};
+#[reflect]
+mod model {
+    pub struct Item { pub value: i32 }
+    impl Item { pub fn add(&mut self, amount: i32) { self.value += amount; } }
+}
+let mut items = DynamicObject::from_reflect(vec![model::Item { value: 7 }]);
+assert!(matches!(items.descriptor().kind(), TypeKind::Sequence(_)));
+assert_eq!(items.len()?, 1);
+items.get_mut(0)?.invoke_named("add", &[&2_i32])?;
+assert_eq!(items.get(0)?.read_named("value")?.downcast_ref::<i32>(), Some(&9));
+let values = items.downcast_ref::<Vec<model::Item>>().unwrap();
+let slice = DynamicObject::from_slice(values.as_slice());
+assert_eq!(slice.len()?, 1);
+# Ok::<(), pixui_base::PixuiError>(())
+```
+
+`len`, `is_empty`, `get`, and `get_mut` return errors for non-sequences.
+Out-of-bounds indices return errors. `get` always returns a shared element;
+`get_mut` requires mutable storage and returns an exclusive element. Element
+objects borrow the sequence, preventing resize, destruction, or conflicting
+access while those objects are in use. Elements currently require `Reflect`;
+primitive element descriptors are not supplied automatically.
+
+Generated struct descriptors still use a per-type `OnceLock`. Generic vector
+and slice descriptors use a synchronized cache keyed by `TypeId`, retaining
+one boxed descriptor per concrete collection type for the process lifetime.
+This is necessary because a static inside a generic function is shared across
+monomorphizations. Only descriptor lookup uses the cache lock; element access
+does not. Element metadata is resolved lazily so recursive types such as a
+struct containing `Vec<Self>` do not recursively initialize descriptors.
+Slice adapters allocate one box per wrapper and borrow the existing elements.
+
+Rust also prevents mutation of a sequence while a shared element is used:
+
+```compile_fail
+use pixui_reflect::{reflect, DynamicObject};
+#[reflect]
+mod model { pub struct Item { pub value: i32 } }
+let mut items = DynamicObject::from_reflect(vec![model::Item { value: 1 }]);
+let shared = items.get(0).unwrap();
+let mutable = items.get_mut(0).unwrap();
+assert!(shared.read_named("value").is_ok());
 ```
 
 ## Mechanism and assumptions

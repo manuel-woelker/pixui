@@ -4,6 +4,7 @@ use pixui_base::{PixuiResult, pixui_bail, pixui_error};
 
 use crate::method::Invocation;
 use crate::{DynamicObject, Field, FieldIndex, Method, MethodIndex};
+use crate::{SequenceDescriptor, TypeKind};
 
 /// Immutable registration for a concrete receiver type.
 ///
@@ -11,6 +12,7 @@ use crate::{DynamicObject, Field, FieldIndex, Method, MethodIndex};
 /// Only registered members are visible. The module attribute automates registration.
 /// There is no inheritance, overload resolution, coercion, or field mutation.
 pub struct TypeDescriptor {
+    kind: TypeKind,
     type_id: TypeId,
     type_name: &'static str,
     fields: Vec<Field>,
@@ -18,6 +20,39 @@ pub struct TypeDescriptor {
 }
 
 impl TypeDescriptor {
+    pub fn kind(&self) -> &TypeKind {
+        &self.kind
+    }
+    pub fn is_sequence(&self) -> bool {
+        matches!(self.kind, TypeKind::Sequence(_))
+    }
+    pub fn element_type(&self) -> Option<&'static TypeDescriptor> {
+        match &self.kind {
+            TypeKind::Sequence(sequence) => Some(sequence.element_type()),
+            TypeKind::Struct => None,
+        }
+    }
+
+    pub(super) fn sequence<T: ?Sized + 'static>(sequence: SequenceDescriptor) -> Self {
+        Self {
+            kind: TypeKind::Sequence(sequence),
+            type_id: TypeId::of::<T>(),
+            type_name: type_name::<T>(),
+            fields: vec![],
+            methods: vec![],
+        }
+    }
+
+    pub(super) fn sequence_access(&self) -> PixuiResult<&crate::sequence::SequenceCallbacks> {
+        match &self.kind {
+            TypeKind::Sequence(sequence) => sequence
+                .access
+                .as_ref()
+                .ok_or_else(|| pixui_error!("slice access requires sequence storage")),
+            TypeKind::Struct => Err(pixui_error!("type `{}` is not a sequence", self.type_name)),
+        }
+    }
+
     /// Rust type name for diagnostics, not a stable identifier.
     pub fn type_name(&self) -> &'static str {
         self.type_name
@@ -40,6 +75,7 @@ impl TypeDescriptor {
         validate_names(fields.iter().map(|field| field.name), "field")?;
         validate_names(methods.iter().map(|method| method.name), "method")?;
         Ok(Self {
+            kind: TypeKind::Struct,
             fields,
             methods,
             type_id: TypeId::of::<T>(),

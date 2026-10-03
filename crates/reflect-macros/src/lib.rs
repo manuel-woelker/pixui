@@ -140,9 +140,14 @@ fn expand(module: &mut ItemMod) -> syn::Result<()> {
                                     "mutable reflected returns require &mut self",
                                 ));
                             }
+                            let wrap = if matches!(reference.elem.as_ref(), Type::Slice(_)) {
+                                quote!(from_slice_mut)
+                            } else {
+                                quote!(from_mut)
+                            };
                             (
                                 quote!(returning_mut),
-                                quote!(::pixui_reflect::DynamicObject::from_mut(receiver.#method_name(#(#arguments),*))),
+                                quote!(::pixui_reflect::DynamicObject::#wrap(receiver.#method_name(#(#arguments),*))),
                             )
                         } else {
                             if receiver.mutability.is_some() {
@@ -151,9 +156,14 @@ fn expand(module: &mut ItemMod) -> syn::Result<()> {
                                     "shared reflected returns currently require &self",
                                 ));
                             }
+                            let wrap = if matches!(reference.elem.as_ref(), Type::Slice(_)) {
+                                quote!(from_slice)
+                            } else {
+                                quote!(from_ref)
+                            };
                             (
                                 quote!(returning_ref),
-                                quote!(::pixui_reflect::DynamicObject::from_ref(receiver.#method_name(#(#arguments),*))),
+                                quote!(::pixui_reflect::DynamicObject::#wrap(receiver.#method_name(#(#arguments),*))),
                             )
                         }
                     }

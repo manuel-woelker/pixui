@@ -5,6 +5,7 @@ mod field;
 mod macros;
 mod method;
 mod reflect;
+mod sequence;
 mod type_descriptor;
 
 pub use dynamic_object::DynamicObject;
@@ -16,3 +17,5 @@ pub use method::{
 pub use pixui_reflect_macros::reflect;
 pub use reflect::Reflect;
 pub use type_descriptor::TypeDescriptor;
+
+pub use sequence::{SequenceDescriptor, TypeKind};
