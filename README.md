@@ -17,6 +17,9 @@ containing a slot index, arena identity, and generation. See its
 
 ## Development
 
+Follow the [code-style guide](<docs/Code style.md>) for readable code, useful
+documentation, simple designs, and module layout conventions.
+
 Run commands from the repository root:
 
 Always run `./n check` after completing each unit of work. It runs Rust
