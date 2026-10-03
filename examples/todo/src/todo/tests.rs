@@ -3,15 +3,11 @@ use pixui_engine::application::{
     action::{ActionCall, ActionIndex},
     application_slice::SliceId,
 };
-use pixui_reflect::{DynamicObject, Reflect};
+use pixui_reflect::Reflect;
 
 fn add(application: &mut Application, slice: SliceId, title: &str) -> Key<TodoItem> {
     let call = application
-        .action_call(
-            slice,
-            "add_todo",
-            vec![DynamicObject::from_reflect(title.to_owned())],
-        )
+        .action_call(slice, "add_todo", vec![Box::new(title.to_owned())])
         .unwrap();
     *application
         .dispatch(call)
@@ -62,20 +58,12 @@ fn discovers_constructs_and_dispatches_owned_requests() {
     assert!(!application.resolve_mut(reference).unwrap().completed);
     // Request ownership allows queueing while application data changes.
     let call = application
-        .action_call(
-            slice,
-            "mark_done",
-            vec![DynamicObject::from_reflect(reference)],
-        )
+        .action_call(slice, "mark_done", vec![Box::new(reference)])
         .unwrap();
     add(&mut application, slice, "Another task");
     assert!(application.dispatch(call).unwrap().is::<()>());
     let call = application
-        .action_call(
-            slice,
-            "mark_done",
-            vec![DynamicObject::from_reflect(reference)],
-        )
+        .action_call(slice, "mark_done", vec![Box::new(reference)])
         .unwrap();
     application.dispatch(call).unwrap();
     assert!(application.resolve_mut(reference).unwrap().completed);
@@ -162,7 +150,7 @@ fn invalid_requests_and_titles_do_not_mutate_the_collection() {
     assert!(application.action_call(slice, "add_todo", vec![]).is_err());
     assert!(
         application
-            .action_call(slice, "add_todo", vec![DynamicObject::from_reflect(false)])
+            .action_call(slice, "add_todo", vec![Box::new(false)])
             .is_err()
     );
     assert!(application.action_call(slice, "unknown", vec![]).is_err());
@@ -176,7 +164,7 @@ fn invalid_requests_and_titles_do_not_mutate_the_collection() {
             .dispatch(ActionCall {
                 slice,
                 action,
-                request: DynamicObject::from_reflect(String::new())
+                request: Box::new(String::new())
             })
             .is_err()
     );
@@ -190,16 +178,12 @@ fn invalid_requests_and_titles_do_not_mutate_the_collection() {
             .dispatch(ActionCall {
                 slice,
                 action,
-                request: DynamicObject::from_ref(request)
+                request: Box::new(request)
             })
             .is_err()
     );
     let call = application
-        .action_call(
-            slice,
-            "add_todo",
-            vec![DynamicObject::from_reflect("  ".to_owned())],
-        )
+        .action_call(slice, "add_todo", vec![Box::new("  ".to_owned())])
         .unwrap();
     assert!(application.dispatch(call).is_err());
     assert!(
@@ -221,11 +205,7 @@ fn stale_foreign_and_removed_slice_references_are_rejected() {
     let key = add(&mut application, slice, "task");
     let reference = application.object_ref(slice, "todos", key).unwrap();
     let call = application
-        .action_call(
-            slice,
-            "mark_done",
-            vec![DynamicObject::from_reflect(reference)],
-        )
+        .action_call(slice, "mark_done", vec![Box::new(reference)])
         .unwrap();
     let mut other = create_application().unwrap();
     let other_slice = other.slices[0].id();
@@ -240,11 +220,7 @@ fn stale_foreign_and_removed_slice_references_are_rejected() {
     let key = add(&mut application, slice, "new task");
     let reference = application.object_ref(slice, "todos", key).unwrap();
     let call = application
-        .action_call(
-            slice,
-            "mark_done",
-            vec![DynamicObject::from_reflect(reference)],
-        )
+        .action_call(slice, "mark_done", vec![Box::new(reference)])
         .unwrap();
     application.slices.clear();
     assert!(application.dispatch(call).is_err());
@@ -258,11 +234,7 @@ fn handles_and_calls_survive_slice_reordering() {
     let key = add(&mut application, slice, "task");
     let reference = application.object_ref(slice, "todos", key).unwrap();
     let call = application
-        .action_call(
-            slice,
-            "mark_done",
-            vec![DynamicObject::from_reflect(reference)],
-        )
+        .action_call(slice, "mark_done", vec![Box::new(reference)])
         .unwrap();
     application.slices.push(ApplicationSlice::new("other"));
     application.slices.swap(0, 1);

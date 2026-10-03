@@ -19,9 +19,14 @@ become action descriptions. Registration checks that `todos` exists and contains
   a borrow. Dispatch resolves it to `&mut TodoItem` and rejects stale references.
 
 The application is owned directly. There is no captured application state or
-interior mutability. Requests can be built from vectors of owned dynamic fields
+interior mutability. Requests can be built from vectors of boxed, owned `Send` fields
 and queued while the application changes. Dispatch acquires borrows for the
 handler's duration. Repeated `mark_done` calls are harmless.
+
+The binary creates an initial task, then moves the application into a
+`DispatchLoop` on a worker thread. A bounded `Dispatch` sends calls from the main
+thread and a second caller thread. Reply handles return action results. Dropping
+all dispatchers drains accepted calls and returns the application for printing.
 
 Run from the repository root:
 

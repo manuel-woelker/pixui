@@ -25,19 +25,25 @@ pub fn action(attribute: TokenStream, input: TokenStream) -> TokenStream {
 /// Discovers named struct fields and methods in ordinary inherent impl blocks.
 #[proc_macro_attribute]
 pub fn reflect(attribute: TokenStream, input: TokenStream) -> TokenStream {
-    if !attribute.is_empty() {
-        return syn::Error::new(proc_macro2::Span::call_site(), "reflect takes no arguments")
-            .into_compile_error()
-            .into();
-    }
+    let send = if attribute.is_empty() {
+        false
+    } else {
+        let option = syn::parse_macro_input!(attribute as syn::Ident);
+        if option != "send" {
+            return syn::Error::new(option.span(), "reflect accepts only the `send` option")
+                .into_compile_error()
+                .into();
+        }
+        true
+    };
     let mut module = syn::parse_macro_input!(input as ItemMod);
-    match expand(&mut module) {
+    match expand(&mut module, send) {
         Ok(()) => quote!(#module).into(),
         Err(error) => error.into_compile_error().into(),
     }
 }
 
-fn expand(module: &mut ItemMod) -> syn::Result<()> {
+fn expand(module: &mut ItemMod, send: bool) -> syn::Result<()> {
     let (_, items) = module
         .content
         .as_mut()
@@ -235,6 +241,39 @@ fn expand(module: &mut ItemMod) -> syn::Result<()> {
                 ));
             }
         }
+        let send_constructor = if send {
+            let mut send_fields = Vec::new();
+            if let Fields::Named(fields) = &structure.fields {
+                for field in &fields.named {
+                    let field_name = field.ident.as_ref().unwrap();
+                    let ty = &field.ty;
+                    let attrs = conditional_attributes(&field.attrs);
+                    send_fields.push(quote!(
+                        #(#attrs)* #field_name: {
+                            let index = field_index;
+                            field_index += 1;
+                            ::pixui_reflect::construction::take_send::<#ty>(
+                                values.next().expect("field count validated"), index, stringify!(#field_name)
+                            )?
+                        }
+                    ));
+                }
+            }
+            let value = if matches!(structure.fields, Fields::Unit) {
+                quote!(Self)
+            } else {
+                quote!(Self { #(#send_fields),* })
+            };
+            quote!(.with_send_constructor(|fields| {
+                let mut values = fields.into_iter();
+                let mut field_index = 0usize;
+                let value = #value;
+                let _ = (&mut values, field_index);
+                Ok(::std::boxed::Box::new(value))
+            }))
+        } else {
+            quote!()
+        };
         let attrs = conditional_attributes(&structure.attrs);
         generated.push(syn::parse2::<Item>(quote!(
             #(#attrs)*
@@ -252,6 +291,7 @@ fn expand(module: &mut ItemMod) -> syn::Result<()> {
                             let _ = (&mut values, field_index);
                             Ok(::pixui_reflect::DynamicObject::from_reflect(value))
                         })
+                        #send_constructor
                     )
                 }
             }
@@ -330,7 +370,7 @@ mod tests {
         ] {
             let mut module = syn::parse_str(input).unwrap();
             assert!(
-                expand(&mut module)
+                expand(&mut module, false)
                     .unwrap_err()
                     .to_string()
                     .contains(expected)

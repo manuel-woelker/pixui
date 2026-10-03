@@ -127,6 +127,44 @@ and slices currently have no registered constructor. `String`, `bool`, common
 integer and floating-point types, and `()` implement `Reflect` as opaque values
 with no fields or methods, so they can be supplied as constructor inputs.
 
+### Sendable construction
+
+`SendValue` is `Box<dyn Any + Send>` and `SendValues` is its positional vector,
+from `pixui_base::erased_value`. Opt in with `#[reflect(send)]` to generate
+`construct_send` in addition to the ordinary `construct` path. The compiler
+requires the constructed struct to be `Send`; `Sync` is not required.
+`is_send_constructible()` exposes availability, and `with_send_constructor`
+registers a manual adapter. Count, exact field types, and the returned type are
+validated. Inputs are consumed even on error. Action macros opt their request
+schemas into this mechanism so requests can cross threads.
+
+```rust
+use pixui_reflect::{Reflect, reflect};
+#[reflect(send)]
+mod model { pub struct Inputs { pub title: String } }
+let value = model::Inputs::type_descriptor().construct_send(vec![
+    Box::new(String::from("Buy milk")),
+])?;
+let title = std::thread::spawn(move || value.downcast::<model::Inputs>().unwrap().title)
+    .join().unwrap();
+assert_eq!(title, "Buy milk");
+# Ok::<(), pixui_base::PixuiError>(())
+```
+
+Non-Send types remain supported by ordinary reflection; opting in is checked
+at compile time:
+
+```compile_fail
+#[pixui_reflect::reflect(send)]
+mod model {
+    pub struct Inputs { pub value: std::rc::Rc<i32> }
+}
+```
+
+Borrowed `DynamicObject` storage retains its existing lifetime and thread-safety
+contracts. It cannot be transferred through a channel merely because its
+lifetime is static, and no runtime conversion to `SendValue` is attempted.
+
 ## Manual registration and erased objects
 
 The existing `type_descriptor!` macro and `TypeDescriptor::new::<T>`,

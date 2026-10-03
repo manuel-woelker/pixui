@@ -5,7 +5,6 @@ use pixui_engine::application::{
     application_slice::ApplicationSlice,
     collection::Collection,
 };
-use pixui_reflect::DynamicObject;
 
 /// Replaces the value of a resolved item.
 #[action]
@@ -49,11 +48,7 @@ fn dispatches_without_collection_injection_and_avoids_parameter_name_collisions(
         .action_call(
             id,
             "replace",
-            vec![
-                DynamicObject::from_reflect(reference),
-                DynamicObject::from_reflect(2i32),
-                DynamicObject::from_reflect(3i32),
-            ],
+            vec![Box::new(reference), Box::new(2i32), Box::new(3i32)],
         )
         .unwrap();
     assert_eq!(
@@ -78,11 +73,7 @@ fn dispatches_without_collection_injection_and_avoids_parameter_name_collisions(
         .action_call(
             id,
             "sum",
-            vec![
-                DynamicObject::from_reflect(1i32),
-                DynamicObject::from_reflect(2i32),
-                DynamicObject::from_reflect(3i32),
-            ],
+            vec![Box::new(1i32), Box::new(2i32), Box::new(3i32)],
         )
         .unwrap();
     assert_eq!(
@@ -98,7 +89,7 @@ fn dispatches_without_collection_injection_and_avoids_parameter_name_collisions(
             .dispatch(ActionCall {
                 slice: id,
                 action: ActionIndex(99),
-                request: DynamicObject::from_reflect(false),
+                request: Box::new(false),
             })
             .is_err()
     );
@@ -134,11 +125,7 @@ fn rejects_keys_from_another_collection_and_checks_object_type() {
             .action_call(
                 id,
                 "replace",
-                vec![
-                    DynamicObject::from_reflect(string),
-                    DynamicObject::from_reflect(2i32),
-                    DynamicObject::from_reflect(3i32),
-                ]
+                vec![Box::new(string), Box::new(2i32), Box::new(3i32),]
             )
             .is_err()
     );

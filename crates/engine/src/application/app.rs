@@ -1,10 +1,10 @@
 use std::any::Any;
 
+use pixui_base::erased_value::SendValues;
 use pixui_base::{Arena, Key, PixuiResult, pixui_error};
-use pixui_reflect::DynamicObject;
 
 use super::{
-    action::ActionCall,
+    action::{ActionCall, ActionResult},
     application_slice::{ApplicationSlice, SliceId},
     object_ref::ObjectRef,
 };
@@ -39,11 +39,11 @@ impl Application {
         &self,
         slice: SliceId,
         name: &str,
-        fields: Vec<DynamicObject<'static>>,
+        fields: SendValues,
     ) -> PixuiResult<ActionCall> {
         let target = self.slice(slice)?;
         let action = target.action_index(name)?;
-        let request = target.action(action)?.arguments().construct(fields)?;
+        let request = target.action(action)?.arguments().construct_send(fields)?;
         Ok(ActionCall {
             slice,
             action,
@@ -53,7 +53,7 @@ impl Application {
 
     /// Dispatches to a registered action, resolving borrows only for the call's duration.
     /// A call targeting a removed slice or an invalid action returns an error.
-    pub fn dispatch(&mut self, call: ActionCall) -> PixuiResult<Box<dyn Any>> {
+    pub fn dispatch(&mut self, call: ActionCall) -> ActionResult {
         let action = self.slice(call.slice)?.action(call.action)?;
         action.invoke(self, call.slice, call.request)
     }

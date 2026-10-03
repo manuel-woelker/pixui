@@ -1,7 +1,9 @@
 use std::any::{Any, TypeId, type_name};
 
+use pixui_base::erased_value::{SendValue, SendValues};
 use pixui_base::{PixuiResult, pixui_bail, pixui_error};
 
+use crate::construction::SendConstructor;
 use crate::method::Invocation;
 use crate::{DynamicObject, Field, FieldIndex, Method, MethodIndex};
 use crate::{SequenceDescriptor, TypeKind};
@@ -14,6 +16,7 @@ use crate::{SequenceDescriptor, TypeKind};
 /// There is no inheritance, overload resolution, coercion, or field mutation.
 pub struct TypeDescriptor {
     constructor: Option<fn(Vec<DynamicObject<'static>>) -> PixuiResult<DynamicObject<'static>>>,
+    send_constructor: Option<SendConstructor>,
     kind: TypeKind,
     type_id: TypeId,
     type_name: &'static str,
@@ -38,6 +41,7 @@ impl TypeDescriptor {
     pub(super) fn sequence<T: ?Sized + 'static>(sequence: SequenceDescriptor) -> Self {
         Self {
             constructor: None,
+            send_constructor: None,
             kind: TypeKind::Sequence(sequence),
             type_id: TypeId::of::<T>(),
             type_name: type_name::<T>(),
@@ -79,6 +83,7 @@ impl TypeDescriptor {
         validate_names(methods.iter().map(|method| method.name), "method")?;
         Ok(Self {
             constructor: None,
+            send_constructor: None,
             kind: TypeKind::Struct,
             fields,
             methods,
@@ -98,6 +103,36 @@ impl TypeDescriptor {
 
     pub fn is_constructible(&self) -> bool {
         self.constructor.is_some()
+    }
+
+    /// Registers an owned, sendable constructor. The callback must return this type.
+    pub fn with_send_constructor(mut self, constructor: SendConstructor) -> Self {
+        self.send_constructor = Some(constructor);
+        self
+    }
+
+    pub fn is_send_constructible(&self) -> bool {
+        self.send_constructor.is_some()
+    }
+
+    /// Constructs an owned sendable value from positional sendable fields.
+    /// Count and result type are checked; generated callbacks check field types.
+    /// No coercions, defaults, or runtime conversion from non-Send storage occur.
+    pub fn construct_send(&self, fields: SendValues) -> PixuiResult<SendValue> {
+        let constructor = self
+            .send_constructor
+            .ok_or_else(|| pixui_error!("type `{}` has no sendable constructor", self.type_name))?;
+        if fields.len() != self.fields.len() {
+            pixui_bail!(
+                "type `{}` expects {} fields, got {}",
+                self.type_name,
+                self.fields.len(),
+                fields.len()
+            );
+        }
+        let result = constructor(fields)?;
+        self.check_receiver(result.as_ref())?;
+        Ok(result)
     }
 
     /// Consumes exactly one owned value per field, in descriptor order.

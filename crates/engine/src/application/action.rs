@@ -2,8 +2,9 @@
 
 use std::any::{Any, TypeId, type_name};
 
+use pixui_base::erased_value::SendValue;
 use pixui_base::{PixuiResult, pixui_error};
-use pixui_reflect::{DynamicObject, Reflect, TypeDescriptor};
+use pixui_reflect::{Reflect, TypeDescriptor};
 
 use super::{app::Application, application_slice::SliceId};
 
@@ -27,8 +28,14 @@ impl CollectionBinding {
     }
 }
 
-type ActionHandler =
-    fn(&mut Application, SliceId, DynamicObject<'static>) -> PixuiResult<Box<dyn Any>>;
+/// Owned request payload safe to send to the application thread.
+pub type ActionRequest = SendValue;
+/// Owned action output safe to return to the calling thread.
+pub type ActionOutput = SendValue;
+/// Dispatch outcome, including handler or validation errors.
+pub type ActionResult = PixuiResult<ActionOutput>;
+
+pub type ActionHandler = fn(&mut Application, SliceId, ActionRequest) -> ActionResult;
 
 /// Immutable metadata and a function adapter, with no captured application state.
 ///
@@ -48,7 +55,7 @@ pub struct ActionDescriptor {
 
 impl ActionDescriptor {
     /// Builds a manual adapter. Application borrows must not escape the callback.
-    pub fn new<Args: Reflect>(
+    pub fn new<Args: Reflect + Send>(
         name: &'static str,
         description: &'static str,
         collections: Vec<CollectionBinding>,
@@ -81,9 +88,9 @@ impl ActionDescriptor {
         &self,
         application: &mut Application,
         slice: SliceId,
-        request: DynamicObject<'static>,
-    ) -> PixuiResult<Box<dyn Any>> {
-        if !request.is_owned() || request.descriptor().type_id() != self.arguments.type_id() {
+        request: ActionRequest,
+    ) -> ActionResult {
+        if request.as_ref().type_id() != self.arguments.type_id() {
             return Err(pixui_error!(
                 "action `{}` requires owned `{}`",
                 self.name,
@@ -105,5 +112,5 @@ pub struct ActionIndex(pub usize);
 pub struct ActionCall {
     pub slice: SliceId,
     pub action: ActionIndex,
-    pub request: DynamicObject<'static>,
+    pub request: ActionRequest,
 }

@@ -1,6 +1,7 @@
 //! Shared arena, string, error, and result types for pixui.
 
 mod arena;
+pub mod erased_value;
 mod error;
 
 pub use arena::{Arena, Key};

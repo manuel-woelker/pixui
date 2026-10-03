@@ -127,7 +127,7 @@ pub(super) fn expand(function: ItemFn) -> syn::Result<TokenStream> {
             #[allow(unused_imports)]
             use super::*;
 
-            #[::pixui_reflect::reflect]
+            #[::pixui_reflect::reflect(send)]
             pub mod request {
                 #[allow(unused_imports)]
             use super::*;
@@ -141,7 +141,7 @@ pub(super) fn expand(function: ItemFn) -> syn::Result<TokenStream> {
                     ::pixui_engine::application::action::ActionDescriptor::new::<request::Request>(
                         stringify!(#name), #description, ::std::vec![#(#injections),*],
                         |#application, #slice, #request| {
-                            let #request = #request.into_owned::<request::Request>()?;
+                            let #request = ::pixui_reflect::construction::take_send::<request::Request>(#request, 0, "request")?;
                             let _ = (&#request, &#slice, &#application);
                             #(#bindings)*
                             let result = #call;
