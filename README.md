@@ -3,8 +3,8 @@
 Rust workspace with a core engine library in [`crates/engine`](crates/engine)
 and shared infrastructure in [`crates/base`](crates/base).
 
-[`crates/reflection`](crates/reflection) provides explicit indexed field reads
-and method invocation; see its [API and assumptions](crates/reflection/README.md).
+[`crates/reflect`](crates/reflect) provides explicit indexed field reads
+and method invocation; see its [API and assumptions](crates/reflect/README.md).
 
 `pixui-base` provides `PixuiString` (an owned `HipStr` with serde support),
 `PixuiError` and `PixuiResult` (based on error-stack), and the

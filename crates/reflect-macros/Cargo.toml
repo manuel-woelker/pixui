@@ -1,5 +1,5 @@
 [package]
-name = "pixui-reflection-macros"
+name = "pixui-reflect-macros"
 version.workspace = true
 edition.workspace = true
 publish = false

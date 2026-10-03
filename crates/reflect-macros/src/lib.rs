@@ -40,7 +40,7 @@ fn expand(module: &mut ItemMod) -> syn::Result<()> {
             Fields::Named(fields) => fields.named.iter().map(|field| {
                 let name = field.ident.as_ref().unwrap();
                 let attrs = conditional_attributes(&field.attrs);
-                quote!(#(#attrs)* ::pixui_reflection::Field::new::<Self>(stringify!(#name), |receiver| &receiver.#name))
+                quote!(#(#attrs)* ::pixui_reflect::Field::new::<Self>(stringify!(#name), |receiver| &receiver.#name))
             }).collect::<Vec<_>>(),
             Fields::Unit => Vec::new(),
             Fields::Unnamed(_) => return Err(syn::Error::new(structure.span(), "reflect supports named or unit structs")),
@@ -107,13 +107,13 @@ fn expand(module: &mut ItemMod) -> syn::Result<()> {
                             }
                             let target = &reference.elem;
                             if matches!(target.as_ref(), Type::Path(p) if p.path.is_ident("str")) {
-                                quote!(let #argument = ::pixui_reflection::argument::<::std::string::String>(arguments, #index)?.as_str();)
+                                quote!(let #argument = ::pixui_reflect::argument::<::std::string::String>(arguments, #index)?.as_str();)
                             } else {
-                                quote!(let #argument = ::pixui_reflection::argument::<#target>(arguments, #index)?;)
+                                quote!(let #argument = ::pixui_reflect::argument::<#target>(arguments, #index)?;)
                             }
                         }
                         _ => {
-                            quote!(let #argument = <#ty as ::core::clone::Clone>::clone(::pixui_reflection::argument::<#ty>(arguments, #index)?);)
+                            quote!(let #argument = <#ty as ::core::clone::Clone>::clone(::pixui_reflect::argument::<#ty>(arguments, #index)?);)
                         }
                     };
                     bindings.push(binding);
@@ -142,7 +142,7 @@ fn expand(module: &mut ItemMod) -> syn::Result<()> {
                             }
                             (
                                 quote!(returning_mut),
-                                quote!(::pixui_reflection::DynamicObject::from_mut(receiver.#method_name(#(#arguments),*))),
+                                quote!(::pixui_reflect::DynamicObject::from_mut(receiver.#method_name(#(#arguments),*))),
                             )
                         } else {
                             if receiver.mutability.is_some() {
@@ -153,7 +153,7 @@ fn expand(module: &mut ItemMod) -> syn::Result<()> {
                             }
                             (
                                 quote!(returning_ref),
-                                quote!(::pixui_reflection::DynamicObject::from_ref(receiver.#method_name(#(#arguments),*))),
+                                quote!(::pixui_reflect::DynamicObject::from_ref(receiver.#method_name(#(#arguments),*))),
                             )
                         }
                     }
@@ -171,7 +171,7 @@ fn expand(module: &mut ItemMod) -> syn::Result<()> {
                 };
                 methods.push(quote!(
                     #(#block_attrs)* #(#attrs)*
-                    ::pixui_reflection::Method::#constructor::<Self>(stringify!(#method_name), #arity, |receiver, arguments| {
+                    ::pixui_reflect::Method::#constructor::<Self>(stringify!(#method_name), #arity, |receiver, arguments| {
                         #(#bindings)*
                         Ok(#result)
                     })
@@ -181,11 +181,11 @@ fn expand(module: &mut ItemMod) -> syn::Result<()> {
         let attrs = conditional_attributes(&structure.attrs);
         generated.push(syn::parse2::<Item>(quote!(
             #(#attrs)*
-            impl ::pixui_reflection::Reflect for #name {
-                fn type_descriptor() -> &'static ::pixui_reflection::TypeDescriptor {
-                    static DESCRIPTOR: ::std::sync::OnceLock<::pixui_reflection::TypeDescriptor> = ::std::sync::OnceLock::new();
+            impl ::pixui_reflect::Reflect for #name {
+                fn type_descriptor() -> &'static ::pixui_reflect::TypeDescriptor {
+                    static DESCRIPTOR: ::std::sync::OnceLock<::pixui_reflect::TypeDescriptor> = ::std::sync::OnceLock::new();
                     DESCRIPTOR.get_or_init(||
-                        ::pixui_reflection::TypeDescriptor::new::<Self>(
+                        ::pixui_reflect::TypeDescriptor::new::<Self>(
                             ::std::vec![#(#fields),*], ::std::vec![#(#methods),*]
                         ).expect("automatically generated member names must be unique")
                     )

@@ -1,7 +1,7 @@
 use std::any::Any;
 
 use pixui_base::message;
-use pixui_reflection::{Field, FieldIndex, Method, MethodIndex, TypeDescriptor, argument};
+use pixui_reflect::{Field, FieldIndex, Method, MethodIndex, TypeDescriptor, argument};
 
 #[derive(Default)]
 struct Counter {
@@ -10,7 +10,7 @@ struct Counter {
 }
 
 fn reflection() -> TypeDescriptor {
-    pixui_reflection::type_descriptor!(Counter,
+    pixui_reflect::type_descriptor!(Counter,
         fields: [name, value],
         methods: [
             "add" => (1, |counter, args| {
@@ -264,7 +264,7 @@ fn mismatched_manual_registration_returns_errors() {
 
 #[test]
 fn dynamic_object_supports_indexed_and_named_operations() {
-    use pixui_reflection::DynamicObject;
+    use pixui_reflect::DynamicObject;
     static DESCRIPTOR: std::sync::OnceLock<TypeDescriptor> = std::sync::OnceLock::new();
     let descriptor = DESCRIPTOR.get_or_init(reflection);
     let mut object = DynamicObject::new(Counter::default(), descriptor).unwrap();
@@ -298,7 +298,7 @@ fn dynamic_object_supports_indexed_and_named_operations() {
 
 #[test]
 fn heterogeneous_objects_share_a_single_non_generic_api() {
-    use pixui_reflection::{DynamicObject, type_descriptor};
+    use pixui_reflect::{DynamicObject, type_descriptor};
     use std::sync::OnceLock;
     struct Label {
         name: String,
@@ -340,14 +340,12 @@ fn heterogeneous_objects_share_a_single_non_generic_api() {
 
 #[test]
 fn macro_allows_empty_fields_and_detects_duplicate_methods() {
-    let empty = pixui_reflection::type_descriptor!(Counter, fields: [], methods: []).unwrap();
+    let empty = pixui_reflect::type_descriptor!(Counter, fields: [], methods: []).unwrap();
     assert!(empty.fields().is_empty());
     assert!(empty.methods().is_empty());
+    assert!(pixui_reflect::type_descriptor!(Counter, fields: [value, value], methods: []).is_err());
     assert!(
-        pixui_reflection::type_descriptor!(Counter, fields: [value, value], methods: []).is_err()
-    );
-    assert!(
-        pixui_reflection::type_descriptor!(Counter, fields: [], methods: [
+        pixui_reflect::type_descriptor!(Counter, fields: [], methods: [
             "same" => (0, |_, _| Ok(Box::new(()))),
             "same" => (0, |_, _| Ok(Box::new(()))),
         ])

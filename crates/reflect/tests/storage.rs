@@ -1,6 +1,6 @@
-use pixui_reflection::{DynamicObject, Reflect};
+use pixui_reflect::{DynamicObject, Reflect};
 
-#[pixui_reflection::reflect]
+#[pixui_reflect::reflect]
 mod model {
     pub struct Child {
         pub value: i32,
@@ -154,7 +154,7 @@ fn wrong_invocation_kinds_and_arguments_return_errors() {
     assert!(object.invoke_mut_named("missing", &[]).is_err());
     assert!(
         object
-            .invoke_ref(pixui_reflection::MethodIndex(99), &[])
+            .invoke_ref(pixui_reflect::MethodIndex(99), &[])
             .is_err()
     );
     let argument = 3_i32;
@@ -169,7 +169,7 @@ fn wrong_invocation_kinds_and_arguments_return_errors() {
 
 #[test]
 fn only_owned_storage_drops_the_underlying_value() {
-    use pixui_reflection::TypeDescriptor;
+    use pixui_reflect::TypeDescriptor;
     use std::{cell::Cell, rc::Rc, sync::OnceLock};
     struct Probe(Rc<Cell<usize>>);
     impl Drop for Probe {

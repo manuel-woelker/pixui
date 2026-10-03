@@ -1,11 +1,11 @@
-# pixui-reflection
+# pixui-reflect
 
 Small, explicit reflection for reading struct fields and invoking methods.
 A non-generic `TypeDescriptor` holds immutable lists of erased field getters
 and method adapters, plus the receiver’s Rust `TypeId` and diagnostic type name. Automatic registration uses a module attribute, without a global registry.
 
 ```rust
-use pixui_reflection::{reflect, Reflect, DynamicObject};
+use pixui_reflect::{reflect, Reflect, DynamicObject};
 
 #[reflect]
 mod model {
@@ -54,7 +54,7 @@ The module attribute is intentional: a derive on a struct cannot inspect
 separate impl blocks. Keep reflected impl blocks directly in that same module,
 using the struct's unqualified name (`impl Counter`). Methods defined elsewhere
 are not discovered. Nested modules need their own attribute. The dependency
-must be available under the canonical `pixui_reflection` crate name.
+must be available under the canonical `pixui_reflect` crate name.
 
 Supported signatures are safe synchronous non-generic methods with `&self` or
 `&mut self`. Owned arguments must implement `Clone` because the invocation API
@@ -126,7 +126,7 @@ through shared storage, returns an error before the method runs. Manual adapters
 can use `Method::shared`, `Method::returning_ref`, and `Method::returning_mut`.
 
 ```rust
-use pixui_reflection::{reflect, DynamicObject};
+use pixui_reflect::{reflect, DynamicObject};
 #[reflect]
 mod model {
     pub struct Child { pub value: i32 }
@@ -160,7 +160,7 @@ Returned objects borrow the receiver, not the argument list. Rust prevents
 dropping or mutably accessing the receiver while a borrowed result is used:
 
 ```compile_fail
-use pixui_reflection::{reflect, DynamicObject};
+use pixui_reflect::{reflect, DynamicObject};
 #[reflect]
 mod model {
     pub struct Child;
@@ -174,7 +174,7 @@ assert!(!child.is_mutable());
 ```
 
 ```compile_fail
-use pixui_reflection::{reflect, DynamicObject};
+use pixui_reflect::{reflect, DynamicObject};
 #[reflect]
 mod model {
     pub struct Child;

@@ -1,4 +1,4 @@
-use pixui_reflection::{DynamicObject, Reflect};
+use pixui_reflect::{DynamicObject, Reflect};
 
 #[test]
 fn descriptor_is_shared_across_threads_and_outlives_objects() {
@@ -19,7 +19,7 @@ fn descriptor_is_shared_across_threads_and_outlives_objects() {
     assert!(retained.field_index("value").is_ok());
 }
 
-#[pixui_reflection::reflect]
+#[pixui_reflect::reflect]
 mod model {
     #[derive(Default)]
     #[cfg_attr(all(), derive(Debug))]

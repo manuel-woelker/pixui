@@ -174,15 +174,15 @@ dependencies = [
 ]
 
 [[package]]
-name = "pixui-reflection"
+name = "pixui-reflect"
 version = "0.1.0"
 dependencies = [
  "pixui-base",
- "pixui-reflection-macros",
+ "pixui-reflect-macros",
 ]
 
 [[package]]
-name = "pixui-reflection-macros"
+name = "pixui-reflect-macros"
 version = "0.1.0"
 dependencies = [
  "proc-macro2",
