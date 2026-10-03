@@ -1,0 +1,30 @@
+recipe "default" {
+  task "cargo-fmt" description="Check Rust formatting" {
+    run shell="./t cargo fmt --all -- --check"
+  }
+
+  task "cargo-clippy" description="Run Rust clippy" {
+    run shell="./t cargo clippy --workspace --all-targets -- -D warnings"
+  }
+
+  task "cargo-test" description="Run Rust tests" {
+    run shell="./t cargo-nextest nextest run --workspace"
+  }
+
+  task "cargo-doc-test" description="Run Rust documentation tests" {
+    run shell="./t cargo test --workspace --doc"
+  }
+
+  task "check" description="Run all repository checks" {
+    depends-on "cargo-fmt"
+    depends-on "cargo-clippy"
+    depends-on "cargo-test"
+    depends-on "cargo-doc-test"
+    run shell="printf 'Task outcome: repository checks passed\n'"
+  }
+
+  task "ci" description="Run continuous integration checks" {
+    depends-on "check"
+    run shell="printf 'Task outcome: continuous integration checks passed\n'"
+  }
+}

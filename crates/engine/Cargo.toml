@@ -1,0 +1,11 @@
+[package]
+name = "pixui-engine"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+pixui-base = { path = "../base" }
+
+[dev-dependencies]
+expect-test = "1.5"
