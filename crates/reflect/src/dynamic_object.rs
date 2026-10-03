@@ -175,6 +175,14 @@ impl<'a> DynamicObject<'a> {
     pub fn read_named(&self, name: &str) -> PixuiResult<&dyn Any> {
         self.read(self.field_index(name)?)
     }
+    /// Reads a registered reflected field without knowing its concrete type.
+    pub fn read_object(&self, index: FieldIndex) -> PixuiResult<DynamicObject<'_>> {
+        self.descriptor.read_object(self.as_any()?, index)
+    }
+
+    pub fn read_object_named(&self, name: &str) -> PixuiResult<DynamicObject<'_>> {
+        self.read_object(self.field_index(name)?)
+    }
     pub fn invoke(
         &mut self,
         index: MethodIndex,

@@ -243,3 +243,23 @@ fn ordinary_methods_return_reflected_vectors_and_slices() {
         11
     );
 }
+
+#[test]
+fn vector_fields_can_be_read_as_reflected_sequences() {
+    let object = DynamicObject::from_reflect(model::Collection { items: items() });
+    let index = object.field_index("items").unwrap();
+    let sequence = object.read_object(index).unwrap();
+    assert!(sequence.descriptor().is_sequence());
+    assert_eq!(sequence.len().unwrap(), 2);
+    assert_eq!(value(&sequence.get(1).unwrap()), 2);
+    let original = &object.downcast_ref::<model::Collection>().unwrap().items;
+    assert!(std::ptr::eq(
+        sequence.downcast_ref::<Vec<model::Item>>().unwrap(),
+        original
+    ));
+    assert_eq!(object.read_object_named("items").unwrap().len().unwrap(), 2);
+    assert!(object.read_object(pixui_reflect::FieldIndex(99)).is_err());
+    let item = DynamicObject::from_reflect(model::Item { value: 0 });
+    assert!(item.read_object_named("value").is_err());
+    assert!(item.read_object_named("missing").is_err());
+}

@@ -120,6 +120,33 @@ impl TypeDescriptor {
     }
 
     /// Resolves the name and delegates to [`Self::read`].
+    pub fn read_object<'a>(
+        &self,
+        receiver: &'a dyn Any,
+        index: FieldIndex,
+    ) -> PixuiResult<DynamicObject<'a>> {
+        self.check_receiver(receiver)?;
+        let field = self
+            .fields
+            .get(index.0)
+            .ok_or_else(|| pixui_error!("invalid field index {}", index.0))?;
+        let get = field
+            .get_object
+            .as_ref()
+            .ok_or_else(|| pixui_error!("field `{}` has no reflected object getter", field.name))?;
+        get(receiver)
+    }
+
+    /// Resolves the name and reads a reflected object.
+    pub fn read_object_named<'a>(
+        &self,
+        receiver: &'a dyn Any,
+        name: &str,
+    ) -> PixuiResult<DynamicObject<'a>> {
+        self.read_object(receiver, self.field_index(name)?)
+    }
+
+    /// Resolves the name and delegates to [`Self::read`].
     pub fn read_named<'a>(&self, receiver: &'a dyn Any, name: &str) -> PixuiResult<&'a dyn Any> {
         self.read(receiver, self.field_index(name)?)
     }

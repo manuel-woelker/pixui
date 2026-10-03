@@ -9,7 +9,7 @@ mod sequence;
 mod type_descriptor;
 
 pub use dynamic_object::DynamicObject;
-pub use field::{Field, FieldGetter, FieldIndex};
+pub use field::{Field, FieldGetter, FieldIndex, FieldObjectGetter};
 pub use method::{
     Method, MethodIndex, MethodInvoker, MutMethodInvoker, RefMethodInvoker, SharedMethodInvoker,
     argument,

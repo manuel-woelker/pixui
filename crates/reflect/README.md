@@ -201,6 +201,11 @@ an object storage property, not a type kind. Map reflection is not implemented.
 
 `Vec<T>` implements `Reflect` when `T: Reflect`. Owned, shared, and mutable
 vectors keep their ordinary `Any` storage and support concrete downcasting.
+The module attribute also registers `Vec<T>` fields for `read_object` and
+`read_object_named`, returning shared reflected sequence objects without a
+concrete downcast. Their element type must implement `Reflect`. Non-vector
+fields retain ordinary `Any` reads. For manually registered or aliased vector
+fields, use `Field::sequence`; use `Field::new` when only an `Any` read is needed.
 Slices use separate shared/mutable sequence storage adapters because `[T]` is
 unsized and cannot use the existing `Any` storage. Slice wrappers support
 sequence operations, not `Any` downcasting or struct/method dispatch. Construct

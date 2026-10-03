@@ -40,6 +40,15 @@ fn expand(module: &mut ItemMod) -> syn::Result<()> {
             Fields::Named(fields) => fields.named.iter().map(|field| {
                 let name = field.ident.as_ref().unwrap();
                 let attrs = conditional_attributes(&field.attrs);
+                if let Type::Path(path) = &field.ty {
+                    if let Some(segment) = path.path.segments.last().filter(|segment| segment.ident == "Vec") {
+                        if let syn::PathArguments::AngleBracketed(arguments) = &segment.arguments {
+                            if let Some(syn::GenericArgument::Type(element)) = arguments.args.first() {
+                                return quote!(#(#attrs)* ::pixui_reflect::Field::sequence::<Self, #element>(stringify!(#name), |receiver| &receiver.#name));
+                            }
+                        }
+                    }
+                }
                 quote!(#(#attrs)* ::pixui_reflect::Field::new::<Self>(stringify!(#name), |receiver| &receiver.#name))
             }).collect::<Vec<_>>(),
             Fields::Unit => Vec::new(),
