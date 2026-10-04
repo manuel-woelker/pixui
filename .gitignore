@@ -1,5 +1,5 @@
 /target/
-*.drawio.svg
+*.generated.svg
 .drawio-export.*/
 /.cache/
 /.tool-tool/v2/cache/

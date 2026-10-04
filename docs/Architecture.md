@@ -7,7 +7,7 @@ and rendering. A web UI and persistence layer are not implemented.
 
 ## Application runtime
 
-![Application runtime: callers and the GUI thread send commands to the worker; the worker owns application and UI instance state and publishes display lists for native windows.](diagrams/architecture.drawio.svg)
+![Application runtime: callers and the GUI thread send commands to the worker; the worker owns application and UI instance state and publishes display lists for native windows.](diagrams/architecture.generated.svg)
 
 The source is [plain draw.io XML](diagrams/architecture.drawio). Edit it with
 `./t drawio docs/diagrams/architecture.drawio`. Run `./n watch-diagrams` to

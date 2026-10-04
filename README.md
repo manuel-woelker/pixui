@@ -55,9 +55,9 @@ The hook auto-formats staged Markdown with rumdl and preserves unstaged edits.
 
 ## Diagrams
 
-Commit plain `.drawio` XML sources. Generated `.drawio.svg` files are ignored;
-they are local previews referenced by the architecture documentation. Edit a
-source with `./t drawio docs/diagrams/architecture.drawio`.
+Commit plain `.drawio` XML sources. Generated `.generated.svg` files are
+ignored; they are local previews referenced by the architecture documentation.
+Edit a source with `./t drawio docs/diagrams/architecture.drawio`.
 
 ```bash
 ./n watch-diagrams                     # Export initially and watch for changes

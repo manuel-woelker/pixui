@@ -26,7 +26,7 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 export_diagram() {
-  local path="$1" output="${1}.svg"
+  local path="$1" output="${1%.drawio}.generated.svg"
   # Keep the snapshot and output beside the source so replacement is atomic.
   if ! temporary_directory="$(mktemp -d -- "$(dirname -- "${path}")/.drawio-export.XXXXXX")"; then
     return 1
@@ -65,7 +65,7 @@ scan() {
       continue
     fi
     if [[ "${once}" == true || "${fingerprints[${path}]:-}" != "${fingerprint}" \
-      || ( ! -f "${path}.svg" && "${outcomes[${path}]:-}" == ok ) ]]; then
+      || ( ! -f "${path%.drawio}.generated.svg" && "${outcomes[${path}]:-}" == ok ) ]]; then
       fingerprints["${path}"]="${fingerprint}"
       if export_diagram "${path}"; then
         outcomes["${path}"]=ok
@@ -81,8 +81,8 @@ scan() {
   for path in "${!fingerprints[@]}"; do
     if [[ -z "${seen[${path}]:-}" ]]; then
       # Only remove previews whose source was observed during this session.
-      if [[ ! -L "${path}.svg" ]]; then
-        rm -f -- "${path}.svg"
+      if [[ ! -L "${path%.drawio}.generated.svg" ]]; then
+        rm -f -- "${path%.drawio}.generated.svg"
       fi
       unset 'fingerprints[$path]' 'outcomes[$path]'
       printf 'Removed preview for deleted source %s\n' "${path}"

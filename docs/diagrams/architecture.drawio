@@ -1,52 +1,52 @@
-<mxfile host="Electron">
+<mxfile host="drawio-plugin" modified="2026-10-04T18:59:20.638Z" agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36" version="22.1.22" etag="W5tdYQeY4Q9Bfyr8O_4g" type="embed">
   <diagram id="application-runtime" name="pixui Application runtime">
-    <mxGraphModel grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="0" page="0" pageScale="1" pageWidth="1440" pageHeight="1060" math="0" shadow="0">
+    <mxGraphModel dx="1924" dy="1150" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="0" page="0" pageScale="1" pageWidth="1440" pageHeight="1060" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
-        <mxCell id="2" parent="1" style="text;html=1;fontSize=24;fontStyle=1;fontColor=#1D3557;" value="Pixui application runtime" vertex="1">
-          <mxGeometry height="50" width="1390" x="20" y="10" as="geometry" />
+        <mxCell id="2" value="Pixui application runtime" style="text;html=1;fontSize=24;fontStyle=1;fontColor=#1D3557;" parent="1" vertex="1">
+          <mxGeometry x="20" y="10" width="1390" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="3" parent="1" style="swimlane;html=1;startSize=40;fillColor=#D8EAF2;strokeColor=#457B9D;fontSize=18;fontStyle=1;" value="Caller threads" vertex="1">
-          <mxGeometry height="810" width="250" x="20" y="80" as="geometry" />
+        <mxCell id="3" value="Caller threads" style="swimlane;html=1;startSize=40;fillColor=#D8EAF2;strokeColor=#457B9D;fontSize=18;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="20" y="80" width="250" height="810" as="geometry" />
         </mxCell>
-        <mxCell id="6" parent="3" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#457B9D;fontSize=15;spacing=10;" value="ApplicationHandle / typed action facades&lt;br&gt;&lt;br&gt;Owned requests&lt;br&gt;Cheap sender clones" vertex="1">
-          <mxGeometry height="145" width="200" x="25" y="85" as="geometry" />
+        <mxCell id="6" value="ApplicationHandle / typed action facades&lt;br&gt;&lt;br&gt;Owned requests&lt;br&gt;Cheap sender clones" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#457B9D;fontSize=15;spacing=10;" parent="3" vertex="1">
+          <mxGeometry x="25" y="85" width="200" height="145" as="geometry" />
         </mxCell>
-        <mxCell id="14" parent="3" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#457B9D;fontSize=14;spacing=10;" value="Owned replies&lt;br&gt;PixuiResult&lt;T&gt;&lt;br&gt;&lt;br&gt;Wait or poll; dropping a reply&lt;br&gt;does not cancel a command" vertex="1">
-          <mxGeometry height="150" width="200" x="25" y="590" as="geometry" />
+        <mxCell id="14" value="Owned replies&lt;br&gt;PixuiResult&lt;T&gt;&lt;br&gt;&lt;br&gt;Wait or poll; dropping a reply&lt;br&gt;does not cancel a command" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#457B9D;fontSize=14;spacing=10;" parent="3" vertex="1">
+          <mxGeometry x="25" y="590" width="200" height="150" as="geometry" />
         </mxCell>
-        <mxCell id="4" parent="1" style="swimlane;html=1;startSize=40;fillColor=#E3F3E1;strokeColor=#538752;fontSize=18;fontStyle=1;" value="GUI thread (main thread)" vertex="1">
-          <mxGeometry height="810" width="350" x="320" y="80" as="geometry" />
+        <mxCell id="4" value="GUI thread (main thread)" style="swimlane;html=1;startSize=40;fillColor=#E3F3E1;strokeColor=#538752;fontSize=18;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="320" y="80" width="350" height="810" as="geometry" />
         </mxCell>
-        <mxCell id="8" parent="4" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#538752;fontSize=14;spacing=10;" value="winit event loop&lt;br&gt;&lt;br&gt;Native events → owned UiCommand&lt;br&gt;Nonblocking admission and bounded retry&lt;br&gt;Adjacent motion / resize coalescing" vertex="1">
-          <mxGeometry height="165" width="300" x="25" y="85" as="geometry" />
+        <mxCell id="8" value="winit event loop&lt;br&gt;&lt;br&gt;Native events → owned UiCommand&lt;br&gt;Nonblocking admission and bounded retry&lt;br&gt;Adjacent motion / resize coalescing" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#538752;fontSize=14;spacing=10;" parent="4" vertex="1">
+          <mxGeometry x="25" y="85" width="300" height="165" as="geometry" />
         </mxCell>
-        <mxCell id="9" parent="4" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#538752;fontSize=15;spacing=10;" value="Native Windows&lt;br&gt;&lt;br&gt;One UiInstanceId per window&lt;br&gt;Latest retained RenderOutput&lt;br&gt;softbuffer graphics surfaces&lt;br&gt;Main-thread CPU drawing" vertex="1">
-          <mxGeometry height="185" width="300" x="25" y="475" as="geometry" />
+        <mxCell id="9" value="Native Windows&lt;br&gt;&lt;br&gt;One UiInstanceId per window&lt;br&gt;Latest retained RenderOutput&lt;br&gt;softbuffer graphics surfaces&lt;br&gt;Main-thread CPU drawing" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#538752;fontSize=15;spacing=10;" parent="4" vertex="1">
+          <mxGeometry x="25" y="475" width="300" height="185" as="geometry" />
         </mxCell>
-        <mxCell id="5" parent="1" style="swimlane;html=1;startSize=40;fillColor=#FCE8D5;strokeColor=#B87537;fontSize=18;fontStyle=1;" value="Application worker (sole state owner)" vertex="1">
-          <mxGeometry height="810" width="530" x="870" y="80" as="geometry" />
+        <mxCell id="5" value="Application worker (sole state owner)" style="swimlane;html=1;startSize=40;fillColor=#FCE8D5;strokeColor=#B87537;fontSize=18;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="870" y="80" width="530" height="810" as="geometry" />
         </mxCell>
-        <mxCell id="10" parent="5" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B87537;fontSize=15;spacing=10;" value="Application state&lt;br&gt;&lt;br&gt;Named slices → typed collections / arenas&lt;br&gt;Registered actions and opaque object refs" vertex="1">
-          <mxGeometry height="120" width="480" x="25" y="65" as="geometry" />
+        <mxCell id="10" value="Application state&lt;br&gt;&lt;br&gt;Named slices → typed collections / arenas&lt;br&gt;Registered actions and opaque object refs" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B87537;fontSize=15;spacing=10;" parent="5" vertex="1">
+          <mxGeometry x="25" y="65" width="480" height="120" as="geometry" />
         </mxCell>
-        <mxCell id="11" parent="5" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B87537;fontSize=15;spacing=10;" value="UI registry&lt;br&gt;&lt;br&gt;UiDefinition: reusable LivePart template&lt;br&gt;UiInstance: LiveState + PresentationSettings&lt;br&gt;LayoutState / hit regions / bindings&lt;br&gt;Focus / hover / scroll / revision" vertex="1">
-          <mxGeometry height="170" width="480" x="25" y="225" as="geometry" />
+        <mxCell id="11" value="UI registry&lt;br&gt;&lt;br&gt;UiDefinition: reusable LivePart template&lt;br&gt;UiInstance: LiveState + PresentationSettings&lt;br&gt;LayoutState / hit regions / bindings&lt;br&gt;Focus / hover / scroll / revision" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B87537;fontSize=15;spacing=10;" parent="5" vertex="1">
+          <mxGeometry x="25" y="225" width="480" height="170" as="geometry" />
         </mxCell>
-        <mxCell id="12" parent="5" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B87537;fontSize=15;spacing=10;" value="Walk → measure → layout → paint&lt;br&gt;&lt;br&gt;Private template copy + independent LiveState&lt;br&gt;Borrow collection elements during the walk&lt;br&gt;Generate owned DisplayList commands" vertex="1">
-          <mxGeometry height="145" width="480" x="25" y="455" as="geometry" />
+        <mxCell id="12" value="Walk → measure → layout → paint&lt;br&gt;&lt;br&gt;Private template copy + independent LiveState&lt;br&gt;Borrow collection elements during the walk&lt;br&gt;Generate owned DisplayList commands" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B87537;fontSize=15;spacing=10;" parent="5" vertex="1">
+          <mxGeometry x="25" y="455" width="480" height="145" as="geometry" />
         </mxCell>
-        <mxCell id="7" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D8EAF2;strokeColor=#457B9D;fontSize=14;spacing=10;" value="Bounded MPSC command queue&lt;br&gt;&lt;br&gt;Actions, UI input, settings,&lt;br&gt;registration, inspection, close" vertex="1">
-          <mxGeometry height="175" width="140" x="700" y="185" as="geometry" />
+        <mxCell id="7" value="Bounded MPSC command queue&lt;br&gt;&lt;br&gt;Actions, UI input, settings,&lt;br&gt;registration, inspection, close" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D8EAF2;strokeColor=#457B9D;fontSize=14;spacing=10;" parent="1" vertex="1">
+          <mxGeometry x="700" y="185" width="140" height="175" as="geometry" />
         </mxCell>
-        <mxCell id="13" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F3E1;strokeColor=#538752;fontSize=14;spacing=10;" value="Latest-output mailbox (capacity 1 per instance)&lt;br&gt;&lt;br&gt;RenderOutput { instance_id, revision, DisplayList }&lt;br&gt;New output replaces pending output; worker never waits" vertex="1">
-          <mxGeometry height="115" width="660" x="700" y="730" as="geometry" />
+        <mxCell id="13" value="Latest-output mailbox (capacity 1 per instance)&lt;br&gt;&lt;br&gt;RenderOutput { instance_id, revision, DisplayList }&lt;br&gt;New output replaces pending output; worker never waits" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F3E1;strokeColor=#538752;fontSize=14;spacing=10;" parent="1" vertex="1">
+          <mxGeometry x="908" y="730" width="452" height="115" as="geometry" />
         </mxCell>
-        <mxCell id="15" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#888888;fontSize=14;spacing=12;" value="Contracts: instance state is independent; application data is shared. Input uses the presented revision; stale clicks are rejected.&lt;br&gt;Any dispatched action invalidates all instances. Definitions and component payloads remain on the worker; native resources remain on the GUI thread." vertex="1">
-          <mxGeometry height="85" width="1380" x="20" y="930" as="geometry" />
+        <mxCell id="15" value="Contracts: instance state is independent; application data is shared. Input uses the presented revision; stale clicks are rejected.&lt;br&gt;Any dispatched action invalidates all instances. Definitions and component payloads remain on the worker; native resources remain on the GUI thread." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#888888;fontSize=14;spacing=12;" parent="1" vertex="1">
+          <mxGeometry x="20" y="930" width="1380" height="85" as="geometry" />
         </mxCell>
-        <mxCell id="20" edge="1" parent="1" source="6" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=block;strokeColor=#457B9D;" target="7" value="dispatch">
+        <mxCell id="20" value="dispatch" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=block;strokeColor=#457B9D;" parent="1" source="6" target="7" edge="1">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
               <mxPoint x="285" y="150" />
@@ -54,28 +54,28 @@
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="21" edge="1" parent="1" source="8" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=block;strokeColor=#538752;" target="7" value="input / settings">
+        <mxCell id="21" value="input / settings" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=block;strokeColor=#538752;" parent="1" source="8" target="7" edge="1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="22" edge="1" parent="1" source="7" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=block;strokeColor=#457B9D;" target="10" value="">
+        <mxCell id="22" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=block;strokeColor=#457B9D;" parent="1" source="7" target="10" edge="1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="23" edge="1" parent="1" source="10" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=block;strokeColor=#B87537;" target="11" value="invalidate / route input">
+        <mxCell id="23" value="invalidate / route input" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=block;strokeColor=#B87537;" parent="1" source="10" target="11" edge="1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="24" edge="1" parent="1" source="11" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=block;strokeColor=#B87537;" target="12" value="dirty instances">
+        <mxCell id="24" value="dirty instances" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=block;strokeColor=#B87537;" parent="1" source="11" target="12" edge="1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="25" edge="1" parent="1" source="12" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=block;strokeColor=#538752;" target="13" value="publish">
+        <mxCell id="25" value="publish" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=block;strokeColor=#538752;" parent="1" source="12" target="13" edge="1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="26" edge="1" parent="1" source="13" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=block;strokeColor=#538752;" target="9" value="present / retain">
+        <mxCell id="26" value="present / retain" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=block;strokeColor=#538752;" parent="1" source="13" target="9" edge="1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="27" edge="1" parent="1" source="9" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=block;strokeColor=#538752;" target="8" value="native events">
+        <mxCell id="27" value="native events" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=block;strokeColor=#538752;" parent="1" source="9" target="8" edge="1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="28" edge="1" parent="1" source="10" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=block;dashed=1;strokeColor=#457B9D;" target="14" value="per-command replies">
+        <mxCell id="28" value="per-command replies" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=block;dashed=1;strokeColor=#457B9D;" parent="1" source="10" target="14" edge="1">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
               <mxPoint x="1380" y="910" />
