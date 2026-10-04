@@ -6,10 +6,11 @@
 ## Decision
 
 Represent application state as named `ApplicationSlice` instances containing
-named, homogeneous `Collection` instances and registered actions. Each collection
-owns an `Arena<T>` for one concrete Rust type, erased at the collection boundary
-so different types can coexist in the same slice. Store items directly, without
-per-item `DynamicObject` wrappers or a requirement that items implement `Reflect`.
+named, homogeneous `Collection` instances and registered actions. Each
+collection owns an `Arena<T>` for one concrete Rust type, erased at the
+collection boundary so different types can coexist in the same slice. Store
+items directly, without per-item `DynamicObject` wrappers or a requirement that
+items implement `Reflect`.
 
 Use stable slice identities, collection identities, and typed generational keys
 to address individual items through `ObjectRef<T>`. Requests carry these owned
@@ -39,10 +40,10 @@ exclusive Rust borrows inside handlers. Generational keys reject references to
 removed or reused slots instead of allowing an old request to target a new item.
 
 Homogeneous arenas retain concrete item layouts and typed access. Erasing one
-arena per collection keeps heterogeneous application composition possible without
-boxing and dynamically inspecting every item. Reflection remains useful for
-request schemas and dynamic consumers, as described in
-[DR-001](<DR-001 Use a custom reflection mechanism.md>).
+arena per collection keeps heterogeneous application composition possible
+without boxing and dynamically inspecting every item. Reflection remains useful
+for request schemas and dynamic consumers, as described in
+[DR-001](DR-001%20Use%20a%20custom%20reflection%20mechanism.md).
 
 Collection names distinguish storage roles when the same type appears more than
 once, such as `todos` and `archived`. Registration checks catch missing or
@@ -88,7 +89,8 @@ advantage over direct struct field access.
 - Arena identities and generations are finite, and references are process-local.
   Persistence would need separate durable identities and resolution rules.
 - Slices group behavior and storage but do not isolate access: an `ObjectRef<T>`
-  can identify an item in another slice. References are addresses, not permissions.
+  can identify an item in another slice. References are addresses, not
+  permissions.
 - Singleton settings, nested ownership, and cross-collection invariants may fit
   this model less naturally than a root struct. Do not split cohesive domain
   objects merely to make all data independently addressable. Revisit the model

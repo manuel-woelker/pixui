@@ -3,8 +3,8 @@
 Rust workspace with a core engine library in [`crates/engine`](crates/engine)
 and shared infrastructure in [`crates/base`](crates/base).
 
-See the [architecture overview](docs/Architecture.md) for the application runtime
-diagram, state ownership, and workspace responsibilities.
+See the [architecture overview](docs/Architecture.md) for the application
+runtime diagram, state ownership, and workspace responsibilities.
 
 [`crates/reflect`](crates/reflect) provides explicit indexed field reads
 and method invocation; see its [API and assumptions](crates/reflect/README.md).
@@ -31,6 +31,7 @@ formatting, compilation checks, clippy, nextest, and documentation tests.
 ```bash
 ./n --list                            # List available tasks
 ./n check                             # Formatting, compilation, clippy, and tests
+./n format-markdown                   # Auto-format Markdown with rumdl
 ./n ci                                # Run the same checks for CI
 ./t cargo build --workspace            # Build all crates
 ./t cargo-nextest nextest run -p pixui-engine # Test the engine
@@ -46,12 +47,20 @@ Enable the repository pre-commit hook once per clone:
 git config core.hooksPath .githooks
 ```
 
-The hook regenerates every staged added or modified `.drawio.svg` from its
-embedded diagram using `./t drawio`, then stages the regenerated SVG. It requires
-Bash and a working desktop display for draw.io. Unstaged edits are preserved;
-for partially staged diagrams, only the staged version is regenerated. Deleted
-diagrams are skipped. Export errors block the commit without changing staged
-files. To run regeneration manually, use `./scripts/regenerate-drawio-svg.sh`.
+The hook auto-formats staged Markdown with rumdl and regenerates every staged
+added or modified `.drawio.svg` from its embedded diagram using `./t drawio`,
+then stages the regenerated SVG. It requires Bash and a working desktop display
+for draw.io. Unstaged edits are preserved; for partially staged diagrams, only
+the staged version is regenerated. Deleted diagrams are skipped. Export errors
+block the commit without changing staged files. To run regeneration manually,
+use `./scripts/regenerate-drawio-svg.sh`.
+
+Markdown tooling is pinned through tool-tool, with settings in `.rumdl.toml`.
+`./n check` depends on `format-markdown` and updates Markdown files
+automatically. Use `./t rumdl check .` to report lint issues; formatting alone
+does not fail on remaining issues that cannot be fixed automatically. Markdown
+hook formatting preserves unstaged edits and can be run with
+`./scripts/format-staged-markdown.sh`.
 
 Tool versions are pinned in `.tool-tool/tool-tool.v2.kdl`, with download
 checksums in `.tool-tool/v2/checksums.kdl`. The `./t` bootstrap also verifies
@@ -65,5 +74,6 @@ tests run separately through Cargo because nextest does not run them.
 ## Decision records
 
 Significant technical and product decisions are recorded in
-[`docs/decisions`](docs/decisions). See [DR-000](<docs/decisions/DR-000 Record decisions in the repository.md>)
-for the required format and conventions.
+[`docs/decisions`](docs/decisions). See
+[DR-000](<docs/decisions/DR-000 Record decisions in the repository.md>) for the
+required format and conventions.

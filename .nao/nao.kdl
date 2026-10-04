@@ -1,4 +1,8 @@
 recipe "default" {
+  task "format-markdown" description="Auto-format Markdown" {
+    run shell="./t rumdl fmt ."
+  }
+
   task "cargo-fmt" description="Check Rust formatting" {
     run shell="./t cargo fmt --all"
   }
@@ -20,6 +24,7 @@ recipe "default" {
   }
 
   task "check" description="Run all repository checks" {
+    depends-on "format-markdown"
     depends-on "cargo-fmt"
     depends-on "cargo-check"
     depends-on "cargo-clippy"

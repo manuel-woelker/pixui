@@ -1,6 +1,14 @@
 cache-directory ".cache/tool-tool"
 
 tools {
+	rumdl "0.2.78" {
+		download {
+			linux "https://github.com/rvben/rumdl/releases/download/v${version}/rumdl-v${version}-x86_64-unknown-linux-musl.tar.gz"
+		}
+		commands {
+			rumdl "rumdl"
+		}
+	}
 // https://github.com/jgraph/drawio-desktop/releases
 	drawio "31.7.0" {
 		download {

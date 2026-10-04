@@ -8,8 +8,8 @@ usually matters more than saving a few lines when writing it.
 ## Readability
 
 - Use names that describe the domain and the purpose of a value or operation.
-  Avoid abbreviations unless they are established vocabulary.
-  Clear names let readers understand intent without reconstructing it from usage.
+  Avoid abbreviations unless they are established vocabulary. Clear names let
+  readers understand intent without reconstructing it from usage.
 - Keep functions focused on one responsibility. Make control flow and ownership
   visible; use early returns when they simplify the main path.
   Focused functions make dependencies, side effects, and failure paths easier
@@ -110,9 +110,9 @@ easy and their eventual organization harder.
   than an explicit statement of a limitation.
 - Record significant choices and rejected alternatives in
   [decision records](decisions/), following
-  [DR-000](<decisions/DR-000 Record decisions in the repository.md>).
-  Link to those records instead of duplicating their rationale in several places.
-  A single historical account makes tradeoffs discoverable and avoids conflicting
+  [DR-000](<decisions/DR-000 Record decisions in the repository.md>). Link to
+  those records instead of duplicating their rationale in several places. A
+  single historical account makes tradeoffs discoverable and avoids conflicting
   explanations as the design evolves.
 
 ## Verification

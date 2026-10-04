@@ -23,8 +23,9 @@ and generated facade methods wait for their replies. Inspections execute on the
 same worker and return owned snapshots rather than live state borrows.
 
 Cache static action metadata in `ActionHandle` and generated facades so request
-construction can happen locally. Only state access and execution need the worker.
-See [DR-002](<DR-002 Organize application state into slices and typed collections.md>)
+construction can happen locally. Only state access and execution need the
+worker. See
+[DR-002](DR-002%20Organize%20application%20state%20into%20slices%20and%20typed%20collections.md)
 for the storage and item-addressing model.
 
 ## Rationale
@@ -80,30 +81,32 @@ This record captures the implemented mechanism and its limits.
   consider performing it outside the worker and dispatching a later result,
   with explicit checks for state changes during that interval.
 - The bound limits queued command count, not total memory: requests can vary in
-  size, blocked producers retain requests, and unconsumed replies retain results.
-  Capacity should follow actual workloads rather than being treated as a latency
-  or memory guarantee.
+  size, blocked producers retain requests, and unconsumed replies retain
+  results. Capacity should follow actual workloads rather than being treated as
+  a latency or memory guarantee.
 - Blocking handle or facade calls from the same application's worker can
   deadlock: it cannot service its own queue while waiting. This includes calls
   from an inspection callback. There is currently no runtime guard or timeout.
 - Dropping a pending reply does not cancel an accepted action. Ordinary handler
-  errors are returned and leave the worker running; mutations are not rolled back.
+  errors are returned and leave the worker running; mutations are not rolled
+  back.
 - On an unwinding panic, the worker discards its potentially inconsistent state
   and drains subsequent commands by dropping them, disconnecting their replies.
   Callers receive errors instead of waiting indefinitely for retained queued
-  replies. The worker does not restart or recover state. Abort-mode panics cannot
-  be contained by this mechanism.
-- Every sender clone, including one retained by a facade, keeps the worker alive.
-  Dropping the last sender closes the queue; accepted commands drain before normal
-  exit. There is no join handle or explicit shutdown acknowledgment, so dropping
-  the last handle does not wait for cleanup to finish.
+  replies. The worker does not restart or recover state. Abort-mode panics
+  cannot be contained by this mechanism.
+- Every sender clone, including one retained by a facade, keeps the worker
+  alive. Dropping the last sender closes the queue; accepted commands drain
+  before normal exit. There is no join handle or explicit shutdown
+  acknowledgment, so dropping the last handle does not wait for cleanup to
+  finish.
 - Worker startup and queue allocation can panic. The design uses one OS thread
   per running application, with the corresponding stack and scheduling costs.
 - Snapshots are owned values and may need copying. Inspection provides no
   concurrent read access or long-lived reference to live state.
 - The queue is process-local and nondurable. It provides neither persistence nor
-  delivery across a process failure. Retrying an action requires application-level
-  care because actions are not automatically idempotent.
+  delivery across a process failure. Retrying an action requires
+  application-level care because actions are not automatically idempotent.
 
 ## Considered alternatives
 
@@ -111,18 +114,18 @@ This record captures the implemented mechanism and its limits.
 
 Rejected for the current API because the primary operation is mutable action
 dispatch, which still requires exclusive access. Concurrent reads would help
-read-heavy workloads, but add lock lifetime and reader/writer contention concerns
-and generally require shared state to be `Sync`. A worker gives a single explicit
-execution boundary and owned snapshots. Reconsider shared read snapshots if
-measurements show inspection queueing is a bottleneck.
+read-heavy workloads, but add lock lifetime and reader/writer contention
+concerns and generally require shared state to be `Sync`. A worker gives a
+single explicit execution boundary and owned snapshots. Reconsider shared read
+snapshots if measurements show inspection queueing is a bottleneck.
 
 ### Share state through `Arc<Mutex<Application>>`
 
-Rejected because it makes execution happen on caller threads and couples dispatch
-to lock acquisition and scope. It avoids channel round trips and can be simpler
-or faster for small synchronous operations, but provides no pending-result queue
-or explicit admission bound. The current design favors separate state ownership
-and controllable backpressure.
+Rejected because it makes execution happen on caller threads and couples
+dispatch to lock acquisition and scope. It avoids channel round trips and can be
+simpler or faster for small synchronous operations, but provides no
+pending-result queue or explicit admission bound. The current design favors
+separate state ownership and controllable backpressure.
 
 ### Use an unbounded command channel
 
@@ -133,9 +136,9 @@ full-queue errors. It still requires callers to manage request size and retries.
 ### Use an async task and async channels
 
 Deferred because an executor dependency and async public API are unnecessary for
-the current synchronous handlers. Async channels could suit callers already using
-an executor; the present blocking methods must not be assumed suitable for an
-executor thread without adaptation.
+the current synchronous handlers. Async channels could suit callers already
+using an executor; the present blocking methods must not be assumed suitable for
+an executor thread without adaptation.
 
 ### Use the standard library's bounded channel
 
@@ -154,6 +157,7 @@ the current requirements with less complexity.
 ### Require callers to manage the worker lifecycle explicitly
 
 Rejected for the basic application API because constructing and retaining a
-separate dispatcher and worker adds setup for every application. Internal startup
-and sender-based lifetime management keep the common path small. Explicit shutdown
-and joining remain possible follow-up work if callers need confirmed cleanup.
+separate dispatcher and worker adds setup for every application. Internal
+startup and sender-based lifetime management keep the common path small.
+Explicit shutdown and joining remain possible follow-up work if callers need
+confirmed cleanup.

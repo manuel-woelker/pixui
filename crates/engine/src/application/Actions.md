@@ -1,6 +1,7 @@
 # Application actions
 
-The [application state decision record](../../../../docs/decisions/DR-002%20Organize%20application%20state%20into%20slices%20and%20typed%20collections.md)
+The
+[application state decision record](../../../../docs/decisions/DR-002%20Organize%20application%20state%20into%20slices%20and%20typed%20collections.md)
 explains why state is organized into slices and typed collections, including the
 tradeoffs compared with a plain Rust root struct.
 
@@ -9,8 +10,10 @@ tradeoffs compared with a plain Rust root struct.
 sender. Add configured slices and dispatch actions through that handle; the
 worker owns the application state and executes commands sequentially.
 
-The [worker and queue decision record](../../../../docs/decisions/DR-003%20Own%20application%20state%20on%20a%20worker%20thread%20with%20a%20bounded%20MPSC%20queue.md)
-documents ownership, backpressure, lifecycle, and the tradeoffs against shared locks.
+The
+[worker and queue decision record](../../../../docs/decisions/DR-003%20Own%20application%20state%20on%20a%20worker%20thread%20with%20a%20bounded%20MPSC%20queue.md)
+documents ownership, backpressure, lifecycle, and the tradeoffs against shared
+locks.
 
 Actions are ordinary functions. `#[action]` generates owned request types,
 reflection metadata, and adapters that borrow data during dispatch. Handlers
@@ -181,12 +184,12 @@ rollback is provided. The normal Rust panic hook still runs.
 
 ## Types and current limits
 
-`SendValue` and `SendValues` live in `pixui_base::erased_value`. `ActionRequest`,
-`ActionOutput`, `ActionResult`, and `ActionHandler` live in the action module.
-Channel endpoints use internal aliases. Requests, outputs, and collection
-values require `'static + Send`; `Sync` is not required. Outputs are boxed owned
-values. `PixuiResult<T>` propagates errors and boxes only `T`; other result types
-are ordinary return values. Void handlers produce boxed `()`.
+`SendValue` and `SendValues` live in `pixui_base::erased_value`.
+`ActionRequest`, `ActionOutput`, `ActionResult`, and `ActionHandler` live in the
+action module. Channel endpoints use internal aliases. Requests, outputs, and
+collection values require `'static + Send`; `Sync` is not required. Outputs are
+boxed owned values. `PixuiResult<T>` propagates errors and boxes only `T`; other
+result types are ordinary return values. Void handlers produce boxed `()`.
 
 Generated handlers must be safe, synchronous, non-generic free functions at
 module scope with simple parameter names. Initially only one mutable parameter
@@ -234,8 +237,8 @@ let key: Key<String> = actions.add("A note")?;
 # Ok::<(), pixui_base::PixuiError>(())
 ```
 
-The facade is generated **inside the annotated module**, with a public method for
-each `#[action]` function. Other module items remain ordinary Rust items.
+The facade is generated **inside the annotated module**, with a public method
+for each `#[action]` function. Other module items remain ordinary Rust items.
 Registration discovers enabled actions automatically and validates the whole
 batch before adding any action. Configure collections first.
 

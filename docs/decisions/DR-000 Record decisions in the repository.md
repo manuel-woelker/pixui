@@ -11,9 +11,10 @@ its consequences, and the alternatives considered with reasons for rejecting
 them.
 
 Always include the decision title in the filename, using the format
-`DR-NNN Decision title.md`. Use sequential identifiers starting with
-`DR-000`, followed by `DR-001`, `DR-002`, and so on. Capitalize the first letter of the title and use spaces between words,
-not dashes, for example `DR-001 Use a custom reflection mechanism.md`. The document title includes the
+`DR-NNN Decision title.md`. Use sequential identifiers starting with `DR-000`,
+followed by `DR-001`, `DR-002`, and so on. Capitalize the first letter of the
+title and use spaces between words, not dashes, for example
+`DR-001 Use a custom reflection mechanism.md`. The document title includes the
 same identifier and descriptive decision title. Assign the next unused number
 when adding a record.
 

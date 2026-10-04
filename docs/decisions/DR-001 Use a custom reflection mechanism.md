@@ -103,10 +103,10 @@ claim that all existing libraries are unsuitable.
 - Automatic registration includes private members. Applying the attribute
   intentionally exposes them through reflection; Rust visibility alone does
   not restrict reflected access.
-- Reflected impl blocks must be visible within the attributed inline module.
-  The initial macro supports a deliberately limited set of concrete, synchronous
-  signatures. Generics, async methods, consuming receivers, and several reference
-  forms remain unsupported.
+- Reflected impl blocks must be visible within the attributed inline module. The
+  initial macro supports a deliberately limited set of concrete, synchronous
+  signatures. Generics, async methods, consuming receivers, and several
+  reference forms remain unsupported.
 - Owned arguments are cloned by generated adapters. Shared arguments can be
   borrowed. Owned return values remain boxed `Any`; borrowed reflected returns
   require a sized target implementing `Reflect`.

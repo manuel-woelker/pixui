@@ -1,8 +1,10 @@
 # pixui-reflect
 
-Small, explicit reflection for constructing structs, reading fields, and invoking methods.
-A non-generic `TypeDescriptor` holds immutable lists of erased field getters
-and method adapters, plus the receiver’s Rust `TypeId` and diagnostic type name. Automatic registration uses a module attribute, without a global registry.
+Small, explicit reflection for constructing structs, reading fields, and
+invoking methods. A non-generic `TypeDescriptor` holds immutable lists of erased
+field getters and method adapters, plus the receiver’s Rust `TypeId` and
+diagnostic type name. Automatic registration uses a module attribute, without a
+global registry.
 
 ```rust
 use pixui_reflect::{reflect, Reflect, DynamicObject};
@@ -47,8 +49,9 @@ Associated functions (including constructors) and trait impls are ignored.
 
 Each struct implements `Reflect`. Import that trait to call
 `MyStruct::type_descriptor()`, which returns a `&'static TypeDescriptor` stored
-in a `OnceLock<TypeDescriptor>`. `DynamicObject::from_reflect(value)` erases the value and obtains
-its descriptor automatically. No member lists or adapters are necessary.
+in a `OnceLock<TypeDescriptor>`. `DynamicObject::from_reflect(value)` erases the
+value and obtains its descriptor automatically. No member lists or adapters are
+necessary.
 
 The module attribute is intentional: a derive on a struct cannot inspect
 separate impl blocks. Keep reflected impl blocks directly in that same module,
@@ -114,9 +117,10 @@ object; `into_owned::<T>()` consumes it and recovers `T` without cloning.
 Conditional fields participate only when enabled by their `cfg` conditions.
 
 Automatically registered fields expose `type_id()` and `type_name()` for input
-selection. Manual `Field::typed` and `Field::sequence` also provide that metadata;
-`Field::new` accepts an erased getter and therefore leaves it unavailable.
-Field names and order describe the current build, not a persistent schema.
+selection. Manual `Field::typed` and `Field::sequence` also provide that
+metadata; `Field::new` accepts an erased getter and therefore leaves it
+unavailable. Field names and order describe the current build, not a persistent
+schema.
 
 `TypeDescriptor::new` does not register a constructor. Use `with_constructor`
 for a custom callback; the descriptor checks count and ownership before calling
@@ -171,23 +175,24 @@ The existing `type_descriptor!` macro and `TypeDescriptor::new::<T>`,
 `Field::new::<T>`, and `Method::new::<T>` constructors remain available for
 custom adapters. Manual registration is optional.
 
-The descriptor accepts `&dyn Any` for reads and `&mut dyn Any` for calls, checking
-the receiver type before dispatch. Each erased adapter also checks its receiver
-when downcasting. Mismatched manual registrations return errors when accessed.
-There are no unsafe casts. Erased callbacks are boxed once during registration.
+The descriptor accepts `&dyn Any` for reads and `&mut dyn Any` for calls,
+checking the receiver type before dispatch. Each erased adapter also checks its
+receiver when downcasting. Mismatched manual registrations return errors when
+accessed. There are no unsafe casts. Erased callbacks are boxed once during
+registration.
 
-`DynamicObject<'a>` stores an owned `Box<dyn Any>`, a shared `&'a dyn Any`,
-or an exclusive `&'a mut dyn Any`, alongside a `&'static TypeDescriptor`. Its manual
-constructor requires a descriptor in static storage and rejects mismatched types.
-For manual registration, initialize a static `OnceLock<TypeDescriptor>` and
-pass the reference returned by `get_or_init`. Generated descriptors initialize
-once and live for the process lifetime without `Arc` or explicit leaking. Different
-concrete types and storage variants can coexist in `Vec<DynamicObject<'a>>`,
-using a common borrow lifetime. `descriptor()` exposes
-metadata; `downcast_ref` and `downcast_mut` optionally recover concrete access.
-Reading a field borrows the object, so mutable invocation cannot overlap that
-borrow. Objects need not be `Send` or `Sync`; descriptors can be shared across
-threads.
+`DynamicObject<'a>` stores an owned `Box<dyn Any>`, a shared `&'a dyn Any`, or
+an exclusive `&'a mut dyn Any`, alongside a `&'static TypeDescriptor`. Its
+manual constructor requires a descriptor in static storage and rejects
+mismatched types. For manual registration, initialize a static
+`OnceLock<TypeDescriptor>` and pass the reference returned by `get_or_init`.
+Generated descriptors initialize once and live for the process lifetime without
+`Arc` or explicit leaking. Different concrete types and storage variants can
+coexist in `Vec<DynamicObject<'a>>`, using a common borrow lifetime.
+`descriptor()` exposes metadata; `downcast_ref` and `downcast_mut` optionally
+recover concrete access. Reading a field borrows the object, so mutable
+invocation cannot overlap that borrow. Objects need not be `Send` or `Sync`;
+descriptors can be shared across threads.
 
 ## Owned and borrowed storage
 
@@ -288,17 +293,17 @@ allow capability discovery without accessing a value. Reference ownership is
 an object storage property, not a type kind. Map reflection is not implemented.
 
 `Vec<T>` implements `Reflect` when `T: Reflect`. Owned, shared, and mutable
-vectors keep their ordinary `Any` storage and support concrete downcasting.
-The module attribute also registers `Vec<T>` fields for `read_object` and
+vectors keep their ordinary `Any` storage and support concrete downcasting. The
+module attribute also registers `Vec<T>` fields for `read_object` and
 `read_object_named`, returning shared reflected sequence objects without a
 concrete downcast. Their element type must implement `Reflect`. Non-vector
 fields retain ordinary `Any` reads. For manually registered or aliased vector
-fields, use `Field::sequence`; use `Field::new` when only an `Any` read is needed.
-Slices use separate shared/mutable sequence storage adapters because `[T]` is
-unsized and cannot use the existing `Any` storage. Slice wrappers support
-sequence operations, not `Any` downcasting or struct/method dispatch. Construct
-them with `from_slice` and `from_slice_mut`; the module macro also generates
-adapters for methods returning slices.
+fields, use `Field::sequence`; use `Field::new` when only an `Any` read is
+needed. Slices use separate shared/mutable sequence storage adapters because
+`[T]` is unsized and cannot use the existing `Any` storage. Slice wrappers
+support sequence operations, not `Any` downcasting or struct/method dispatch.
+Construct them with `from_slice` and `from_slice_mut`; the module macro also
+generates adapters for methods returning slices.
 
 ```rust
 use pixui_reflect::{reflect, DynamicObject, TypeKind};
@@ -322,7 +327,8 @@ assert_eq!(slice.len()?, 1);
 Out-of-bounds indices return errors. `get` always returns a shared element;
 `get_mut` requires mutable storage and returns an exclusive element. Element
 objects borrow the sequence, preventing resize, destruction, or conflicting
-access while those objects are in use. Elements require `Reflect`; common scalar element descriptors are provided.
+access while those objects are in use. Elements require `Reflect`; common scalar
+element descriptors are provided.
 
 Generated struct descriptors still use a per-type `OnceLock`. Generic vector
 and slice descriptors use a synchronized cache keyed by `TypeId`, retaining
@@ -357,7 +363,8 @@ assert!(shared.read_named("value").is_ok());
 - Getters borrow the original field as `&dyn Any`, without cloning. The result
   lives as long as the receiver borrow, preventing mutation while it is used.
   Exposed field types must be `'static`, as required by `Any`; they cannot
-  contain non-static references. The receiver must also be `'static` for erasure, but need not be `Clone` or `Send`.
+  contain non-static references. The receiver must also be `'static` for
+  erasure, but need not be `Clone` or `Send`.
 - Arguments are borrowed `&dyn Any` values. Adapters validate exact types with
   `argument`, then copy or clone values when their Rust method needs ownership.
   No coercions occur: `String`, `&str`, and numeric types remain distinct.
@@ -374,5 +381,5 @@ assert!(shared.read_named("value").is_ok());
   Direct field writes and overloads are outside the current API.
 
 Register descriptors once and reuse them. For frequent access, cache indices
-rather than repeating name lookup. Use `#[reflect]` for ordinary structs and methods; manual adapters remain useful
-for custom operations.
+rather than repeating name lookup. Use `#[reflect]` for ordinary structs and
+methods; manual adapters remain useful for custom operations.

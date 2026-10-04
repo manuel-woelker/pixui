@@ -11,9 +11,9 @@ fn add_todo(todos: &mut Arena<TodoItem>, title: String) -> PixuiResult<Key<TodoI
 fn mark_done(todo: &mut TodoItem);
 ```
 
-`#[action]` generates reflected request types and dispatch adapters. Doc comments
-become descriptions. Registration checks that `todos` exists and contains
-`TodoItem`; multiple collections of that type are allowed.
+`#[action]` generates reflected request types and dispatch adapters. Doc
+comments become descriptions. Registration checks that `todos` exists and
+contains `TodoItem`; multiple collections of that type are allowed.
 
 - `add_todo` requests contain only `title`. Dispatch injects the named arena;
   blank titles are rejected before insertion.
@@ -34,5 +34,6 @@ Run from the repository root:
 ./t cargo run -p pixui-example-todo
 ```
 
-See the engine's [action documentation](../../crates/engine/src/application/Actions.md)
-for lifecycle details and current limitations.
+See the engine's
+[action documentation](../../crates/engine/src/application/Actions.md) for
+lifecycle details and current limitations.
