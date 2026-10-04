@@ -9,6 +9,9 @@ tradeoffs compared with a plain Rust root struct.
 sender. Add configured slices and dispatch actions through that handle; the
 worker owns the application state and executes commands sequentially.
 
+The [worker and queue decision record](../../../../docs/decisions/DR-003%20Own%20application%20state%20on%20a%20worker%20thread%20with%20a%20bounded%20MPSC%20queue.md)
+documents ownership, backpressure, lifecycle, and the tradeoffs against shared locks.
+
 Actions are ordinary functions. `#[action]` generates owned request types,
 reflection metadata, and adapters that borrow data during dispatch. Handlers
 capture no application state and can also be called directly.
