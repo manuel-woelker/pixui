@@ -6,6 +6,11 @@ use crossbeam_channel::{TrySendError, bounded};
 use pixui_base::erased_value::SendValues;
 use pixui_base::{Key, PixuiResult, pixui_error};
 
+use crate::{
+    component_registry::component_id::ComponentId, live_model::component::Component,
+    painters::painter::Painter,
+};
+
 use super::{
     action::ActionCall,
     action_handle::ActionHandle,
@@ -32,12 +37,55 @@ pub struct ApplicationHandle {
 }
 
 impl ApplicationHandle {
+    /// Registers component C on the worker without creating physical state.
+    pub fn register_component<C: Component>(
+        &self,
+        name: impl Into<String>,
+    ) -> PixuiResult<ComponentId<C>> {
+        let name = name.into();
+        self.request(move |application| application.register_component::<C>(name))?
+            .wait()
+    }
+
+    /// Transfers a sendable painter to the worker. Component C must exist first.
+    ///
+    /// ```compile_fail
+    /// use pixui_engine::{application::app::Application, components::label::LabelComponent, painters::button::ButtonPainter};
+    /// let application = Application::new();
+    /// // ButtonPainter implements Painter<ButtonComponent>, not Painter<LabelComponent>.
+    /// application.register_painter::<LabelComponent>(ButtonPainter).unwrap();
+    /// ```
+    pub fn register_painter<C: Component>(&self, painter: impl Painter<C>) -> PixuiResult<()> {
+        self.request(move |application| application.register_painter::<C>(painter))?
+            .wait()
+    }
+
+    /// Registers standard component types only; choose their painters separately.
+    pub fn register_standard_components(
+        &self,
+    ) -> PixuiResult<crate::painters::standard::StandardComponents> {
+        self.request(|application| {
+            crate::painters::standard::register_components(&mut application.components)
+        })?
+        .wait()
+    }
+
+    pub fn register_standard_painters(&self) -> PixuiResult<()> {
+        self.request(|application| {
+            crate::painters::standard::register_painters(
+                &mut application.painters,
+                &application.components,
+            )
+        })?
+        .wait()
+    }
+
     /// Registers a reusable live-part definition on the worker.
     pub fn register_ui(
         &self,
         definition: crate::ui::definition::UiDefinition,
     ) -> PixuiResult<crate::ui::definition::UiDefinitionId> {
-        self.request(move |application| application.uis.register(definition))?
+        self.request(move |application| application.register_ui(definition))?
             .wait()
     }
 

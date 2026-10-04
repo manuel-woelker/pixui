@@ -9,17 +9,19 @@ and a render revision. Native windows and surfaces belong to `pixui-gui`.
 
 ## Components
 
-Attach a `WidgetFactory` using `ComponentPart::with_presentation`. The ordinary
-state factory still initializes persistent component state through the walker.
-The presentation callback reads `ExpressionContext` and `PresentationSettings`
-on every render and returns a `Widget::Label`, `Button`, or `Checkbox`.
-Components without presentation remain valid inert nodes.
+Register typed components and independent painters before registering a UI.
+`ComponentPart::typed(id, resolver)` resolves props on each render and
+initializes persistent state through `Default`. `typed_with_update` adds an
+explicit update callback before read-only painting. Legacy components without
+typed bindings remain valid inert nodes. See the
+[component guide](../component_registry/README.md).
 
-Buttons and checkboxes contain an `ActionBinding`: a worker-local function that
-builds a fresh `ActionCall` on activation. Capture cached `ActionHandle`s and
-opaque `ObjectRef<T>` values. Dispatch revalidates collection identity and arena
-generation. Avoid capturing positional sequence indexes or using blocking
-`ApplicationHandle` methods inside callbacks on that application's worker.
+Attach an activation factory with `with_activation` to produce an
+`ActionBinding`: a worker-local function that builds a fresh `ActionCall` on
+activation. Capture cached `ActionHandle`s and opaque `ObjectRef<T>` values.
+Dispatch revalidates collection identity and arena generation. Avoid capturing
+positional sequence indexes or using blocking `ApplicationHandle` methods inside
+callbacks on that application's worker.
 
 Rendering walks a private copy of the definition template and retains only the
 instance's `LiveState`. This protects definitions from the legacy mutable walker
@@ -28,11 +30,12 @@ until keyed reconciliation is implemented.
 
 ## Outputs and input
 
-The renderer collects widgets, measures fixed-cell text, lays out vertical rows,
-and generates a complete `RenderOutput`. Its `DisplayList` contains ordered
-opaque-color rectangle, stroke, text, and clipping commands in logical pixels.
-The shared font has basic Latin and Latin-extension glyphs; complex shaping,
-bidi, kerning, and font fallback are outside the first implementation.
+The renderer prepares typed props and paints constant-height rows, translates
+and clips local commands, and generates a complete `RenderOutput`. Every row is
+36 logical pixels high; text overflow is clipped. Its `DisplayList` contains
+ordered opaque-color rectangle, stroke, text, and clipping commands in logical
+pixels. The shared font has basic Latin and Latin-extension glyphs; complex
+shaping, bidi, kerning, and font fallback are outside the first implementation.
 
 Each instance retains at most one pending output; publication never waits for
 the consumer. Use `OutputReceiver::try_recv` in a native event loop, or

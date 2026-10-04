@@ -82,11 +82,16 @@ fn reconcile(
 ) -> PixuiResult<()> {
     match part {
         LivePart::Component(component) => {
-            if !matches!(state, PartState::Component(_)) {
+            if !matches!(state, PartState::Component(existing) if existing.state.component_address() == component.component_address())
+            {
                 *state = PartState::Component(ComponentState {
-                    state: match context.value() {
-                        Ok(value) => (component.create_state)(value)?,
-                        Err(_) => (component.create_state)(&DynamicObject::from_reflect(()))?,
+                    state: if let Some(address) = component.component_address() {
+                        context.application()?.components().initialize(address)?
+                    } else {
+                        match context.value() {
+                            Ok(value) => (component.create_state)(value)?,
+                            Err(_) => (component.create_state)(&DynamicObject::from_reflect(()))?,
+                        }
                     },
                 });
             }

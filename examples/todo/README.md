@@ -74,14 +74,16 @@ and scrolling. Both instances read the same todo collection.
 Click **Add todo** to append a generated task, or click a checkbox to mark a
 task done. Both windows update. Tab moves focus; Enter or Space activates the
 focused control. The mouse wheel scrolls overflowing content. Resize windows to
-see independent wrapping, and close either window without closing the other.
+see independent clipping, and close either window without closing the other.
 
-`gui_ui.rs` supplies label, button, and checkbox presentation callbacks on live
-parts. The application worker walks, measures, lays out, and emits owned
-`RenderOutput`s containing `DisplayList`s. The GUI thread owns winit windows and
-softbuffer surfaces and paints the commands. Events identify the displayed
-revision and return through the application queue. Stale clicks are rejected
-rather than targeting an item at a changed position.
+`gui_ui.rs` supplies typed label, button, and checkbox props resolvers and
+independent activation bindings. State initializes through `Default`. Separately
+registered painters draw in local coordinates within fixed 36-pixel rows. The
+application worker prepares components, paints, translates, clips, and emits
+owned `RenderOutput`s containing `DisplayList`s. The GUI thread owns winit
+windows and softbuffer surfaces and paints the commands. Events identify the
+displayed revision and return through the application queue. Stale clicks are
+rejected rather than targeting an item at a changed position.
 
 The initial font uses fixed bitmap cells with Latin extensions. Translation of
 example labels is explicit; general localization, complex text shaping, and
@@ -89,3 +91,13 @@ editable text controls are future work. Todo row bindings currently resolve an
 arena key by borrowed-value identity, with a linear search per row. Carrying
 stable keys through loop contexts would remove that lookup and help implement
 keyed component-state reconciliation.
+
+Try an alternative button appearance without changing component behavior:
+
+```sh
+./t cargo run -p pixui-example-todo --bin gui -- --custom-painter
+```
+
+`custom_button_painter.rs` composes the standard painter with an accent strip.
+The application chooses this painter instead of the standard button painter;
+label and checkbox painters remain separately registered.

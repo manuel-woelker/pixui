@@ -2,8 +2,9 @@
 
 Pixui is a Rust workspace with an application engine, shared infrastructure, and
 a small reflection mechanism. The current implementation provides state storage,
-action dispatch, live-model traversal, and a native GUI with worker-side layout
-and rendering. A web UI and persistence layer are not implemented.
+action dispatch, live-model traversal, and a native GUI with worker-side
+component preparation and rendering. A web UI and persistence layer are not
+implemented.
 
 ## Application runtime
 
@@ -127,14 +128,16 @@ and loops. Each loop has an expression selecting an application collection or a
 reflected field in the current context. Its visitor walk retains application
 access and uses a sequence element as the current value inside each loop.
 `LiveState` retains a physical `PartState` tree: unknown entries initialize when
-reached, and loops maintain one independent body state per element. Components
-create owned, sendable payloads through their state factories. Walks retain
-state by position, resize child lists, and drop removed state. Stable item
-identity across reordering is not implemented. Visitors receive initialized
-state and can update it; template edits are reconciled before descent. Traversal
-preserves child and element order; errors stop it without rolling back earlier
-updates, leaving unvisited entries potentially unknown. The GUI renderer uses
-this walker to build display lists after application commands.
+reached, and loops maintain one independent body state per element. Registered
+components create owned, sendable payloads through their state type's `Default`
+implementation. Legacy unregistered nodes retain state factories for
+non-rendering visitors. Walks retain state by position, resize child lists, and
+drop removed state. Stable item identity across reordering is not implemented.
+Visitors receive initialized state and can update it; template edits are
+reconciled before descent. Traversal preserves child and element order; errors
+stop it without rolling back earlier updates, leaving unvisited entries
+potentially unknown. The GUI renderer uses this walker to build display lists
+after application commands.
 
 See the [reflection documentation](../crates/reflect/README.md) and
 [DR-001](<decisions/DR-001 Use a custom reflection mechanism.md>) for supported
@@ -168,18 +171,41 @@ empty or duplicate names. IDs are process-local and never reused. Closing an
 instance invalidates its ID; dropping its output consumer also releases it on
 the next worker rendering pass.
 
-### Layout and display lists
+### Components, painters, and display lists
 
-Components can attach a presentation callback that reads the current expression
-context and instance settings and returns a `Widget`: label, button, or
-checkbox. The callback runs on every walk. The renderer walks a private copy of
-the shared template to isolate the legacy walker's mutable-template interface.
-Persistent physical state remains in the instance.
+Each application owns a `ComponentRegistry` and a `PainterRegistry`. Register
+component types, then their painters, before registering UI definitions.
+`Component` associates owned props with persistent `Default` state. A copyable
+`ComponentId<C>` contains registry identity and an append-only index; duplicate
+names/types and foreign handles are rejected. UI validation checks all component
+bindings, including empty loop bodies, for a registered painter.
 
-The worker collects widget properties, measures text, and lays out a vertical
-stack before painting. Composites and loops group traversal without adding
-layout boxes. Content wraps by fixed character cells and scroll offsets are
-clamped to the measured content height.
+`ComponentPart::typed` binds an ID to a props resolver. Every render resolves
+props once per physical component; `typed_with_update` additionally runs a typed
+state update before painting. The walker initializes state at first reach and
+preserves it until the registered identity changes. Props and state need `Send`,
+without `Clone`, `Sync`, or reflection. Checked internal downcasts connect the
+heterogeneous tree to typed callbacks.
+
+`Painter<C>` implementations are registered independently and receive a
+`PaintContext` with immutable props/state, dimensions, settings, focus, and
+hover. Commands use local coordinates. One painter per component per application
+allows different applications to customize the same component type. Explicit
+standard component and painter helpers remain independent. Activation factories
+create action bindings separately, so changing appearance preserves behavior.
+
+The worker paints fixed vertical rows with 36 logical pixels of height, 8 pixels
+of spacing, and 16 pixels of outer padding. Available width is clamped to zero.
+It clamps scrolling to the content height, translates commands into row
+positions, and clips each component and the viewport. Composites and loops add
+no boxes. There is no measurement or general layout API; oversized content is
+clipped. The renderer walks a private template copy and retains independent
+physical state.
+
+See the [component API guide](../crates/engine/src/component_registry/README.md)
+and
+[DR-005](<decisions/DR-005 Register typed components and independent painters.md>)
+for the lifecycle, constraints, and alternatives.
 
 `RenderOutput` contains the instance ID, monotonic `RenderRevision`, and an
 owned `DisplayList`. Commands paint in order: `FillRect`, `StrokeRect`,

@@ -3,6 +3,12 @@ use std::{any::Any, collections::HashMap};
 use pixui_base::erased_value::SendValues;
 use pixui_base::{Arena, Key, PixuiResult, pixui_error};
 
+use crate::{
+    component_registry::{component_id::ComponentId, registry::ComponentRegistry},
+    live_model::component::Component,
+    painters::{painter::Painter, registry::PainterRegistry},
+};
+
 use super::{
     action::{ActionCall, ActionResult},
     application_handle::ApplicationHandle,
@@ -16,6 +22,8 @@ use super::{
 /// `Default` creates bare state for adapters and tests that need direct access.
 #[derive(Default)]
 pub struct Application {
+    pub(crate) components: ComponentRegistry,
+    pub(crate) painters: PainterRegistry,
     pub(crate) uis: crate::ui::registry::UiRegistry,
     slices: Vec<ApplicationSlice>,
     slice_names: HashMap<String, usize>,
@@ -23,6 +31,37 @@ pub struct Application {
 }
 
 impl Application {
+    /// Application-local component identities and type metadata.
+    pub fn components(&self) -> &ComponentRegistry {
+        &self.components
+    }
+
+    pub fn painters(&self) -> &PainterRegistry {
+        &self.painters
+    }
+
+    pub fn register_component<C: Component>(
+        &mut self,
+        name: impl Into<String>,
+    ) -> PixuiResult<ComponentId<C>> {
+        self.components.register(name)
+    }
+
+    /// Registers appearance independently of component identity and behavior.
+    pub fn register_painter<C: Component>(&mut self, painter: impl Painter<C>) -> PixuiResult<()> {
+        self.painters.register::<C>(&self.components, painter)
+    }
+
+    /// Checks all component registrations and painters before accepting a template.
+    pub fn register_ui(
+        &mut self,
+        definition: crate::ui::definition::UiDefinition,
+    ) -> PixuiResult<crate::ui::definition::UiDefinitionId> {
+        self.components
+            .validate(&definition.template, &self.painters)?;
+        self.uis.register(definition)
+    }
+
     /// Starts an owner thread immediately, using a bounded queue of 128 commands.
     /// Panics if the worker thread cannot be started.
     #[allow(

@@ -23,7 +23,8 @@ impl LiveState {
 
 /// State mirrors the template, with one independent body state per loop item.
 /// Children are matched by position. Reset an entry to Unknown to reinitialize it.
-/// Same-kind template replacement does not automatically reset component payloads.
+/// Changing registered component identity reinitializes its default state.
+/// Legacy same-kind factory replacement does not reset payloads automatically.
 #[derive(Default)]
 pub enum PartState {
     #[default]
@@ -55,13 +56,29 @@ pub struct ForLoopState {
 /// Owned sendable payload so live state can move to the application worker.
 pub struct GenericComponentState {
     state: Box<dyn Any + Send>,
+    component: Option<crate::component_registry::component_id::ComponentAddress>,
 }
 
 impl GenericComponentState {
+    pub(crate) fn component_address(
+        &self,
+    ) -> Option<crate::component_registry::component_id::ComponentAddress> {
+        self.component
+    }
+
+    pub(crate) fn with_component(
+        mut self,
+        address: crate::component_registry::component_id::ComponentAddress,
+    ) -> Self {
+        self.component = Some(address);
+        self
+    }
+
     /// Owns component state while erasing its concrete type.
     pub fn new(state: impl Any + Send) -> Self {
         Self {
             state: Box::new(state),
+            component: None,
         }
     }
 

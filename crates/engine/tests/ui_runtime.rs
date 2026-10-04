@@ -9,10 +9,12 @@ use pixui_engine::{
     },
     expression::{context::ExpressionContext, expression::Expression},
     live_model::{
+        component::Component,
         part::{ComponentPart, ForLoopPart, LivePart},
-        state::{GenericComponentState, PartState},
+        state::PartState,
     },
     ui::{
+        activation::ActionBinding,
         definition::UiDefinition,
         display_list::{DrawCommand, RenderOutput},
         geometry::{Point, Size},
@@ -20,7 +22,6 @@ use pixui_engine::{
         instance::UiInstanceId,
         mailbox::OutputReceiver,
         presentation::{PresentationSettings, Theme},
-        widget::Widget,
     },
 };
 use std::{
@@ -67,12 +68,61 @@ mod actions {
 
 static NEXT_STATE: AtomicU64 = AtomicU64::new(1);
 
-fn row(context: &ExpressionContext<'_>, _: &PresentationSettings) -> PixuiResult<Widget> {
-    let app = context.application()?;
+struct Row;
+struct RowProps {
+    label: String,
+    checked: bool,
+}
+struct RowState {
+    id: u64,
+}
+impl Default for RowState {
+    fn default() -> Self {
+        Self {
+            id: NEXT_STATE.fetch_add(1, Ordering::Relaxed),
+        }
+    }
+}
+impl Component for Row {
+    type Props = RowProps;
+    type State = RowState;
+}
+struct RowPainter;
+impl pixui_engine::painters::painter::Painter<Row> for RowPainter {
+    fn paint(
+        &self,
+        context: &mut pixui_engine::painters::context::PaintContext<'_, Row>,
+    ) -> PixuiResult<()> {
+        context.text(
+            Point::default(),
+            format!(
+                "{} {}",
+                if context.props.checked { "[x]" } else { "[ ]" },
+                context.props.label
+            ),
+            16.0,
+            pixui_engine::ui::display_list::Color(50, 100, 150),
+        );
+        Ok(())
+    }
+}
+
+fn row(context: &ExpressionContext<'_>, _: &PresentationSettings) -> PixuiResult<RowProps> {
     let item = context.value()?.downcast_ref::<Item>().unwrap();
     if item.title == "render failure" {
         return Err(pixui_error!("deliberate render failure"));
     }
+    Ok(RowProps {
+        label: item.title.clone(),
+        checked: item.done,
+    })
+}
+fn row_action(
+    context: &ExpressionContext<'_>,
+    _: &PresentationSettings,
+) -> PixuiResult<ActionBinding> {
+    let app = context.application()?;
+    let item = context.value()?.downcast_ref::<Item>().unwrap();
     let slice = app.slice_named("test")?;
     let arena = slice.collection("items")?.arena::<Item>().unwrap();
     let key = arena
@@ -82,11 +132,7 @@ fn row(context: &ExpressionContext<'_>, _: &PresentationSettings) -> PixuiResult
         .0;
     let reference = app.object_ref(slice.id(), "items", key)?;
     let action = slice.action_handle_named("mark")?;
-    Ok(Widget::Checkbox {
-        text: item.title.clone(),
-        checked: item.done,
-        activate: Box::new(move |_| action.call(vec![Box::new(reference)])),
-    })
+    Ok(Box::new(move |_| action.call(vec![Box::new(reference)])))
 }
 
 fn setup(
@@ -104,12 +150,9 @@ fn setup(
     actions::Actions::register(&mut slice).unwrap();
     app.add_slice(slice).unwrap();
     let actions = actions::Actions::bind(&app).unwrap();
-    let component = ComponentPart::new(|_| {
-        Ok(GenericComponentState::new(
-            NEXT_STATE.fetch_add(1, Ordering::Relaxed),
-        ))
-    })
-    .with_presentation(row);
+    let component_id = app.register_component::<Row>("row").unwrap();
+    app.register_painter::<Row>(RowPainter).unwrap();
+    let component = ComponentPart::typed(component_id, row).with_activation(row_action);
     let template = LivePart::ForLoop(ForLoopPart {
         expression: Expression::from_collection(app.collection_key("test", "items").unwrap()),
         body: Box::new(LivePart::Component(component)),
@@ -136,7 +179,7 @@ fn state_ids(app: &ApplicationHandle, id: UiInstanceId) -> Vec<u64> {
                 let PartState::Component(state) = state else {
                     panic!("component");
                 };
-                *state.state.downcast_ref::<u64>().unwrap()
+                state.state.downcast_ref::<RowState>().unwrap().id
             })
             .collect())
     })

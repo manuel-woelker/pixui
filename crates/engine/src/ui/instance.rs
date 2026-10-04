@@ -1,8 +1,8 @@
 //! Worker-side UI state for one native window or headless rendering target.
 
 use super::{
-    definition::UiDefinitionId, display_list::RenderRevision, geometry::Rect,
-    mailbox::OutputSender, presentation::PresentationSettings, widget::ActionBinding,
+    activation::ActionBinding, definition::UiDefinitionId, display_list::RenderRevision,
+    geometry::Rect, mailbox::OutputSender, presentation::PresentationSettings,
 };
 use crate::live_model::state::LiveState;
 

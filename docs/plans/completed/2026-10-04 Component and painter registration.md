@@ -1,7 +1,7 @@
 # Component and painter registration plan
 
-Status: proposed. This plan defines the next step beyond the fixed `Widget`
-enum and renderer. It introduces no runtime code yet.
+Status: completed. The fixed `Widget` enum has been replaced by typed component
+and painter registration. The plan was committed before implementation.
 
 ## Goal
 
@@ -10,7 +10,7 @@ painters independently so applications can choose how the same component looks.
 Run component preparation and painting on the application worker;
 continue sending owned display lists to the existing native GUI host.
 
-## Current implementation
+## Starting implementation
 
 `live_model/component.rs` declares `Component` with `Props` and `State`
 associated types, but rendering does not use it. `ButtonComponent` currently
@@ -22,7 +22,7 @@ variants to measure, draw, and create hit regions. Adding a component therefore
 requires editing this central renderer. Persistent state is erased through
 `GenericComponentState` and is currently reconciled by node kind and position.
 
-## Proposed API
+## Implemented API
 
 Keep `Component` as the typed identity and associated-type declaration:
 
@@ -58,11 +58,11 @@ outer padding. Keep a simple vertical sequence with fixed spacing. Painters
 use the supplied dimensions to position their drawing; content does not change
 the allocated height. Overflow is clipped, and zero available width is valid.
 
-Illustrative setup, with names and exact signatures finalized in implementation:
+Registration with the implemented API:
 
 ```rust
 let button = components.register::<ButtonComponent>("button")?;
-painters.register::<ButtonComponent>(ButtonPainter::new())?;
+painters.register::<ButtonComponent>(&components, ButtonPainter)?;
 let part = ComponentPart::typed(button, resolve_button_props);
 ```
 
@@ -153,55 +153,54 @@ remains separate future work.
 
 ## Implementation steps
 
-- [ ] Finalize typed registration handles, default initialization, and optional
+- [x] Finalize typed registration handles, default initialization, and optional
       update hook signatures. Document the one-painter-per-component application
       scope.
-- [ ] Implement checked component registration, type erasure, ownership
+- [x] Implement checked component registration, type erasure, ownership
   validation, and component-type-aware state reconciliation.
-- [ ] Implement painter registration and typed paint contexts, command
+- [x] Implement painter registration and typed paint contexts, command
   helpers, and clear missing-painter/type-mismatch errors.
-- [ ] Replace fixed-widget drawing with typed painter calls during traversal.
+- [x] Replace fixed-widget drawing with typed painter calls during traversal.
   Supply width and constant height, then translate and clip local commands into
   fixed-height rows. Add no layout or measurement API.
-- [ ] Preserve revision-aware input, activation bindings, and frame publication
+- [x] Preserve revision-aware input, activation bindings, and frame publication
   semantics, including rendering failure behavior.
-- [ ] Add standard component types and separately registered default painters.
-- [ ] Migrate the two-window todo GUI and demonstrate a custom painter for an
+- [x] Add standard component types and separately registered default painters.
+- [x] Migrate the two-window todo GUI and demonstrate a custom painter for an
   existing component without changing its behavior or the renderer.
-- [ ] Update `docs/Architecture.md`, the plain `.drawio` architecture source,
+- [x] Update `docs/Architecture.md`, the plain `.drawio` architecture source,
   component/painter API documentation, and a decision record. Generate the
   ignored `.generated.svg` preview using the diagram task.
-- [ ] Run `./n check` after every implementation unit.
+- [x] Run `./n check` after every implementation unit.
 
 ## Verification
 
-- [ ] Test custom registration and two components sharing props/state types.
-- [ ] Test duplicate registration, missing painters in empty loops, foreign
+- [x] Test custom registration and two components sharing props/state types.
+- [x] Test duplicate registration, missing painters in empty loops, foreign
   registration handles, and wrong erased props/state with descriptive errors.
-- [ ] Verify props refresh without state reset, per-instance/per-loop
+- [x] Verify props refresh without state reset, per-instance/per-loop
       independence, and state reset on component-type replacement at the same
       position.
-- [ ] Verify default initialization and update hooks execute at their documented
+- [x] Verify default initialization and update hooks execute at their documented
       times, and props resolution occurs once per component per render.
-- [ ] Test different painters for the same component in separate applications.
+- [x] Test different painters for the same component in separate applications.
   Show custom draw commands while retaining the same activation behavior.
-- [ ] Test supplied width and constant height, local-coordinate translation,
+- [x] Test supplied width and constant height, local-coordinate translation,
       scaling, focus/hover appearance, clipping,
       command order, invalid painter output, and painter errors retaining good
       output.
-- [ ] Verify non-cloneable props/state and sendable painters work without
+- [x] Verify non-cloneable props/state and sendable painters work without
       `Sync`. Add compile-fail examples for mismatched typed props and painter
       registration.
-- [ ] Run the todo GUI and retain its shared add/mark actions and independent
+- [x] Run the todo GUI and retain its shared add/mark actions and independent
   presentation settings, resizing, scrolling, and closure behavior.
 
 ## Open questions and limits
 
 - State initialization uses `Default` without props or expression inputs.
   Any synchronization with props belongs in component updates.
-- Should a component update hook be part of initial registration, or wait until
-  a component actually needs local state transitions? Painters remain read-only
-  either way.
+- `ComponentPart::typed_with_update` provides the optional update hook per live
+  part. Painters remain read-only.
 - Do applications need multiple painter sets within one application? The initial
   scope permits different applications and settings-aware painters; named sets
   would add selection and validation rules.
@@ -213,3 +212,19 @@ remains separate future work.
 - Content invalidation still clears positional focus/hover. Stable item
   identity, arbitrary component children, advanced layout, and complex text
   shaping remain separate work.
+
+## Completion evidence
+
+- Application-local typed registries validate component identity and painter
+  availability. Checked adapters preserve the documented `Send` bounds.
+- Integration tests cover registration, default initialization, state retention
+  and replacement, error publication, geometry, and different painters.
+- The todo custom-painter test retains add-action behavior and verifies focus
+  and hover styling. Existing GUI rasterizer tests cover clipping and scale.
+- The custom-painter native GUI started successfully and was manually checked by
+  the user. Shared actions, instance behavior, resizing, scrolling, and closure
+  also remain covered by the runtime tests.
+- Architecture XML was updated; the user's running diagram watcher regenerates
+  the ignored SVG preview.
+- `./n check` passed after implementation units; the final check includes docs
+  and the completed plan.
