@@ -1,3 +1,11 @@
+use pixui_base::PixuiResult;
+use pixui_reflect::DynamicObject;
+
+use super::state::GenericComponentState;
+
+/// Creates fresh owned state from the current root or loop-element context.
+pub type StateFactory = for<'a> fn(&DynamicObject<'a>) -> PixuiResult<GenericComponentState>;
+
 pub enum LivePart {
     Composite(CompositePart),
     Component(ComponentPart),
@@ -9,7 +17,20 @@ pub struct CompositePart {
 }
 
 pub struct ComponentPart {
-    //    state: GenericComponentState,
+    pub create_state: StateFactory,
+}
+
+impl ComponentPart {
+    pub fn new(create_state: StateFactory) -> Self {
+        Self { create_state }
+    }
+}
+
+impl Default for ComponentPart {
+    /// An inert component with unit state.
+    fn default() -> Self {
+        Self::new(|_| Ok(GenericComponentState::new(())))
+    }
 }
 
 pub struct ForLoopPart {

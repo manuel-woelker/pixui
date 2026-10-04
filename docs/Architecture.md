@@ -110,9 +110,16 @@ fields, while typed facade calls construct their requests directly.
 
 The engine's live model is a `LivePart` tree containing composites, components,
 and loops. Its visitor walk uses a reflected root context and a sequence element
-as the context inside each loop. Traversal preserves child and element order;
-visitor and reflection errors stop it. This is a separate facility from the
-application dispatch mechanism, with no automatic state-to-view update pipeline.
+as the context inside each loop. `LiveState` retains a physical `PartState`
+tree: unknown entries initialize when reached, and loops maintain one
+independent body state per element. Components create owned payloads through
+their state factories. Walks retain state by position, resize child lists, and
+drop removed state. Stable item identity across reordering is not implemented.
+Visitors receive initialized state and can update it; template edits are
+reconciled before descent. Traversal preserves child and element order; errors
+stop it without rolling back earlier updates, leaving unvisited entries
+potentially unknown. This is separate from the application dispatch mechanism,
+with no automatic state-to-view update pipeline.
 
 See the [reflection documentation](../crates/reflect/README.md) and
 [DR-001](<decisions/DR-001 Use a custom reflection mechanism.md>) for supported
