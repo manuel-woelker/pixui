@@ -1,0 +1,103 @@
+<mxfile host="app.diagrams.net" version="24.7.17" type="device" pages="1">
+  <diagram id="application-runtime" name="Application runtime">
+    <mxGraphModel dx="1400" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="1050" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="2" value="&lt;b&gt;Application runtime&lt;/b&gt;&lt;br&gt;&lt;br&gt;Multiple callers send owned commands; one worker owns and mutates application state." parent="1" vertex="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=14;spacing=12;">
+          <mxGeometry x="30" y="20" width="1340" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="3" value="Caller threads · multiple producers" parent="1" vertex="1" style="swimlane;html=1;startSize=40;rounded=1;fillColor=#fafafa;strokeColor=#999999;fontSize=16;fontStyle=1;">
+          <mxGeometry x="30" y="140" width="320" height="500" as="geometry" />
+        </mxCell>
+        <mxCell id="4" value="&lt;b&gt;Generated slice facade&lt;/b&gt;&lt;br&gt;&lt;br&gt;Typed methods, e.g. TodoActions.add_todo&lt;br&gt;Clonable; waits for each result&lt;br&gt;String parameters use Into&amp;lt;String&amp;gt;" parent="3" vertex="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;spacing=12;">
+          <mxGeometry x="20" y="60" width="280" height="125" as="geometry" />
+        </mxCell>
+        <mxCell id="5" value="&lt;b&gt;Cached ActionHandles&lt;/b&gt;&lt;br&gt;&lt;br&gt;Stable slice ID + action index&lt;br&gt;Static request descriptor&lt;br&gt;Requests constructed locally" parent="3" vertex="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=14;spacing=12;">
+          <mxGeometry x="20" y="225" width="280" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="6" value="&lt;b&gt;ApplicationHandle&lt;/b&gt;&lt;br&gt;&lt;br&gt;One cheaply clonable sender&lt;br&gt;dispatch / try_dispatch&lt;br&gt;add_slice / inspect / object_ref" parent="3" vertex="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;spacing=12;">
+          <mxGeometry x="20" y="375" width="280" height="105" as="geometry" />
+        </mxCell>
+        <mxCell id="7" value="&lt;b&gt;Bounded command queue&lt;/b&gt;&lt;br&gt;&lt;br&gt;crossbeam-channel, used as MPSC&lt;br&gt;Default: 128 commands&lt;br&gt;Full: wait or try_dispatch error&lt;br&gt;Capacity zero: rendezvous" parent="1" vertex="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=14;spacing=12;">
+          <mxGeometry x="420" y="515" width="310" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="8" value="Application worker · single consumer and sole state owner" parent="1" vertex="1" style="swimlane;html=1;startSize=40;rounded=1;fillColor=#fafafa;strokeColor=#999999;fontSize=16;fontStyle=1;">
+          <mxGeometry x="800" y="140" width="570" height="640" as="geometry" />
+        </mxCell>
+        <mxCell id="9" value="&lt;b&gt;Sequential command execution&lt;/b&gt;&lt;br&gt;&lt;br&gt;Action adapter calls an ordinary handler&lt;br&gt;Resolve &amp;amp;mut Arena&amp;lt;T&amp;gt; or &amp;amp;mut T&lt;br&gt;Inspection returns an owned snapshot" parent="8" vertex="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;spacing=12;">
+          <mxGeometry x="25" y="60" width="520" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="10" value="&lt;b&gt;Application&lt;/b&gt;&lt;br&gt;&lt;br&gt;Owns named slices with stable SliceId&lt;br&gt;Slice names are unique and immutable" parent="8" vertex="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;spacing=12;">
+          <mxGeometry x="25" y="245" width="240" height="115" as="geometry" />
+        </mxCell>
+        <mxCell id="11" value="&lt;b&gt;ApplicationSlice&lt;/b&gt;&lt;br&gt;&lt;br&gt;Named collections + action descriptors&lt;br&gt;Validate bindings during registration" parent="8" vertex="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;spacing=12;">
+          <mxGeometry x="305" y="245" width="240" height="115" as="geometry" />
+        </mxCell>
+        <mxCell id="12" value="&lt;b&gt;ObjectRef&amp;lt;T&amp;gt;&lt;/b&gt;&lt;br&gt;&lt;br&gt;Slice + collection + typed key&lt;br&gt;Resolve identity, type and generation&lt;br&gt;64-bit key: index / arena ID / generation" parent="8" vertex="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=14;spacing=12;">
+          <mxGeometry x="25" y="430" width="240" height="155" as="geometry" />
+        </mxCell>
+        <mxCell id="13" value="&lt;b&gt;Collection → Arena&amp;lt;T&amp;gt;&lt;/b&gt;&lt;br&gt;&lt;br&gt;One concrete item type per collection&lt;br&gt;Erase the arena once through Any&lt;br&gt;Store items directly; T: static + Send&lt;br&gt;Items need no Reflect or Sync" parent="8" vertex="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;spacing=12;">
+          <mxGeometry x="305" y="430" width="240" height="155" as="geometry" />
+        </mxCell>
+        <mxCell id="14" value="&lt;b&gt;Per-command reply channel&lt;/b&gt;&lt;br&gt;&lt;br&gt;Capacity 1 · owned PixuiResult&amp;lt;T&amp;gt;&lt;br&gt;dispatch returns PendingAction; wait receives its result&lt;br&gt;Dropping the reply does not cancel execution" parent="1" vertex="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;spacing=12;">
+          <mxGeometry x="420" y="720" width="310" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="15" value="&lt;b&gt;Lifecycle and execution limits&lt;/b&gt;&lt;br&gt;&lt;br&gt;Last sender dropped → drain accepted commands → exit; no join acknowledgment.&lt;br&gt;Unwinding panic → discard state and drop later commands so callers receive errors.&lt;br&gt;Handler errors do not roll back mutations; long commands delay all later work.&lt;br&gt;Never call blocking handles from this worker: it cannot service its own queue." parent="1" vertex="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=14;spacing=12;">
+          <mxGeometry x="30" y="900" width="1340" height="125" as="geometry" />
+        </mxCell>
+        <mxCell id="16" value="uses cached metadata" parent="1" edge="1" source="4" target="5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=12;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.5;entryY=0;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="17" value="owned request" parent="1" edge="1" source="5" target="6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=12;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.5;entryY=0;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="18" value="enqueue" parent="1" edge="1" source="6" target="7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=12;labelBackgroundColor=#ffffff;exitX=1;exitY=0.6;entryX=0;entryY=0.5;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="385" y="578" />
+              <mxPoint x="385" y="585" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="19" value="receive command" parent="1" edge="1" source="7" target="9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=12;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="765" y="585" />
+              <mxPoint x="765" y="260" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="20" value="access state" parent="1" edge="1" source="9" target="10" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=12;labelBackgroundColor=#ffffff;exitX=0.23;exitY=1;entryX=0.5;entryY=0;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="21" value="owns" parent="1" edge="1" source="10" target="11" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=12;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="22" value="owns" parent="1" edge="1" source="11" target="13" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=12;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.5;entryY=0;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="23" value="resolves into" parent="1" edge="1" source="12" target="13" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=12;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;dashed=1;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="24" value="send result" parent="1" edge="1" source="9" target="14" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=12;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=1;entryY=0.5;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1390" y="260" />
+              <mxPoint x="1390" y="850" />
+              <mxPoint x="760" y="850" />
+              <mxPoint x="760" y="790" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="25" value="receive result" parent="1" edge="1" source="14" target="6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=12;labelBackgroundColor=#ffffff;exitX=0;exitY=0.5;entryX=0.5;entryY=1;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="190" y="790" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
