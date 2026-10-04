@@ -8,6 +8,7 @@ mod method;
 mod primitives;
 mod reflect;
 mod sequence;
+pub mod sequence_iterator;
 mod type_descriptor;
 
 pub use dynamic_object::DynamicObject;

@@ -1,3 +1,4 @@
+use crate::sequence_iterator::SequenceIter;
 use crate::{DynamicObject, Reflect, TypeDescriptor};
 use pixui_base::{PixuiResult, pixui_error};
 use std::{
@@ -29,6 +30,7 @@ pub(super) struct SequenceCallbacks {
     pub len: fn(&dyn Any) -> PixuiResult<usize>,
     pub get: for<'a> fn(&'a dyn Any, usize) -> PixuiResult<DynamicObject<'a>>,
     pub get_mut: for<'a> fn(&'a mut dyn Any, usize) -> PixuiResult<DynamicObject<'a>>,
+    pub iter: for<'a> fn(&'a dyn Any) -> PixuiResult<SequenceIter<'a>>,
 }
 
 // Generic functions cannot have a separate local static per monomorphization.
@@ -51,6 +53,11 @@ impl<T: Reflect> Reflect for Vec<T> {
                 element: T::type_descriptor,
                 access: Some(SequenceCallbacks {
                     len: |value| Ok(vector::<T>(value)?.len()),
+                    iter: |value| {
+                        Ok(Box::new(
+                            vector::<T>(value)?.iter().map(DynamicObject::from_ref),
+                        ))
+                    },
                     get: |value, index| {
                         let value = vector::<T>(value)?;
                         let element = value.get(index).ok_or_else(|| bounds(index, value.len()))?;
@@ -92,6 +99,8 @@ pub(super) fn bounds(index: usize, len: usize) -> pixui_base::PixuiError {
 pub(super) trait SharedSequence {
     fn len(&self) -> usize;
     fn get(&self, index: usize) -> PixuiResult<DynamicObject<'_>>;
+    /// Visits live elements once in sequence order, borrowing each immutably.
+    fn iter(&self) -> SequenceIter<'_>;
 }
 
 pub(super) trait MutableSequence: SharedSequence {
@@ -99,9 +108,36 @@ pub(super) trait MutableSequence: SharedSequence {
 }
 
 pub(super) struct SliceRef<'a, T>(pub &'a [T]);
+pub(super) struct ArenaRef<'a, T>(pub &'a pixui_base::Arena<T>);
 pub(super) struct SliceMut<'a, T>(pub &'a mut [T]);
 
+impl<T: Reflect> SharedSequence for ArenaRef<'_, T> {
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    fn iter(&self) -> SequenceIter<'_> {
+        Box::new(
+            self.0
+                .iter()
+                .map(|(_, element)| DynamicObject::from_ref(element)),
+        )
+    }
+
+    fn get(&self, index: usize) -> PixuiResult<DynamicObject<'_>> {
+        let (_, element) = self
+            .0
+            .iter()
+            .nth(index)
+            .ok_or_else(|| bounds(index, self.0.len()))?;
+        Ok(DynamicObject::from_ref(element))
+    }
+}
+
 impl<T: Reflect> SharedSequence for SliceRef<'_, T> {
+    fn iter(&self) -> SequenceIter<'_> {
+        Box::new(self.0.iter().map(DynamicObject::from_ref))
+    }
     fn len(&self) -> usize {
         self.0.len()
     }
@@ -114,6 +150,9 @@ impl<T: Reflect> SharedSequence for SliceRef<'_, T> {
     }
 }
 impl<T: Reflect> SharedSequence for SliceMut<'_, T> {
+    fn iter(&self) -> SequenceIter<'_> {
+        Box::new(self.0.iter().map(DynamicObject::from_ref))
+    }
     fn len(&self) -> usize {
         self.0.len()
     }

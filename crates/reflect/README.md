@@ -323,7 +323,33 @@ assert_eq!(slice.len()?, 1);
 # Ok::<(), pixui_base::PixuiError>(())
 ```
 
-`len`, `is_empty`, `get`, and `get_mut` return errors for non-sequences.
+`len`, `is_empty`, `get`, `get_mut`, and `iter` return errors for non-sequences.
+
+`iter()` lazily yields shared `DynamicObject` element views in sequence order,
+including for mutable source storage. It allocates one boxed iterator and does
+not collect or clone items. Element views borrow the source object and can
+remain usable after the iterator is dropped.
+
+`DynamicObject::from_arena` exposes live arena items through shared sequence
+storage. Iteration scans allocated slots once and skips vacant slots; indexed
+`get` scans from the beginning each time. Prefer iteration for whole-arena
+walks.
+
+```rust
+use pixui_base::Arena;
+use pixui_reflect::DynamicObject;
+
+let mut arena = Arena::new();
+arena.insert(10i32);
+arena.insert(20i32);
+let sequence = DynamicObject::from_arena(&arena);
+let values: Vec<i32> = sequence.iter()?.map(|item| {
+    *item.downcast_ref::<i32>().unwrap()
+}).collect();
+assert_eq!(values, [10, 20]);
+# Ok::<(), pixui_base::PixuiError>(())
+```
+
 Out-of-bounds indices return errors. `get` always returns a shared element;
 `get_mut` requires mutable storage and returns an exclusive element. Element
 objects borrow the sequence, preventing resize, destruction, or conflicting

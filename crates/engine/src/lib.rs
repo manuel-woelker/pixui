@@ -2,4 +2,5 @@
 
 pub mod application;
 pub mod components;
+pub mod expression;
 pub mod live_model;

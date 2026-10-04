@@ -3,6 +3,7 @@ use std::any::Any;
 use pixui_base::{PixuiResult, pixui_error};
 
 use crate::sequence::{MutableSequence, SharedSequence, SliceMut, SliceRef, slice_descriptor};
+use crate::sequence_iterator::SequenceIter;
 use crate::{FieldIndex, MethodIndex, Reflect, TypeDescriptor};
 
 enum Storage<'a> {
@@ -60,6 +61,18 @@ impl DynamicObject<'static> {
 }
 
 impl<'a> DynamicObject<'a> {
+    /// Borrows an arena as a read-only sequence of live elements in slot order.
+    /// Vacant slots are skipped; sequence indices are not arena keys or slot indices.
+    /// Length is O(1), but indexed access scans slots and is O(arena slot count).
+    /// The view uses shared sequence storage and the slice descriptor for `T`.
+    /// No items are copied, and the shared borrow prevents mutation of the arena.
+    pub fn from_arena<T: Reflect>(value: &'a pixui_base::Arena<T>) -> Self {
+        Self {
+            storage: Storage::SharedSequence(Box::new(crate::sequence::ArenaRef(value))),
+            descriptor: slice_descriptor::<T>(),
+        }
+    }
+
     /// Slice adapters borrow their elements; slices cannot be downcast through Any.
     pub fn from_slice<T: Reflect>(value: &'a [T]) -> Self {
         Self {
@@ -91,6 +104,19 @@ impl<'a> DynamicObject<'a> {
     }
     pub fn is_empty(&self) -> PixuiResult<bool> {
         Ok(self.len()? == 0)
+    }
+
+    /// Iterates over shared element views without copying or collecting items.
+    /// Supports vectors, slices and arena views; non-sequences return an error.
+    /// Arena iteration scans allocated slots once and skips vacant slots, avoiding
+    /// the repeated scans required by indexed arena access. Element views borrow
+    /// this object and cannot be used to mutate it, regardless of its storage mode.
+    pub fn iter(&self) -> PixuiResult<SequenceIter<'_>> {
+        match &self.storage {
+            Storage::SharedSequence(value) => Ok(value.iter()),
+            Storage::MutableSequence(value) => Ok(value.iter()),
+            _ => (self.descriptor.sequence_access()?.iter)(self.as_any()?),
+        }
     }
     pub fn get(&self, index: usize) -> PixuiResult<DynamicObject<'_>> {
         match &self.storage {

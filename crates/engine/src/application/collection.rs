@@ -1,7 +1,10 @@
 use std::any::{Any, TypeId, type_name};
 
 use pixui_base::erased_value::SendValue;
-use pixui_base::{Arena, PixuiString};
+use pixui_base::{Arena, PixuiResult, PixuiString, pixui_error};
+use pixui_reflect::{DynamicObject, Reflect};
+
+type SequenceView = for<'a> fn(&'a dyn Any) -> PixuiResult<DynamicObject<'a>>;
 
 /// A named, homogeneous collection with an erased typed arena.
 ///
@@ -19,6 +22,7 @@ pub struct Collection {
     arena: SendValue,
     item_type_id: TypeId,
     item_type_name: &'static str,
+    sequence_view: Option<SequenceView>,
 }
 
 impl Collection {
@@ -31,7 +35,33 @@ impl Collection {
             arena: Box::new(arena),
             item_type_id: TypeId::of::<T>(),
             item_type_name: type_name::<T>(),
+            sequence_view: None,
         }
+    }
+
+    /// Creates a collection with read-only reflected sequence access for expressions.
+    /// Items remain stored directly in the arena, without per-item dynamic wrappers.
+    pub fn new_reflected<T: Reflect + Send>(name: impl Into<PixuiString>) -> Self {
+        let mut collection = Self::new::<T>(name);
+        collection.sequence_view = Some(|value| {
+            let arena = value
+                .downcast_ref::<Arena<T>>()
+                .ok_or_else(|| pixui_error!("collection arena has an unexpected type"))?;
+            Ok(DynamicObject::from_arena(arena))
+        });
+        collection
+    }
+
+    /// Borrows live items as a shared sequence, skipping vacant arena slots.
+    /// Returns an error for collections created without reflected access.
+    pub fn as_sequence(&self) -> PixuiResult<DynamicObject<'_>> {
+        let view = self.sequence_view.ok_or_else(|| {
+            pixui_error!(
+                "collection `{}` has no reflected sequence access; use Collection::new_reflected",
+                self.name
+            )
+        })?;
+        view(self.arena.as_ref())
     }
 
     /// Immutable binding name. Names must be unique within a slice.

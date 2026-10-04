@@ -34,8 +34,7 @@ pub fn walk<V: Visitor>(
             LivePart::Component(_) => {}
             LivePart::ForLoop(for_loop) => {
                 let sequence = context.read_object(FieldIndex(for_loop.field_index))?;
-                for index in 0..sequence.len()? {
-                    let item = sequence.get(index)?;
+                for item in sequence.iter()? {
                     walk(&mut for_loop.body, &item, visitor)?;
                 }
             }
