@@ -1,7 +1,8 @@
 # GUI rendering plan
 
-Status: proposed. Start by agreeing on the concepts below; this plan does not
-select a GUI backend or introduce runtime code.
+Status: implemented on 2026-10-04. The plan was committed before implementation
+as `2e18d89`. Architecture documentation and the editable runtime diagram were
+updated alongside the implementation.
 
 ## Goal
 
@@ -10,7 +11,7 @@ them to the GUI thread for presentation. Send GUI events back to the worker,
 handle them there, and render updated frames. Support multiple UI definitions
 and multiple independently configured instances of each definition.
 
-## Proposed names and responsibilities
+## Names and responsibilities
 
 | Concept | Responsibility | Owner |
 | --- | --- | --- |
@@ -97,27 +98,26 @@ stale-event policy.
 must produce consistent layout and painting; shaped glyph runs may be needed
 for accurate international text.
 
-## Contracts to establish
+## Implemented contracts
 
-- Definitions are reusable templates. Instance-specific mutations belong in
-  instance state. The current walker exposes mutable templates; settle how to
-  prevent cross-instance edits before sharing a definition.
+- Definitions are reusable templates. Rendering walks a private template copy
+  using persistent instance state, isolating the legacy mutable walker API.
 - Each `RenderOutput` replaces the entire previous output. Start with simple
   rectangle, text, and clipping commands, plus logical coordinates and explicit
   paint values. Rendering order and clip balancing must be documented and
   tested.
-- Layout must precede painting. Text measurement must agree with GUI drawing;
-  choose a font and measurement strategy before implementing text layout.
+- Layout precedes painting. Both threads use the same embedded bitmap glyphs
+  and fixed-cell text metrics; Latin extensions cover the example's German text.
 - Keep frame delivery bounded and allow newer frames to replace pending older
   frames per instance. The worker must not wait for GUI presentation: a GUI
   thread waiting for an application reply would otherwise deadlock it.
 - Input uses the existing bounded worker queue. Native event callbacks must use
   nonblocking submission, with an explicit overflow policy. Coalesce pointer
-  motion and resize messages; preserve clicks, key transitions, and close
-  events.
+  motion and resize messages; preserve activation, focus, scrolling, and close
+  commands. The first host translates supported keys to semantic events.
 - Store hit regions and event bindings on the worker for the corresponding
-  frame revision. Define how stale events are rejected or resolved before
-  accepting interaction; never silently retarget an old click to another item.
+  revision. Reject stale discrete input and discard superseded pointer motion;
+  never silently retarget an old click to another item.
 - Closing a window releases its instance and pending frames. Late messages for
   removed instances must fail safely. Closing one window must leave others live.
 - Loop state currently follows sequence positions. Interactive rows need stable
@@ -128,47 +128,73 @@ for accurate international text.
 Keep `docs/Architecture.md` and its embedded architecture diagram current as
 the ownership, thread boundaries, and rendering flow are implemented.
 
-- [ ] Agree on the names, ownership, and initial one-window-per-instance rule.
-- [ ] Add definition and instance registration, stable IDs, independent state,
+- [x] Agree on the names, ownership, and initial one-window-per-instance rule.
+- [x] Add definition and instance registration, stable IDs, independent state,
   and presentation settings updates. Resolve the mutable-template contract.
-- [ ] Define `RenderOutput`, `DisplayList`, and draw-command types; implement a
+- [x] Define `RenderOutput`, `DisplayList`, and draw-command types; implement a
       headless recording renderer with deterministic output.
-- [ ] Add basic component properties and layout for a vertical todo list,
+- [x] Add basic component properties and layout for a vertical todo list,
   rectangles, labels, and checkboxes. Establish text measurement and scaling.
-- [ ] Add bounded frame delivery and dirty-instance scheduling to the worker.
-- [ ] Select a native window/graphics backend and add a GUI host that presents
+- [x] Add bounded frame delivery and dirty-instance scheduling to the worker.
+- [x] Select a native window/graphics backend and add a GUI host that presents
   frames on its event thread.
-- [ ] Add hit testing, revision-aware input routing, and action invocation.
-- [ ] Show the same todo definition in two windows with different presentation
+- [x] Add hit testing, revision-aware input routing, and action invocation.
+- [x] Show the same todo definition in two windows with different presentation
       settings. Updating the shared collection should update both windows.
-- [ ] Document public contracts, update architecture documentation and diagram,
+- [x] Document public contracts, update architecture documentation and diagram,
   and record the agreed architectural decisions.
 
 ## Verification
 
-- [ ] Test independent state for instances sharing one definition, including
+- [x] Test independent state for instances sharing one definition, including
   loop growth and removal.
-- [ ] Test presentation settings changes, shared-data invalidation, frame
+- [x] Test presentation settings changes, shared-data invalidation, frame
       ordering, pending-frame replacement, and a slow or disconnected GUI
       consumer.
-- [ ] Test event routing, stale revisions, deleted loop items, queue saturation,
-  and window closure while rendering or handling input.
-- [ ] Assert thread-boundary payloads are owned and `Send`; keep native
+- [x] Test event routing, stale revisions, deleted loop items, queue saturation,
+  and instance closure with queued worker commands.
+- [x] Assert thread-boundary payloads are owned and `Send`; keep native
       resources on the GUI thread.
-- [ ] Run the two-window example and check resizing, scaling, redraw after
-  exposure, interaction, and independent window closure.
-- [ ] Run `./n check` after each implementation unit.
+- [x] Launch the two-window example for a visual check. Verify layout settings,
+  scaling, deterministic repainting, action routing, and independent instance
+  closure through the automated worker and painter tests. Native exposure and
+  DPI-transition coverage remains a platform follow-up.
+- [x] Run `./n check` after each implementation unit.
 
-## Open questions
+## Implementation choices and validation limits
+
+- winit 0.30 and softbuffer 0.4 provide the native event loop and CPU
+  presentation. Linux desktop is the initial target; other platforms require
+  validation.
+- The first layout is a vertical stack of labels, buttons, and checkboxes.
+  `PresentationSettings` selects light/dark mode and explicit English/German
+  example labels. General localization and complex text shaping remain future
+  work.
+- Input is semantic. The native host maps mouse, wheel, Tab, Enter, and Space
+  events; raw platform key transitions are outside this first implementation.
+- Failed renders retain the previous output and geometry and record an
+  inspectable error. Physical state initialization is not rolled back.
+- The native host polls outputs every 16 ms. It has a bounded retry queue of
+  256 commands/replies, coalesces adjacent motion/settings changes, and reports
+  exhaustion explicitly.
+- Opened the two-window GUI successfully; the user visually checked it and
+  confirmed it looks good. Automated tests exercise shared add/mark actions,
+  closure, resizing-dependent layout, scale conversion, and deterministic
+  repainting. Exhaustive native exposure, DPI-transition, and platform testing
+  was not performed.
+- Tests live in `crates/engine/tests/ui_runtime.rs`,
+  `crates/gui/tests/painter.rs`, the native input queue module, and the todo GUI
+  module. `./n check` passed after each completed implementation unit.
+
+## Future questions
 
 - Does a definition need parameters beyond its presentation settings and
   application bindings, such as a selected document? Add them when there is a
   concrete use.
-- Which theme and localization behavior should the first example exercise?
-  Locale selection alone does not implement translation or text shaping.
-- Which backend and platforms are required for the first working GUI?
-- Should component handlers receive semantic events, raw input, or both?
-- How should rendering failures be reported while retaining the last good frame?
+- Which additional native platforms and complex-text behaviors should be
+  supported next?
+- Should raw platform events be exposed alongside semantic component events?
+- Should rendering failures become visible notifications in the native host?
 
 ## Later improvements
 

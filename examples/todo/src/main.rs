@@ -1,5 +1,4 @@
-mod todo;
-mod ui;
+use pixui_example_todo::{todo, ui};
 
 use pixui_base::{PixuiResult, pixui_error};
 use pixui_engine::application::app::Application;

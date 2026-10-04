@@ -3,6 +3,7 @@ use pixui_reflect::FieldIndex;
 use crate::application::{application_slice::SliceId, collection_key::CollectionKey};
 
 /// An expression evaluated against application state.
+#[derive(Clone)]
 pub struct Expression {
     kind: ExpressionKind,
 }
@@ -37,6 +38,7 @@ impl Expression {
 }
 
 /// Operations supported by the expression evaluator.
+#[derive(Clone)]
 pub enum ExpressionKind {
     Field(FieldIndex),
     Collection(CollectionKey),

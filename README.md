@@ -6,6 +6,10 @@ and shared infrastructure in [`crates/base`](crates/base).
 See the [architecture overview](docs/Architecture.md) for the application
 runtime diagram, state ownership, and workspace responsibilities.
 
+Run the [native todo example](examples/todo/README.md) with
+`./t cargo run -p pixui-example-todo --bin gui`. It shows one UI definition in
+two independently configured windows sharing the same application data.
+
 [`crates/reflect`](crates/reflect) provides explicit indexed field reads
 and method invocation; see its [API and assumptions](crates/reflect/README.md).
 

@@ -16,6 +16,7 @@ use super::{
 /// `Default` creates bare state for adapters and tests that need direct access.
 #[derive(Default)]
 pub struct Application {
+    pub(crate) uis: crate::ui::registry::UiRegistry,
     slices: Vec<ApplicationSlice>,
     slice_names: HashMap<String, usize>,
     slice_ids: HashMap<SliceId, usize>,
@@ -159,7 +160,30 @@ impl Application {
     /// A call targeting a removed slice or an invalid action returns an error.
     pub fn dispatch(&mut self, call: ActionCall) -> ActionResult {
         let action = self.slice(call.slice)?.action(call.action)?;
-        action.invoke(self, call.slice, call.request)
+        let result = action.invoke(self, call.slice, call.request);
+        self.uis.invalidate_all();
+        result
+    }
+
+    /// UI definitions and worker-local instance state, available for inspection.
+    pub fn uis(&self) -> &crate::ui::registry::UiRegistry {
+        &self.uis
+    }
+
+    pub(crate) fn ui_command(&mut self, command: crate::ui::input::UiCommand) -> PixuiResult<()> {
+        let mut uis = std::mem::take(&mut self.uis);
+        let result = uis.command(command, self);
+        self.uis = uis;
+        if let Some(call) = result? {
+            self.dispatch(call)?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn render_dirty(&mut self) {
+        let mut uis = std::mem::take(&mut self.uis);
+        uis.render_dirty(self);
+        self.uis = uis;
     }
 
     /// Creates a checked opaque reference without retaining an application borrow.

@@ -32,6 +32,56 @@ pub struct ApplicationHandle {
 }
 
 impl ApplicationHandle {
+    /// Registers a reusable live-part definition on the worker.
+    pub fn register_ui(
+        &self,
+        definition: crate::ui::definition::UiDefinition,
+    ) -> PixuiResult<crate::ui::definition::UiDefinitionId> {
+        self.request(move |application| application.uis.register(definition))?
+            .wait()
+    }
+
+    /// Creates independent worker-side state and a latest-output subscription.
+    pub fn create_ui(
+        &self,
+        definition: crate::ui::definition::UiDefinitionId,
+        settings: crate::ui::presentation::PresentationSettings,
+    ) -> PixuiResult<(
+        crate::ui::instance::UiInstanceId,
+        crate::ui::mailbox::OutputReceiver,
+    )> {
+        self.request(move |application| application.uis.create(definition, settings))?
+            .wait()
+    }
+
+    /// Native callbacks enqueue without blocking. Retain and retry a full-queue
+    /// command; a disconnected queue cannot accept further input.
+    pub fn try_ui_command(
+        &self,
+        command: crate::ui::input::UiCommand,
+    ) -> Result<ApplicationReply<()>, TrySendError<crate::ui::input::UiCommand>> {
+        let (reply, receiver) = bounded(1);
+        self.sender
+            .try_send(ApplicationCommand::Ui { command, reply })
+            .map_err(|error| match error {
+                TrySendError::Full(ApplicationCommand::Ui { command, .. }) => {
+                    TrySendError::Full(command)
+                }
+                TrySendError::Disconnected(ApplicationCommand::Ui { command, .. }) => {
+                    TrySendError::Disconnected(command)
+                }
+                _ => unreachable!("UI command sent here"),
+            })?;
+        Ok(ApplicationReply::new(receiver))
+    }
+
+    /// Blocking convenience for setup and headless tests; native callbacks use
+    /// `try_ui_command` instead.
+    pub fn ui_command(&self, command: crate::ui::input::UiCommand) -> PixuiResult<()> {
+        self.request(move |application| application.ui_command(command))?
+            .wait()
+    }
+
     pub(super) fn start(capacity: usize) -> Self {
         let (sender, receiver) = bounded(capacity);
         std::thread::Builder::new()

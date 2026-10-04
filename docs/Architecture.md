@@ -2,12 +2,12 @@
 
 Pixui is a Rust workspace with an application engine, shared infrastructure, and
 a small reflection mechanism. The current implementation provides state storage,
-action dispatch, and live-model traversal. A web UI, persistence layer, and
-reactive change notifications are not implemented.
+action dispatch, live-model traversal, and a native GUI with worker-side layout
+and rendering. A web UI and persistence layer are not implemented.
 
 ## Application runtime
 
-![Application runtime: caller threads send commands through a bounded queue to a worker that owns slices and typed collections; results return through reply channels.](diagrams/architecture.drawio.svg)
+![Application runtime: callers and the GUI thread send commands to the worker; the worker owns application and UI instance state and publishes display lists for native windows.](diagrams/architecture.drawio.svg)
 
 The SVG embeds its editable draw.io diagram. Open it with draw.io Desktop
 through `./t drawio docs/diagrams/architecture.drawio.svg` to edit it; save with
@@ -55,11 +55,12 @@ application state lives on the worker. Crossbeam's bounded channel is used as
 multiple producers and one consumer. The default capacity is 128 commands;
 `with_capacity` allows another bound, including zero for rendezvous.
 
-The worker processes actions, registration, and inspection sequentially.
-`dispatch` waits for queue capacity and returns a pending reply. `try_dispatch`
-returns a full-queue error with the original call for retry. Each command that
-expects a result has a reply channel carrying an owned `PixuiResult<T>`.
-Inspection returns an owned snapshot; live state borrows cannot escape.
+The worker processes actions, UI events, registration, and inspection
+sequentially. `dispatch` waits for queue capacity and returns a pending reply.
+`try_dispatch` returns a full-queue error with the original call for retry. Each
+command that expects a result has a reply channel carrying an owned
+`PixuiResult<T>`. Inspection returns an owned snapshot; live state borrows
+cannot escape.
 
 Dropping a reply does not cancel the command. Dropping the last sender allows
 accepted commands to drain before normal worker exit, but does not wait for
@@ -130,13 +131,108 @@ state by position, resize child lists, and drop removed state. Stable item
 identity across reordering is not implemented. Visitors receive initialized
 state and can update it; template edits are reconciled before descent. Traversal
 preserves child and element order; errors stop it without rolling back earlier
-updates, leaving unvisited entries potentially unknown. This is separate from
-the application dispatch mechanism, with no automatic state-to-view update
-pipeline.
+updates, leaving unvisited entries potentially unknown. The GUI renderer uses
+this walker to build display lists after application commands.
 
 See the [reflection documentation](../crates/reflect/README.md) and
 [DR-001](<decisions/DR-001 Use a custom reflection mechanism.md>) for supported
 operations and limitations.
+
+## Native UI rendering
+
+### Definitions, instances, and windows
+
+`Application` owns a `UiRegistry` of named `UiDefinition`s and stable
+`UiDefinitionId`s. A definition contains a reusable `LivePart` template. Each
+`UiInstance`, identified by `UiInstanceId`, holds the worker-side state for one
+window or headless target:
+
+- Persistent `LiveState`, initialized with `PartState::Unknown`.
+- `PresentationSettings`: light/dark theme, application-defined locale, logical
+  viewport size, and scale factor.
+- `LayoutState`: component bounds, clipped hit regions and action bindings,
+  and content height.
+- Focus, hover, scroll offset, rendering revision, and the last rendering error.
+
+Multiple instances of the same definition share application collections but
+retain independent UI state. The initial native host maps one instance to one
+window. Native winit windows and softbuffer surfaces belong to the process main
+thread. `ApplicationHandle` still contains only a cheaply clonable command
+sender.
+
+`register_ui` and `create_ui` transfer definitions and settings to the worker;
+creation returns the instance ID and its output receiver. Registration rejects
+empty or duplicate names. IDs are process-local and never reused. Closing an
+instance invalidates its ID; dropping its output consumer also releases it on
+the next worker rendering pass.
+
+### Layout and display lists
+
+Components can attach a presentation callback that reads the current expression
+context and instance settings and returns a `Widget`: label, button, or
+checkbox. The callback runs on every walk. The renderer walks a private copy of
+the shared template to isolate the legacy walker's mutable-template interface.
+Persistent physical state remains in the instance.
+
+The worker collects widget properties, measures text, and lays out a vertical
+stack before painting. Composites and loops group traversal without adding
+layout boxes. Content wraps by fixed character cells and scroll offsets are
+clamped to the measured content height.
+
+`RenderOutput` contains the instance ID, monotonic `RenderRevision`, and an
+owned `DisplayList`. Commands paint in order: `FillRect`, `StrokeRect`,
+`DrawText`, `PushClip`, and `PopClip`. Rectangles, glyph sizes, and stroke
+widths use logical pixels. Nested clips intersect and must be balanced. Colors
+are opaque sRGB. Commands contain no reflected application borrows, callbacks,
+or native handles.
+
+Both threads use the same embedded 8-by-8 bitmap glyphs and fixed-cell metrics.
+The painter applies the native scale factor and produces softbuffer-compatible
+pixels. Basic Latin and Latin extensions support the English/German example;
+unknown characters use a fallback glyph. Complex shaping, bidi, font selection,
+and a general localization system are not implemented.
+
+### Updates and communication
+
+Any dispatched action invalidates all instances, including an action that
+returns an error after mutating data. Content invalidation clears focus and
+hover because loop reconciliation is positional. Settings and interaction
+changes invalidate only their instance. The worker renders dirty instances
+after batches of at most 32 commands. Inspection flushes preceding rendering
+work before reading instance state. Action replies acknowledge execution;
+they do not acknowledge native presentation.
+
+Each instance has a latest-output mailbox with capacity one. Publication never
+waits: newer output replaces pending older output. The GUI host polls at a
+16 ms interval and retains the latest output for native redraws without another
+worker traversal. Output count is bounded; command payload sizes are not.
+
+Native callbacks submit `UiCommand`s using `try_ui_command`. The host retains
+full-queue commands for retry in a bounded queue of 256 pending commands and
+replies. Adjacent pointer-motion or presentation updates can be coalesced;
+discrete commands keep their order. Overflow or worker disconnection reports a
+host error rather than silently losing an activation.
+
+Input identifies its instance and the revision actually painted by the GUI.
+The worker performs hit testing against its corresponding geometry and builds
+an owned action call from the target binding. Exact revision matching rejects
+stale discrete events; superseded pointer motion is discarded. Pending content,
+settings, or scroll changes also invalidate old
+geometry. Hover or focus painting does not invalidate geometry within a command
+batch. Item bindings capture checked opaque references, so a deleted item cannot
+silently resolve to a replacement arena slot.
+
+A rendering failure publishes no partial output. The previous successful
+output and geometry remain; details are inspectable through
+`UiInstance::last_error`. Physical-state initialization performed before the
+failure is not rolled back. A later invalidation retries rendering. Native
+surface or event-loop failures are returned from the GUI host.
+
+See
+[DR-004](<decisions/DR-004 Render UI instances on the worker and present display lists on the GUI thread.md>)
+for the decisions and tradeoffs, and the
+[todo GUI](../examples/todo/src/gui_ui.rs) for presentation and action bindings.
+Run it with `./t cargo run -p pixui-example-todo --bin gui`.
 
 ## Workspace responsibilities
 
@@ -145,8 +241,9 @@ operations and limitations.
 | `pixui-base` | Typed arenas and keys, shared errors/results, strings, and sendable erased values. |
 | `pixui-reflect` | Runtime type descriptors, construction, dynamic objects, and sequence access. |
 | `pixui-reflect-macros` | Reflection attributes, action adapters, and generated slice facades. |
-| `pixui-engine` | Application state, worker dispatch, action registration, and live-model traversal. |
-| `pixui-example-todo` | Runnable example of a todo slice, collection, and typed actions. |
+| `pixui-engine` | Application state, worker dispatch, live-model traversal, UI instances, layout, and display-list generation. |
+| `pixui-gui` | Native event loop, windows, input submission, and CPU display-list painting. |
+| `pixui-example-todo` | Text and two-window native examples of a todo slice, collection, and typed actions. |
 
 The engine uses base storage and reflection metadata. Generated code connects
 ordinary application definitions to those runtime APIs. Keep domain objects

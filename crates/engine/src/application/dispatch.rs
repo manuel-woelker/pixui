@@ -20,6 +20,10 @@ pub(super) enum ApplicationCommand {
         reply: ReplySender<ActionOutput>,
     },
     Task(ApplicationTask),
+    Ui {
+        command: crate::ui::input::UiCommand,
+        reply: ReplySender<()>,
+    },
 }
 
 impl ApplicationCommand {
@@ -28,7 +32,15 @@ impl ApplicationCommand {
             Self::Dispatch { call, reply } => {
                 let _ = reply.send(application.dispatch(call));
             }
-            Self::Task(task) => task(application),
+            Self::Task(task) => {
+                // Inspection is a barrier: observe UI output and geometry for
+                // preceding commands, even inside a rendering batch.
+                application.render_dirty();
+                task(application);
+            }
+            Self::Ui { command, reply } => {
+                let _ = reply.send(application.ui_command(command));
+            }
         }
     }
 }
@@ -42,6 +54,11 @@ pub struct ApplicationReply<T> {
 }
 
 impl<T> ApplicationReply<T> {
+    /// Polls completion without blocking a native event loop.
+    pub fn try_recv(&self) -> Result<PixuiResult<T>, crossbeam_channel::TryRecvError> {
+        self.receiver.try_recv()
+    }
+
     pub(super) fn new(receiver: ReplyReceiver<T>) -> Self {
         Self { receiver }
     }
@@ -60,10 +77,20 @@ impl<T> ApplicationReply<T> {
 /// This prevents replies retained by the bounded queue from leaving callers stuck.
 pub(super) fn run(receiver: CommandReceiver) {
     let mut application = Some(Application::default());
-    for command in receiver {
+    while let Ok(command) = receiver.recv() {
         if let Some(state) = application.as_mut() {
-            let result =
-                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| command.run(state)));
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                command.run(state);
+                // Bounded batches avoid rendering once per queued action while
+                // ensuring a busy producer cannot indefinitely starve painting.
+                for _ in 0..31 {
+                    let Ok(command) = receiver.try_recv() else {
+                        break;
+                    };
+                    command.run(state);
+                }
+                state.render_dirty();
+            }));
             if result.is_err() {
                 application = None;
             }

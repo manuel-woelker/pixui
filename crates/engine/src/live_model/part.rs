@@ -8,23 +8,37 @@ use crate::expression::expression::Expression;
 /// When the expression context has only application storage, receives unit.
 pub type StateFactory = for<'a> fn(&DynamicObject<'a>) -> PixuiResult<GenericComponentState>;
 
+#[derive(Clone)]
 pub enum LivePart {
     Composite(CompositePart),
     Component(ComponentPart),
     ForLoop(ForLoopPart),
 }
 
+#[derive(Clone)]
 pub struct CompositePart {
     pub parts: Vec<LivePart>,
 }
 
+#[derive(Clone)]
 pub struct ComponentPart {
     pub create_state: StateFactory,
+    /// Optional presentation callback used by the GUI renderer.
+    pub presentation: Option<crate::ui::widget::WidgetFactory>,
 }
 
 impl ComponentPart {
     pub fn new(create_state: StateFactory) -> Self {
-        Self { create_state }
+        Self {
+            create_state,
+            presentation: None,
+        }
+    }
+
+    /// Presents a component using current data and instance settings on each walk.
+    pub fn with_presentation(mut self, presentation: crate::ui::widget::WidgetFactory) -> Self {
+        self.presentation = Some(presentation);
+        self
     }
 }
 
@@ -35,6 +49,7 @@ impl Default for ComponentPart {
     }
 }
 
+#[derive(Clone)]
 pub struct ForLoopPart {
     /// Evaluated in the enclosing context; the result must be a sequence.
     pub expression: Expression,

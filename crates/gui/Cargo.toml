@@ -1,0 +1,12 @@
+[package]
+name = "pixui-gui"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+pixui-base = { path = "../base" }
+pixui-engine = { path = "../engine" }
+crossbeam-channel = "0.5.17"
+winit = "0.30.13"
+softbuffer = "0.4.8"
