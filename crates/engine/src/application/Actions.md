@@ -1,5 +1,9 @@
 # Application actions
 
+The [application state decision record](../../../../docs/decisions/DR-002%20Organize%20application%20state%20into%20slices%20and%20typed%20collections.md)
+explains why state is organized into slices and typed collections, including the
+tradeoffs compared with a plain Rust root struct.
+
 `Application::new()` immediately starts an owner thread and returns an
 `ApplicationHandle`. The handle contains only a cheaply clonable bounded MPSC
 sender. Add configured slices and dispatch actions through that handle; the
