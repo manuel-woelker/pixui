@@ -11,6 +11,7 @@ use super::{
     action_handle::ActionHandle,
     app::Application,
     application_slice::{ApplicationSlice, SliceId},
+    collection_key::CollectionKey,
     dispatch::{ApplicationCommand, ApplicationReply, CommandSender, PendingAction},
     object_ref::ObjectRef,
 };
@@ -52,6 +53,15 @@ impl ApplicationHandle {
     pub fn action(&self, slice: SliceId, name: &str) -> PixuiResult<ActionHandle> {
         let name = name.to_owned();
         self.request(move |application| application.slice(slice)?.action_handle_named(&name))?
+            .wait()
+    }
+
+    /// Resolves slice and collection names on the worker once. Cache the returned
+    /// key for expression construction; removal of its slice invalidates the key.
+    pub fn collection_key(&self, slice: &str, collection: &str) -> PixuiResult<CollectionKey> {
+        let slice = slice.to_owned();
+        let collection = collection.to_owned();
+        self.request(move |application| application.collection_key(&slice, &collection))?
             .wait()
     }
 

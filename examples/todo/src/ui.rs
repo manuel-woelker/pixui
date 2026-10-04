@@ -2,7 +2,7 @@
 
 use pixui_base::{PixuiResult, pixui_error};
 use pixui_engine::{
-    application::{application_handle::ApplicationHandle, application_slice::SliceId},
+    application::application_handle::ApplicationHandle,
     expression::{context::ExpressionContext, evaluator::evaluate, expression::Expression},
     live_model::{
         part::{ComponentPart, CompositePart, ForLoopPart, LivePart},
@@ -26,15 +26,9 @@ pub struct TodoUi {
 }
 
 impl TodoUi {
-    pub fn new(application: &ApplicationHandle, slice: SliceId) -> PixuiResult<Self> {
-        let collection_index = application.inspect(move |state| {
-            state
-                .slice(slice)?
-                .collections()
-                .iter()
-                .position(|collection| collection.name() == "todos")
-                .ok_or_else(|| pixui_error!("unknown todos collection"))
-        })?;
+    /// Resolves the named slice\'s todos collection once for the loop expression.
+    pub fn new(application: &ApplicationHandle, slice: &str) -> PixuiResult<Self> {
+        let collection_key = application.collection_key(slice, "todos")?;
         let heading = LivePart::Component(ComponentPart::new(|_| {
             Ok(GenericComponentState::new(ComponentState::Heading(
                 "Todos".into(),
@@ -49,7 +43,7 @@ impl TodoUi {
             )))
         }));
         let rows = LivePart::ForLoop(ForLoopPart {
-            expression: Expression::collection(slice, collection_index),
+            expression: Expression::from_collection(collection_key),
             body: Box::new(LivePart::Composite(CompositePart {
                 parts: vec![checkbox, label],
             })),
@@ -166,7 +160,7 @@ mod tests {
         let application = Application::new();
         let slice = application.add_slice(create_slice().unwrap()).unwrap();
         let actions = TodoActions::bind(&application).unwrap();
-        let mut ui = TodoUi::new(&application, slice).unwrap();
+        let mut ui = TodoUi::new(&application, "todo").unwrap();
         assert_eq!(
             ui.render(&application).unwrap(),
             "Composite (2 children)\n  Heading: Todos\n  ForLoop (0 todos)\n"
@@ -224,7 +218,7 @@ mod collection_tests {
         let id = application.add_slice(slice).unwrap();
         let actions = TodoActions::bind_to(&application, id).unwrap();
         actions.add_todo("From the collection").unwrap();
-        let mut ui = TodoUi::new(&application, id).unwrap();
+        let mut ui = TodoUi::new(&application, "alternative").unwrap();
         let LivePart::Composite(root) = &ui.template else {
             panic!("root")
         };

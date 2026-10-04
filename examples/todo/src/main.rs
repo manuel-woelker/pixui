@@ -18,7 +18,7 @@ fn main() -> PixuiResult<()> {
         .join()
         .map_err(|_| pixui_error!("todo caller panicked"))??;
 
-    let mut ui = TodoUi::new(&application, slice)?;
+    let mut ui = TodoUi::new(&application, "todo")?;
     println!("Before inserting a todo:\n{}", ui.render(&application)?);
     actions.add_todo("Add another task")?;
     println!("After inserting a todo:\n{}", ui.render(&application)?);

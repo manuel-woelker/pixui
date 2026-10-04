@@ -33,13 +33,13 @@ todo loop. A collection expression selects the slice's reflected todos arena.
 The loop body is a composite with checkbox and label components. `TodoUi`
 retains the same template and `LiveState` across renders.
 
-Construction resolves the todos collection index by name once. Each render moves
-the owned template and UI state to an `inspect` callback on the application
-worker. The walker evaluates the collection expression and borrows live
-`TodoItem` values as loop contexts. The visitor refreshes checkbox and label
-state and prints the physical tree with one row subtree per todo. New entries
-initialize on demand; existing presentation state is retained. UI state and
-output text return to the caller; application borrows do not escape and no
+Construction resolves a `CollectionKey` for todos by name once. Each render
+moves the owned template and UI state to an `inspect` callback on the
+application worker. The walker evaluates the collection expression and borrows
+live `TodoItem` values as loop contexts. The visitor refreshes checkbox and
+label state and prints the physical tree with one row subtree per todo. New
+entries initialize on demand; existing presentation state is retained. UI state
+and output text return to the caller; application borrows do not escape and no
 snapshot collection is created. Component payloads are owned and sendable. A
 worker communication failure discards the transferred UI state.
 

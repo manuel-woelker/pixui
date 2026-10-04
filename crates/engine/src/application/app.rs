@@ -1,4 +1,4 @@
-use std::any::Any;
+use std::{any::Any, collections::HashMap};
 
 use pixui_base::erased_value::SendValues;
 use pixui_base::{Arena, Key, PixuiResult, pixui_error};
@@ -7,6 +7,8 @@ use super::{
     action::{ActionCall, ActionResult},
     application_handle::ApplicationHandle,
     application_slice::{ApplicationSlice, SliceId},
+    collection::Collection,
+    collection_key::CollectionKey,
     object_ref::ObjectRef,
 };
 
@@ -15,6 +17,8 @@ use super::{
 #[derive(Default)]
 pub struct Application {
     slices: Vec<ApplicationSlice>,
+    slice_names: HashMap<String, usize>,
+    slice_ids: HashMap<SliceId, usize>,
 }
 
 impl Application {
@@ -41,47 +45,86 @@ impl Application {
 
     /// Adds a slice without changing state on an empty or duplicate name.
     pub fn add_slice(&mut self, slice: ApplicationSlice) -> PixuiResult<SliceId> {
-        if slice.name().is_empty() || self.slices.iter().any(|other| other.name() == slice.name()) {
+        if slice.name().is_empty() || self.slice_names.contains_key(slice.name()) {
             return Err(pixui_error!(
                 "empty or duplicate slice name `{}`",
                 slice.name()
             ));
         }
         let id = slice.id();
+        self.slice_names
+            .insert(slice.name().to_owned(), self.slices.len());
+        self.slice_ids.insert(id, self.slices.len());
         self.slices.push(slice);
         Ok(id)
     }
 
     /// Resolves an exact, case-sensitive slice name.
     pub fn slice_named(&self, name: &str) -> PixuiResult<&ApplicationSlice> {
-        self.slices
-            .iter()
-            .find(|slice| slice.name() == name)
+        Ok(&self.slices[self.slice_index(name)?])
+    }
+
+    /// Resolves a slice name to its current position. Positions can change when
+    /// slices are removed or reordered; retain SliceId or CollectionKey instead.
+    pub fn slice_index(&self, name: &str) -> PixuiResult<usize> {
+        self.slice_names
+            .get(name)
+            .copied()
             .ok_or_else(|| pixui_error!("unknown slice `{name}`"))
+    }
+
+    /// Resolves exact slice and collection names into a reusable collection address.
+    pub fn collection_key(&self, slice: &str, collection: &str) -> PixuiResult<CollectionKey> {
+        self.slice_named(slice)?.collection_key(collection)
+    }
+
+    /// Borrows an erased collection, checking its slice identity and index.
+    pub fn resolve_collection(&self, key: CollectionKey) -> PixuiResult<&Collection> {
+        let slice = self.slice(key.slice)?;
+        slice
+            .collections()
+            .get(key.collection_index)
+            .ok_or_else(|| {
+                pixui_error!(
+                    "invalid collection index {} in slice `{}`",
+                    key.collection_index,
+                    slice.name()
+                )
+            })
     }
 
     /// Removes a slice; existing calls and object references then fail at dispatch.
     pub fn remove_slice(&mut self, id: SliceId) -> PixuiResult<ApplicationSlice> {
-        let index = self
-            .slices
-            .iter()
-            .position(|slice| slice.id() == id)
-            .ok_or_else(|| pixui_error!("unknown slice"))?;
-        Ok(self.slices.remove(index))
+        let index = self.slice_position(id)?;
+        let slice = self.slices.remove(index);
+        self.reindex_slices();
+        Ok(slice)
     }
 
     /// Reorders slices without changing identities or names.
     pub fn swap_slices(&mut self, first: SliceId, second: SliceId) -> PixuiResult<()> {
-        let position = |id| {
-            self.slices
-                .iter()
-                .position(|slice| slice.id() == id)
-                .ok_or_else(|| pixui_error!("unknown slice"))
-        };
-        let first = position(first)?;
-        let second = position(second)?;
+        let first = self.slice_position(first)?;
+        let second = self.slice_position(second)?;
         self.slices.swap(first, second);
+        self.reindex_slices();
         Ok(())
+    }
+
+    fn slice_position(&self, id: SliceId) -> PixuiResult<usize> {
+        self.slice_ids
+            .get(&id)
+            .copied()
+            .ok_or_else(|| pixui_error!("unknown slice"))
+    }
+
+    // Vector positions change on removal and reordering; keys retain stable IDs.
+    fn reindex_slices(&mut self) {
+        self.slice_names.clear();
+        self.slice_ids.clear();
+        for (index, slice) in self.slices.iter().enumerate() {
+            self.slice_names.insert(slice.name().to_owned(), index);
+            self.slice_ids.insert(slice.id(), index);
+        }
     }
 
     /// Adds a collection while preserving slice identity and naming invariants.
@@ -94,17 +137,12 @@ impl Application {
     }
 
     pub fn slice(&self, id: SliceId) -> PixuiResult<&ApplicationSlice> {
-        self.slices
-            .iter()
-            .find(|slice| slice.id() == id)
-            .ok_or_else(|| pixui_error!("unknown slice"))
+        Ok(&self.slices[self.slice_position(id)?])
     }
 
     fn slice_mut(&mut self, id: SliceId) -> PixuiResult<&mut ApplicationSlice> {
-        self.slices
-            .iter_mut()
-            .find(|slice| slice.id() == id)
-            .ok_or_else(|| pixui_error!("unknown slice"))
+        let index = self.slice_position(id)?;
+        Ok(&mut self.slices[index])
     }
 
     /// Constructs an owned request from fields in the action's request schema order.

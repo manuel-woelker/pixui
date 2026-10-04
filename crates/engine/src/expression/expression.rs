@@ -1,6 +1,6 @@
 use pixui_reflect::FieldIndex;
 
-use crate::application::application_slice::SliceId;
+use crate::application::{application_slice::SliceId, collection_key::CollectionKey};
 
 /// An expression evaluated against application state.
 pub struct Expression {
@@ -14,10 +14,15 @@ impl Expression {
 
     /// References a collection by its slice identity and registration index.
     pub fn collection(slice_id: SliceId, collection_index: usize) -> Self {
-        Self::new(ExpressionKind::Collection(CollectionExpression::new(
+        Self::new(ExpressionKind::Collection(CollectionKey::new(
             slice_id,
             collection_index,
         )))
+    }
+
+    /// References a previously resolved collection without repeating name lookup.
+    pub fn from_collection(key: CollectionKey) -> Self {
+        Self::new(ExpressionKind::Collection(key))
     }
 
     /// Reads a reflected field on the current root or innermost loop element.
@@ -34,32 +39,5 @@ impl Expression {
 /// Operations supported by the expression evaluator.
 pub enum ExpressionKind {
     Field(FieldIndex),
-    Collection(CollectionExpression),
-}
-
-/// A collection address within an application.
-///
-/// Collection indices follow insertion order and remain stable because collections
-/// cannot be removed or reordered. Slice identities survive slice reordering.
-/// These addresses are process-local; invalid addresses fail during evaluation.
-pub struct CollectionExpression {
-    slice_id: SliceId,
-    collection_index: usize,
-}
-
-impl CollectionExpression {
-    pub fn new(slice_id: SliceId, collection_index: usize) -> Self {
-        Self {
-            slice_id,
-            collection_index,
-        }
-    }
-
-    pub fn slice_id(&self) -> SliceId {
-        self.slice_id
-    }
-
-    pub fn collection_index(&self) -> usize {
-        self.collection_index
-    }
+    Collection(CollectionKey),
 }

@@ -1,5 +1,6 @@
 use std::{
     any::{Any, TypeId},
+    collections::HashMap,
     sync::atomic::{AtomicU64, Ordering},
 };
 
@@ -8,6 +9,7 @@ use pixui_base::{Arena, PixuiResult, PixuiString, pixui_error};
 use super::action::{ActionDescriptor, ActionIndex};
 use super::action_handle::ActionHandle;
 use super::collection::Collection;
+use super::collection_key::CollectionKey;
 
 /// Process-local slice identity. Never reused, and stable across reordering.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -21,6 +23,7 @@ pub struct ApplicationSlice {
     name: PixuiString,
     id: SliceId,
     collections: Vec<Collection>,
+    collection_names: HashMap<String, usize>,
     actions: Vec<&'static ActionDescriptor>,
 }
 
@@ -35,6 +38,7 @@ impl ApplicationSlice {
             name: name.into(),
             id: SliceId(id),
             collections: vec![],
+            collection_names: HashMap::new(),
             actions: vec![],
         }
     }
@@ -56,41 +60,44 @@ impl ApplicationSlice {
 
     /// Adds a collection, rejecting empty or duplicate names without changing the slice.
     pub fn add_collection(&mut self, collection: Collection) -> PixuiResult<()> {
-        if collection.name().is_empty()
-            || self
-                .collections
-                .iter()
-                .any(|other| other.name() == collection.name())
-        {
+        if collection.name().is_empty() || self.collection_names.contains_key(collection.name()) {
             return Err(pixui_error!(
                 "empty or duplicate collection name `{}`",
                 collection.name()
             ));
         }
+        self.collection_names
+            .insert(collection.name().to_owned(), self.collections.len());
         self.collections.push(collection);
         Ok(())
     }
 
-    pub fn collection(&self, name: &str) -> PixuiResult<&Collection> {
-        self.collections
-            .iter()
-            .find(|collection| collection.name() == name)
+    /// Resolves an exact, case-sensitive name to its append-only collection index.
+    pub fn collection_index(&self, name: &str) -> PixuiResult<usize> {
+        self.collection_names
+            .get(name)
+            .copied()
             .ok_or_else(|| pixui_error!("unknown collection `{name}`"))
+    }
+
+    /// Resolves a collection name to a stable address in this slice.
+    pub fn collection_key(&self, name: &str) -> PixuiResult<CollectionKey> {
+        Ok(CollectionKey::new(self.id, self.collection_index(name)?))
+    }
+
+    pub fn collection(&self, name: &str) -> PixuiResult<&Collection> {
+        Ok(&self.collections[self.collection_index(name)?])
     }
 
     /// Mutates the typed arena, without permitting collection replacement or renaming.
     pub fn collection_mut<T: Any>(&mut self, name: &str) -> PixuiResult<&mut Arena<T>> {
-        self.collections
-            .iter_mut()
-            .find(|collection| collection.name() == name)
-            .ok_or_else(|| pixui_error!("unknown collection `{name}`"))?
-            .arena_mut::<T>()
-            .ok_or_else(|| {
-                pixui_error!(
-                    "collection `{name}` must contain `{}`",
-                    std::any::type_name::<T>()
-                )
-            })
+        let index = self.collection_index(name)?;
+        self.collections[index].arena_mut::<T>().ok_or_else(|| {
+            pixui_error!(
+                "collection `{name}` must contain `{}`",
+                std::any::type_name::<T>()
+            )
+        })
     }
 
     pub(super) fn collection_by_id_mut(&mut self, id: u16) -> PixuiResult<&mut Collection> {

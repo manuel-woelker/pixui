@@ -20,6 +20,17 @@ collections and registered actions. Slice names are unique within an
 application; collection and action names are unique within their slice. Names
 are immutable, and slice identities remain stable when slices are reordered.
 
+Name-to-index maps resolve slice names and collection names. Slice identity also
+maps to its current vector position; removal and reordering refresh the slice
+maps. Lookups use hash maps, while collection access by index uses the vector.
+
+`CollectionKey` combines a stable slice identity with an append-only collection
+index. `Application::collection_key(slice_name, collection_name)` resolves names
+once, and `resolve_collection(key)` borrows the target collection. The handle
+provides name resolution through one worker round trip. Collection expressions
+carry these keys. Keys survive reordering and additions, but fail after their
+slice is removed, including if another slice later reuses its name.
+
 A `Collection` holds one concrete item type in an `Arena<T>`. The arena is
 erased through `Any` at the collection boundary, allowing different collection
 types in one slice. Individual items remain ordinary Rust values and need no

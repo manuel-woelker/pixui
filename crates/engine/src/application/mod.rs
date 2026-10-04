@@ -4,5 +4,6 @@ pub mod app;
 pub mod application_handle;
 pub mod application_slice;
 pub mod collection;
+pub mod collection_key;
 pub mod dispatch;
 pub mod object_ref;

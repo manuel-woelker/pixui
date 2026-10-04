@@ -1,4 +1,4 @@
-use pixui_base::{PixuiResult, pixui_error};
+use pixui_base::PixuiResult;
 use pixui_reflect::DynamicObject;
 
 use super::{
@@ -21,16 +21,9 @@ pub fn evaluate<'a>(
 ) -> PixuiResult<DynamicObject<'a>> {
     match expression.kind() {
         ExpressionKind::Field(index) => context.value()?.read_object(*index),
-        ExpressionKind::Collection(expression) => {
-            let slice = context.application()?.slice(expression.slice_id())?;
-            let index = expression.collection_index();
-            let collection = slice.collections().get(index).ok_or_else(|| {
-                pixui_error!(
-                    "invalid collection index {index} in slice `{}`",
-                    slice.name()
-                )
-            })?;
-            collection.as_sequence()
-        }
+        ExpressionKind::Collection(key) => context
+            .application()?
+            .resolve_collection(*key)?
+            .as_sequence(),
     }
 }
