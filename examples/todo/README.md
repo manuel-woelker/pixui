@@ -20,13 +20,28 @@ contains `TodoItem`; multiple collections of that type are allowed.
 - `mark_done` requests contain only an opaque `ObjectRef<TodoItem>`. Dispatch
   resolves it to `&mut TodoItem` and rejects stale or foreign handles.
 
-The example caches copyable `ActionHandle`s from the configured slice before
-adding it. Request construction is local, with no registry, locks, or channel
-round trips. The main thread and a second caller thread dispatch through cloned
-application handles.
-Reply handles return results, and `inspect` retrieves an owned snapshot for
-printing. Application state stays on its worker without `Rc` or `RefCell`.
+The generated `TodoActions` facade binds to the named slice and caches its
+action handles. Request construction is local; facade methods dispatch and wait
+for typed results. The main thread and a second caller thread use cloned
+facades. Application state stays on its worker without `Rc` or `RefCell`.
 Dropping all handles closes the queue and drains accepted commands.
+
+## Component tree
+
+`ui.rs` defines a `LivePart` template: a composite containing a heading and a
+todo loop. The loop body is a composite with checkbox and label components.
+`TodoUi` retains the same template and `LiveState` across renders.
+
+Each render retrieves an owned snapshot with `inspect`, then walks the template
+using that reflected snapshot as context. The visitor refreshes checkbox and
+label state and prints the physical tree with one row subtree per todo. New
+entries initialize on demand; existing presentation state is retained. Snapshots
+copy display fields and do not retain worker borrows or modify application data.
+
+The binary prints the tree before and after inserting a second todo. This is a
+textual component UI demonstration; it does not create a graphical window. State
+is matched by position, so the example appends items rather than reordering
+them.
 
 Run from the repository root:
 
