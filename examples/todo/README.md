@@ -29,14 +29,19 @@ Dropping all handles closes the queue and drains accepted commands.
 ## Component tree
 
 `ui.rs` defines a `LivePart` template: a composite containing a heading and a
-todo loop. The loop body is a composite with checkbox and label components.
-`TodoUi` retains the same template and `LiveState` across renders.
+todo loop. A collection expression selects the slice's reflected todos arena.
+The loop body is a composite with checkbox and label components. `TodoUi`
+retains the same template and `LiveState` across renders.
 
-Each render retrieves an owned snapshot with `inspect`, then walks the template
-using that reflected snapshot as context. The visitor refreshes checkbox and
-label state and prints the physical tree with one row subtree per todo. New
-entries initialize on demand; existing presentation state is retained. Snapshots
-copy display fields and do not retain worker borrows or modify application data.
+Construction resolves the todos collection index by name once. Each render moves
+the owned template and UI state to an `inspect` callback on the application
+worker. The walker evaluates the collection expression and borrows live
+`TodoItem` values as loop contexts. The visitor refreshes checkbox and label
+state and prints the physical tree with one row subtree per todo. New entries
+initialize on demand; existing presentation state is retained. UI state and
+output text return to the caller; application borrows do not escape and no
+snapshot collection is created. Component payloads are owned and sendable. A
+worker communication failure discards the transferred UI state.
 
 The binary prints the tree before and after inserting a second todo. This is a
 textual component UI demonstration; it does not create a graphical window. State

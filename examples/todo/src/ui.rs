@@ -3,27 +3,15 @@
 use pixui_base::{PixuiResult, pixui_error};
 use pixui_engine::{
     application::{application_handle::ApplicationHandle, application_slice::SliceId},
+    expression::{context::ExpressionContext, evaluator::evaluate, expression::Expression},
     live_model::{
         part::{ComponentPart, CompositePart, ForLoopPart, LivePart},
         state::{GenericComponentState, LiveState, PartState},
         walk::{Visitor, WalkEntry, walk},
     },
 };
-use pixui_reflect::{DynamicObject, FieldIndex, Reflect};
 
 use crate::todo::TodoItem;
-
-#[pixui_reflect::reflect]
-mod model {
-    pub struct TodoList {
-        pub todos: Vec<Todo>,
-    }
-
-    pub struct Todo {
-        pub title: String,
-        pub completed: bool,
-    }
-}
 
 /// Presentation state is owned, independent of the worker's application data.
 enum ComponentState {
@@ -38,7 +26,15 @@ pub struct TodoUi {
 }
 
 impl TodoUi {
-    pub fn new() -> Self {
+    pub fn new(application: &ApplicationHandle, slice: SliceId) -> PixuiResult<Self> {
+        let collection_index = application.inspect(move |state| {
+            state
+                .slice(slice)?
+                .collections()
+                .iter()
+                .position(|collection| collection.name() == "todos")
+                .ok_or_else(|| pixui_error!("unknown todos collection"))
+        })?;
         let heading = LivePart::Component(ComponentPart::new(|_| {
             Ok(GenericComponentState::new(ComponentState::Heading(
                 "Todos".into(),
@@ -53,54 +49,44 @@ impl TodoUi {
             )))
         }));
         let rows = LivePart::ForLoop(ForLoopPart {
-            field_index: model::TodoList::type_descriptor()
-                .field_index("todos")
-                .expect("reflected todo list field")
-                .0,
+            expression: Expression::collection(slice, collection_index),
             body: Box::new(LivePart::Composite(CompositePart {
                 parts: vec![checkbox, label],
             })),
         });
-        Self {
+        Ok(Self {
             template: LivePart::Composite(CompositePart {
                 parts: vec![heading, rows],
             }),
             state: LiveState::new(),
-        }
+        })
     }
 
-    /// Copies an owned snapshot, updates component state, and returns the physical tree.
+    /// Walks against live application collections on their owner thread.
+    /// Moves the owned UI to the worker and back; only output text escapes borrowing.
     /// State persists by position; this example inserts items at the end.
-    pub fn render(
-        &mut self,
-        application: &ApplicationHandle,
-        slice: SliceId,
-    ) -> PixuiResult<String> {
-        let snapshot = application.inspect(move |state| {
-            let todos = state
-                .slice(slice)?
-                .collection("todos")?
-                .arena::<TodoItem>()
-                .ok_or_else(|| pixui_error!("todos collection has the wrong item type"))?;
-            Ok(model::TodoList {
-                todos: todos
-                    .iter()
-                    .map(|(_, todo)| model::Todo {
-                        title: todo.title.clone(),
-                        completed: todo.completed,
-                    })
-                    .collect(),
-            })
+    /// A worker communication failure discards UI state along with the transferred UI.
+    pub fn render(&mut self, application: &ApplicationHandle) -> PixuiResult<String> {
+        let mut ui = std::mem::replace(
+            self,
+            Self {
+                template: LivePart::Composite(CompositePart { parts: vec![] }),
+                state: LiveState::new(),
+            },
+        );
+        let (ui, result) = application.inspect(move |state| {
+            let mut visitor = TreeVisitor::default();
+            let result = walk(
+                &mut ui.template,
+                ui.state.root_state_mut(),
+                &ExpressionContext::new(state),
+                &mut visitor,
+            )
+            .map(|_| visitor.output);
+            Ok((ui, result))
         })?;
-        let context = DynamicObject::from_reflect(snapshot);
-        let mut visitor = TreeVisitor::default();
-        walk(
-            &mut self.template,
-            self.state.root_state_mut(),
-            &context,
-            &mut visitor,
-        )?;
-        Ok(visitor.output)
+        *self = ui;
+        result
     }
 }
 
@@ -130,10 +116,7 @@ impl Visitor for TreeVisitor {
                 let LivePart::ForLoop(part) = &*entry.part else {
                     return Err(pixui_error!("loop state requires a loop template"));
                 };
-                let count = entry
-                    .context
-                    .read_object(FieldIndex(part.field_index))?
-                    .len()?;
+                let count = evaluate(entry.context, &part.expression)?.len()?;
                 (format!("ForLoop ({count} todos)"), count)
             }
             PartState::Component(state) => {
@@ -146,7 +129,8 @@ impl Visitor for TreeVisitor {
                     ComponentState::Checkbox(checked) => {
                         let todo = entry
                             .context
-                            .downcast_ref::<model::Todo>()
+                            .value()?
+                            .downcast_ref::<TodoItem>()
                             .ok_or_else(|| pixui_error!("checkbox requires todo context"))?;
                         *checked = todo.completed;
                         format!("Checkbox: [{}]", if *checked { "x" } else { " " })
@@ -154,7 +138,8 @@ impl Visitor for TreeVisitor {
                     ComponentState::Label(text) => {
                         let todo = entry
                             .context
-                            .downcast_ref::<model::Todo>()
+                            .value()?
+                            .downcast_ref::<TodoItem>()
                             .ok_or_else(|| pixui_error!("label requires todo context"))?;
                         text.clone_from(&todo.title);
                         format!("Label: {text}")
@@ -181,14 +166,14 @@ mod tests {
         let application = Application::new();
         let slice = application.add_slice(create_slice().unwrap()).unwrap();
         let actions = TodoActions::bind(&application).unwrap();
-        let mut ui = TodoUi::new();
+        let mut ui = TodoUi::new(&application, slice).unwrap();
         assert_eq!(
-            ui.render(&application, slice).unwrap(),
+            ui.render(&application).unwrap(),
             "Composite (2 children)\n  Heading: Todos\n  ForLoop (0 todos)\n"
         );
         let first = actions.add_todo("First task").unwrap();
         assert_eq!(
-            ui.render(&application, slice).unwrap(),
+            ui.render(&application).unwrap(),
             "Composite (2 children)\n  Heading: Todos\n  ForLoop (1 todos)\n    Composite (2 children)\n      Checkbox: [ ]\n      Label: First task\n"
         );
         actions
@@ -196,7 +181,7 @@ mod tests {
             .unwrap();
         actions.add_todo("Second task").unwrap();
         assert_eq!(
-            ui.render(&application, slice).unwrap(),
+            ui.render(&application).unwrap(),
             "Composite (2 children)\n  Heading: Todos\n  ForLoop (2 todos)\n    Composite (2 children)\n      Checkbox: [x]\n      Label: First task\n    Composite (2 children)\n      Checkbox: [ ]\n      Label: Second task\n"
         );
         let PartState::Composite(root) = ui.state.root_state() else {
@@ -211,5 +196,48 @@ mod tests {
                 .iter()
                 .all(|row| matches!(row, PartState::Composite(_)))
         );
+    }
+}
+
+#[cfg(test)]
+mod collection_tests {
+    use super::*;
+    use crate::todo::actions::TodoActions;
+    use pixui_engine::{
+        application::{
+            app::Application, application_slice::ApplicationSlice, collection::Collection,
+        },
+        expression::expression::ExpressionKind,
+    };
+
+    #[test]
+    fn resolves_todos_collection_by_name_and_uses_a_collection_expression() {
+        let application = Application::new();
+        let mut slice = ApplicationSlice::new("alternative");
+        slice
+            .add_collection(Collection::new::<String>("metadata"))
+            .unwrap();
+        slice
+            .add_collection(Collection::new_reflected::<TodoItem>("todos"))
+            .unwrap();
+        TodoActions::register(&mut slice).unwrap();
+        let id = application.add_slice(slice).unwrap();
+        let actions = TodoActions::bind_to(&application, id).unwrap();
+        actions.add_todo("From the collection").unwrap();
+        let mut ui = TodoUi::new(&application, id).unwrap();
+        let LivePart::Composite(root) = &ui.template else {
+            panic!("root")
+        };
+        let LivePart::ForLoop(rows) = &root.parts[1] else {
+            panic!("loop")
+        };
+        let ExpressionKind::Collection(expression) = rows.expression.kind() else {
+            panic!("collection expression")
+        };
+        assert_eq!(expression.slice_id(), id);
+        assert_eq!(expression.collection_index(), 1);
+        let output = ui.render(&application).unwrap();
+        assert!(output.contains("ForLoop (1 todos)"));
+        assert!(output.contains("Label: From the collection"));
     }
 }

@@ -1,3 +1,5 @@
+use pixui_reflect::FieldIndex;
+
 use crate::application::application_slice::SliceId;
 
 /// An expression evaluated against application state.
@@ -18,6 +20,12 @@ impl Expression {
         )))
     }
 
+    /// Reads a reflected field on the current root or innermost loop element.
+    /// The index belongs to that value's descriptor, not to an application collection.
+    pub fn field(index: FieldIndex) -> Self {
+        Self::new(ExpressionKind::Field(index))
+    }
+
     pub fn kind(&self) -> &ExpressionKind {
         &self.kind
     }
@@ -25,6 +33,7 @@ impl Expression {
 
 /// Operations supported by the expression evaluator.
 pub enum ExpressionKind {
+    Field(FieldIndex),
     Collection(CollectionExpression),
 }
 

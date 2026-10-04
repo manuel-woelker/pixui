@@ -52,13 +52,14 @@ pub struct ForLoopState {
     pub items: Vec<PartState>,
 }
 
+/// Owned sendable payload so live state can move to the application worker.
 pub struct GenericComponentState {
-    state: Box<dyn Any>,
+    state: Box<dyn Any + Send>,
 }
 
 impl GenericComponentState {
     /// Owns component state while erasing its concrete type.
-    pub fn new(state: impl Any) -> Self {
+    pub fn new(state: impl Any + Send) -> Self {
         Self {
             state: Box::new(state),
         }

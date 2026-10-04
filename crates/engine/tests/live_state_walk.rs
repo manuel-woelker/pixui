@@ -1,10 +1,11 @@
 use pixui_base::{PixuiResult, pixui_error};
+use pixui_engine::expression::{context::ExpressionContext, expression::Expression};
 use pixui_engine::live_model::{
     part::{ComponentPart, CompositePart, ForLoopPart, LivePart},
     state::{GenericComponentState, LiveState, PartState},
     walk::{Visitor, WalkEntry, walk},
 };
-use pixui_reflect::{DynamicObject, Reflect};
+use pixui_reflect::{DynamicObject, FieldIndex, Reflect};
 use std::sync::{
     Arc,
     atomic::{AtomicUsize, Ordering},
@@ -48,7 +49,7 @@ fn composite(parts: Vec<LivePart>) -> LivePart {
 
 fn for_loop(index: usize, body: LivePart) -> LivePart {
     LivePart::ForLoop(ForLoopPart {
-        field_index: index,
+        expression: Expression::field(FieldIndex(index)),
         body: Box::new(body),
     })
 }
@@ -113,7 +114,7 @@ fn initializes_nested_loop_bodies_independently_and_retains_state_by_position() 
     walk(
         &mut tree,
         state.root_state_mut(),
-        &context(&[&[1, 2], &[], &[3]]),
+        &ExpressionContext::from_value(&context(&[&[1, 2], &[], &[3]])),
         &mut CountVisits,
     )
     .unwrap();
@@ -121,7 +122,7 @@ fn initializes_nested_loop_bodies_independently_and_retains_state_by_position() 
     walk(
         &mut tree,
         state.root_state_mut(),
-        &context(&[&[1, 2], &[], &[3]]),
+        &ExpressionContext::from_value(&context(&[&[1, 2], &[], &[3]])),
         &mut CountVisits,
     )
     .unwrap();
@@ -129,7 +130,7 @@ fn initializes_nested_loop_bodies_independently_and_retains_state_by_position() 
     walk(
         &mut tree,
         state.root_state_mut(),
-        &context(&[&[1, 2, 4], &[5]]),
+        &ExpressionContext::from_value(&context(&[&[1, 2, 4], &[5]])),
         &mut CountVisits,
     )
     .unwrap();
@@ -137,7 +138,7 @@ fn initializes_nested_loop_bodies_independently_and_retains_state_by_position() 
     walk(
         &mut tree,
         state.root_state_mut(),
-        &context(&[]),
+        &ExpressionContext::from_value(&context(&[])),
         &mut CountVisits,
     )
     .unwrap();
@@ -161,7 +162,13 @@ fn component_factories_receive_each_loop_elements_context() {
     let context = DynamicObject::from_reflect(model::Group {
         items: vec![10, 20],
     });
-    walk(&mut tree, &mut state, &context, &mut CountVisits).unwrap();
+    walk(
+        &mut tree,
+        &mut state,
+        &ExpressionContext::from_value(&context),
+        &mut CountVisits,
+    )
+    .unwrap();
     let PartState::ForLoop(state) = state else {
         panic!("loop")
     };
@@ -200,15 +207,33 @@ fn resizes_composites_and_drops_removed_or_replaced_state() {
     });
     let mut tree = composite(vec![tracked_component(), tracked_component()]);
     let mut state = PartState::Unknown;
-    walk(&mut tree, &mut state, &context, &mut CountVisits).unwrap();
+    walk(
+        &mut tree,
+        &mut state,
+        &ExpressionContext::from_value(&context),
+        &mut CountVisits,
+    )
+    .unwrap();
     let LivePart::Composite(children) = &mut tree else {
         panic!("composite")
     };
     children.parts.pop();
-    walk(&mut tree, &mut state, &context, &mut CountVisits).unwrap();
+    walk(
+        &mut tree,
+        &mut state,
+        &ExpressionContext::from_value(&context),
+        &mut CountVisits,
+    )
+    .unwrap();
     assert_eq!(drops.load(Ordering::Relaxed), 1);
     tree = component();
-    walk(&mut tree, &mut state, &context, &mut CountVisits).unwrap();
+    walk(
+        &mut tree,
+        &mut state,
+        &ExpressionContext::from_value(&context),
+        &mut CountVisits,
+    )
+    .unwrap();
     assert_eq!(drops.load(Ordering::Relaxed), 2);
     let PartState::Component(component) = state else {
         panic!("component")
@@ -230,13 +255,27 @@ fn visitor_failure_leaves_unvisited_children_unknown_and_resume_initializes_them
     let mut tree = composite(vec![component(), component()]);
     let mut state = PartState::Unknown;
     let context = DynamicObject::from_reflect(());
-    assert!(walk(&mut tree, &mut state, &context, &mut FailOnce).is_err());
+    assert!(
+        walk(
+            &mut tree,
+            &mut state,
+            &ExpressionContext::from_value(&context),
+            &mut FailOnce
+        )
+        .is_err()
+    );
     let PartState::Composite(children) = &state else {
         panic!("composite")
     };
     assert!(matches!(children.parts[0], PartState::Component(_)));
     assert!(matches!(children.parts[1], PartState::Unknown));
-    walk(&mut tree, &mut state, &context, &mut CountVisits).unwrap();
+    walk(
+        &mut tree,
+        &mut state,
+        &ExpressionContext::from_value(&context),
+        &mut CountVisits,
+    )
+    .unwrap();
     let PartState::Composite(children) = state else {
         panic!("composite")
     };
@@ -253,17 +292,43 @@ fn failing_factory_preserves_old_state_and_reset_reinitializes_payload() {
     let context = DynamicObject::from_reflect(());
     let mut tree = component();
     let mut state = PartState::Unknown;
-    walk(&mut tree, &mut state, &context, &mut CountVisits).unwrap();
-    walk(&mut tree, &mut state, &context, &mut CountVisits).unwrap();
+    walk(
+        &mut tree,
+        &mut state,
+        &ExpressionContext::from_value(&context),
+        &mut CountVisits,
+    )
+    .unwrap();
+    walk(
+        &mut tree,
+        &mut state,
+        &ExpressionContext::from_value(&context),
+        &mut CountVisits,
+    )
+    .unwrap();
     state = PartState::Unknown;
-    walk(&mut tree, &mut state, &context, &mut CountVisits).unwrap();
+    walk(
+        &mut tree,
+        &mut state,
+        &ExpressionContext::from_value(&context),
+        &mut CountVisits,
+    )
+    .unwrap();
     let PartState::Component(payload) = &state else {
         panic!("component")
     };
     assert_eq!(*payload.state.downcast_ref::<usize>().unwrap(), 1);
     state = PartState::Unknown;
     tree = LivePart::Component(ComponentPart::new(|_| Err(pixui_error!("factory failed"))));
-    assert!(walk(&mut tree, &mut state, &context, &mut CountVisits).is_err());
+    assert!(
+        walk(
+            &mut tree,
+            &mut state,
+            &ExpressionContext::from_value(&context),
+            &mut CountVisits
+        )
+        .is_err()
+    );
     assert!(matches!(state, PartState::Unknown));
 }
 
@@ -283,7 +348,7 @@ fn reconciles_template_changes_made_by_the_visitor_before_descending() {
     walk(
         &mut tree,
         &mut state,
-        &DynamicObject::from_reflect(()),
+        &ExpressionContext::from_value(&DynamicObject::from_reflect(())),
         &mut Replace,
     )
     .unwrap();
@@ -316,11 +381,31 @@ fn shrinking_loop_drops_removed_body_state_and_factory_failure_preserves_existin
         tracked_component(),
     );
     let mut state = PartState::Unknown;
-    walk(&mut tree, &mut state, &make_context(3), &mut CountVisits).unwrap();
-    walk(&mut tree, &mut state, &make_context(1), &mut CountVisits).unwrap();
+    walk(
+        &mut tree,
+        &mut state,
+        &ExpressionContext::from_value(&make_context(3)),
+        &mut CountVisits,
+    )
+    .unwrap();
+    walk(
+        &mut tree,
+        &mut state,
+        &ExpressionContext::from_value(&make_context(1)),
+        &mut CountVisits,
+    )
+    .unwrap();
     assert_eq!(drops.load(Ordering::Relaxed), 2);
     tree = LivePart::Component(ComponentPart::new(|_| Err(pixui_error!("factory failed"))));
-    assert!(walk(&mut tree, &mut state, &make_context(1), &mut CountVisits).is_err());
+    assert!(
+        walk(
+            &mut tree,
+            &mut state,
+            &ExpressionContext::from_value(&make_context(1)),
+            &mut CountVisits
+        )
+        .is_err()
+    );
     let PartState::ForLoop(items) = &state else {
         panic!("old state retained")
     };
@@ -328,4 +413,87 @@ fn shrinking_loop_drops_removed_body_state_and_factory_failure_preserves_existin
     assert_eq!(drops.load(Ordering::Relaxed), 2);
     drop(state);
     assert_eq!(drops.load(Ordering::Relaxed), 3);
+}
+
+#[test]
+fn collection_loop_expressions_preserve_application_access_inside_nested_loops() {
+    use pixui_engine::application::{
+        app::Application, application_slice::ApplicationSlice, collection::Collection,
+    };
+    let mut application = Application::default();
+    let mut slice = ApplicationSlice::new("data");
+    slice
+        .add_collection(Collection::new_reflected::<model::Group>("groups"))
+        .unwrap();
+    slice
+        .add_collection(Collection::new_reflected::<i32>("extras"))
+        .unwrap();
+    let groups = slice.collection_mut::<model::Group>("groups").unwrap();
+    groups.insert(model::Group { items: vec![1, 2] });
+    groups.insert(model::Group { items: vec![3] });
+    slice.collection_mut::<i32>("extras").unwrap().insert(99);
+    let id = application.add_slice(slice).unwrap();
+    let nested_field = for_loop(
+        model::Group::type_descriptor()
+            .field_index("items")
+            .unwrap()
+            .0,
+        component(),
+    );
+    let nested_collection = LivePart::ForLoop(ForLoopPart {
+        expression: Expression::collection(id, 1),
+        body: Box::new(component()),
+    });
+    let mut tree = LivePart::ForLoop(ForLoopPart {
+        expression: Expression::collection(id, 0),
+        body: Box::new(composite(vec![nested_field, nested_collection])),
+    });
+    struct Collect(Vec<i32>);
+    impl Visitor for Collect {
+        fn visit(&mut self, entry: &mut WalkEntry) -> PixuiResult<()> {
+            if matches!(entry.part, LivePart::Component(_)) {
+                self.0
+                    .push(*entry.context.value()?.downcast_ref::<i32>().unwrap());
+            }
+            Ok(())
+        }
+    }
+    let mut visitor = Collect(vec![]);
+    let mut state = PartState::Unknown;
+    walk(
+        &mut tree,
+        &mut state,
+        &ExpressionContext::new(&application),
+        &mut visitor,
+    )
+    .unwrap();
+    assert_eq!(visitor.0, [1, 2, 99, 3, 99]);
+    let PartState::ForLoop(outer) = state else {
+        panic!("outer loop")
+    };
+    assert_eq!(outer.items.len(), 2);
+}
+
+#[test]
+fn loop_reports_missing_expression_inputs_without_creating_body_state() {
+    use pixui_engine::application::application_slice::ApplicationSlice;
+    let mut tree = LivePart::ForLoop(ForLoopPart {
+        expression: Expression::collection(ApplicationSlice::new("absent").id(), 0),
+        body: Box::new(component()),
+    });
+    let mut state = PartState::Unknown;
+    let value = DynamicObject::from_reflect(());
+    assert!(
+        walk(
+            &mut tree,
+            &mut state,
+            &ExpressionContext::from_value(&value),
+            &mut CountVisits
+        )
+        .is_err()
+    );
+    let PartState::ForLoop(loop_state) = state else {
+        panic!("loop")
+    };
+    assert!(loop_state.items.is_empty());
 }

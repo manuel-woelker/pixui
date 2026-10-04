@@ -3,11 +3,16 @@ use pixui_engine::application::{
     action::slice_actions, application_slice::ApplicationSlice, collection::Collection,
 };
 
-/// One task in the homogeneous todo collection.
-pub struct TodoItem {
-    pub title: String,
-    pub completed: bool,
+#[pixui_reflect::reflect]
+pub mod model {
+    /// One task in the homogeneous todo collection.
+    pub struct TodoItem {
+        pub title: String,
+        pub completed: bool,
+    }
 }
+
+pub use model::TodoItem;
 
 #[slice_actions(slice = "todo", facade = TodoActions)]
 pub mod actions {
@@ -37,7 +42,7 @@ pub mod actions {
 /// Builds a todo slice with a named collection and validated action bindings.
 pub fn create_slice() -> PixuiResult<ApplicationSlice> {
     let mut slice = ApplicationSlice::new("todo");
-    slice.add_collection(Collection::new::<TodoItem>("todos"))?;
+    slice.add_collection(Collection::new_reflected::<TodoItem>("todos"))?;
     actions::TodoActions::register(&mut slice)?;
     Ok(slice)
 }

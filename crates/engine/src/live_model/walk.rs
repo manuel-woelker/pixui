@@ -1,9 +1,10 @@
+use crate::expression::{context::ExpressionContext, evaluator::evaluate};
 use crate::live_model::{
     part::LivePart,
     state::{ComponentState, CompositeState, ForLoopState, PartState},
 };
 use pixui_base::PixuiResult;
-use pixui_reflect::{DynamicObject, FieldIndex};
+use pixui_reflect::DynamicObject;
 
 pub struct Walk {}
 
@@ -11,8 +12,8 @@ pub struct WalkEntry<'part, 'context> {
     pub part: &'part mut LivePart,
     /// Persistent state for this physical node, initialized before visitation.
     pub state: &'part mut PartState,
-    /// Root context, or the innermost loop's current element.
-    pub context: &'context DynamicObject<'context>,
+    /// Expression inputs: optional application and current root or loop element.
+    pub context: &'context ExpressionContext<'context>,
 }
 
 pub trait Visitor {
@@ -25,6 +26,8 @@ pub trait Visitor {
 /// children and loop items retain state by position; newly added entries start
 /// Unknown and removed entries are dropped. Each loop item has an independent body
 /// state, even though all items reuse the same mutable template body.
+/// Loop expressions can select application collections or fields of the current
+/// value. Nested loops replace that value while retaining application access.
 ///
 /// Visitors see initialized state. Template edits are reconciled again after the
 /// visit, before descent. Loop item counts are reconciled after resolving the
@@ -34,7 +37,7 @@ pub trait Visitor {
 pub fn walk<V: Visitor>(
     root: &mut LivePart,
     root_state: &mut PartState,
-    context: &DynamicObject<'_>,
+    context: &ExpressionContext<'_>,
     visitor: &mut V,
 ) -> PixuiResult<()> {
     let mut stack = vec![(root, root_state)];
@@ -52,12 +55,17 @@ pub fn walk<V: Visitor>(
             }
             (LivePart::Component(_), PartState::Component(_)) => {}
             (LivePart::ForLoop(for_loop), PartState::ForLoop(state)) => {
-                let sequence = context.read_object(FieldIndex(for_loop.field_index))?;
+                let sequence = evaluate(context, &for_loop.expression)?;
                 state
                     .items
                     .resize_with(sequence.len()?, || PartState::Unknown);
                 for (item, item_state) in sequence.iter()?.zip(state.items.iter_mut()) {
-                    walk(&mut for_loop.body, item_state, &item, visitor)?;
+                    walk(
+                        &mut for_loop.body,
+                        item_state,
+                        &context.with_value(&item),
+                        visitor,
+                    )?;
                 }
             }
             _ => unreachable!("state reconciled with template"),
@@ -70,13 +78,16 @@ pub fn walk<V: Visitor>(
 fn reconcile(
     part: &LivePart,
     state: &mut PartState,
-    context: &DynamicObject<'_>,
+    context: &ExpressionContext<'_>,
 ) -> PixuiResult<()> {
     match part {
         LivePart::Component(component) => {
             if !matches!(state, PartState::Component(_)) {
                 *state = PartState::Component(ComponentState {
-                    state: (component.create_state)(context)?,
+                    state: match context.value() {
+                        Ok(value) => (component.create_state)(value)?,
+                        Err(_) => (component.create_state)(&DynamicObject::from_reflect(()))?,
+                    },
                 });
             }
         }
@@ -102,13 +113,15 @@ fn reconcile(
 
 #[cfg(test)]
 mod tests {
+    use crate::expression::context::ExpressionContext;
     use expect_test::expect;
 
     use super::{Visitor, WalkEntry, walk};
+    use crate::expression::expression::Expression;
     use crate::live_model::part::{CompositePart, ForLoopPart, LivePart};
     use crate::live_model::state::PartState;
     use pixui_base::PixuiResult;
-    use pixui_reflect::{DynamicObject, Reflect};
+    use pixui_reflect::{DynamicObject, FieldIndex, Reflect};
 
     #[derive(Default)]
     struct CollectingVisitor {
@@ -151,10 +164,10 @@ mod tests {
         walk(
             &mut root,
             &mut PartState::Unknown,
-            &DynamicObject::from_reflect(model::Root {
+            &ExpressionContext::from_value(&DynamicObject::from_reflect(model::Root {
                 marker: 0,
                 groups: vec![],
-            }),
+            })),
             &mut visitor,
         )
         .unwrap();
@@ -188,7 +201,7 @@ mod tests {
 
     fn for_loop(field_index: usize, body: LivePart) -> LivePart {
         LivePart::ForLoop(ForLoopPart {
-            field_index,
+            expression: Expression::field(FieldIndex(field_index)),
             body: Box::new(body),
         })
     }
@@ -224,9 +237,10 @@ mod tests {
     impl Visitor for ContextVisitor {
         fn visit(&mut self, entry: &mut WalkEntry) -> PixuiResult<()> {
             use std::fmt::Write;
-            let context = if let Some(group) = entry.context.downcast_ref::<model::Group>() {
+            let context = if let Some(group) = entry.context.value()?.downcast_ref::<model::Group>()
+            {
                 format!("group {}", group.id)
-            } else if let Some(item) = entry.context.downcast_ref::<model::Item>() {
+            } else if let Some(item) = entry.context.value()?.downcast_ref::<model::Item>() {
                 self.item_values.push(item.value);
                 format!("item {}", item.value)
             } else {
@@ -265,7 +279,7 @@ mod tests {
         walk(
             &mut loop_tree(),
             &mut PartState::Unknown,
-            &context,
+            &ExpressionContext::from_value(&context),
             &mut visitor,
         )
         .unwrap();
@@ -301,7 +315,7 @@ mod tests {
         walk(
             &mut loop_tree(),
             &mut PartState::Unknown,
-            &context,
+            &ExpressionContext::from_value(&context),
             &mut visitor,
         )
         .unwrap();
@@ -322,7 +336,15 @@ mod tests {
         for index in [0, 99] {
             let mut visitor = ContextVisitor::default();
             let mut root = composite(vec![for_loop(index, component()), component()]);
-            assert!(walk(&mut root, &mut PartState::Unknown, &context, &mut visitor).is_err());
+            assert!(
+                walk(
+                    &mut root,
+                    &mut PartState::Unknown,
+                    &ExpressionContext::from_value(&context),
+                    &mut visitor
+                )
+                .is_err()
+            );
             assert_eq!(visitor.output, "Composite: root\nForLoop: root\n");
         }
     }
@@ -334,7 +356,7 @@ mod tests {
         }
         impl Visitor for FailingVisitor {
             fn visit(&mut self, entry: &mut WalkEntry) -> PixuiResult<()> {
-                if let Some(group) = entry.context.downcast_ref::<model::Group>() {
+                if let Some(group) = entry.context.value()?.downcast_ref::<model::Group>() {
                     self.visits.push(group.id);
                     if group.id == 2 {
                         return Err(pixui_base::message("stop"));
@@ -365,7 +387,7 @@ mod tests {
         let error = walk(
             &mut for_loop(index, component()),
             &mut PartState::Unknown,
-            &context,
+            &ExpressionContext::from_value(&context),
             &mut visitor,
         )
         .unwrap_err();
@@ -381,7 +403,12 @@ mod tests {
         }
         impl Visitor for OnceVisitor {
             fn visit(&mut self, entry: &mut WalkEntry) -> PixuiResult<()> {
-                if entry.context.downcast_ref::<model::Group>().is_some() {
+                if entry
+                    .context
+                    .value()?
+                    .downcast_ref::<model::Group>()
+                    .is_some()
+                {
                     self.body_visits += 1;
                     if self.body_visits == 1 {
                         *entry.part = composite(vec![]);
@@ -407,7 +434,13 @@ mod tests {
         });
         let mut root = for_loop(context.field_index("groups").unwrap().0, component());
         let mut visitor = OnceVisitor { body_visits: 0 };
-        walk(&mut root, &mut PartState::Unknown, &context, &mut visitor).unwrap();
+        walk(
+            &mut root,
+            &mut PartState::Unknown,
+            &ExpressionContext::from_value(&context),
+            &mut visitor,
+        )
+        .unwrap();
         assert_eq!(visitor.body_visits, 2);
         let LivePart::ForLoop(for_loop) = root else {
             panic!("expected loop")

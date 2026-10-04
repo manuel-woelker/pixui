@@ -144,3 +144,46 @@ fn worker_inspection_returns_an_owned_snapshot_of_the_sequence() {
         .unwrap();
     assert_eq!(values, [7]);
 }
+
+#[test]
+fn field_expressions_read_the_current_value_and_validate_context() {
+    #[pixui_reflect::reflect]
+    mod fields {
+        pub struct Root {
+            pub values: Vec<i32>,
+            pub scalar: i32,
+        }
+    }
+    let root = DynamicObject::from_reflect(fields::Root {
+        values: vec![4, 5],
+        scalar: 7,
+    });
+    let expression = Expression::field(
+        fields::Root::type_descriptor()
+            .field_index("values")
+            .unwrap(),
+    );
+    let sequence = evaluate(&ExpressionContext::from_value(&root), &expression).unwrap();
+    assert_eq!(sequence.len().unwrap(), 2);
+    assert_eq!(*sequence.get(1).unwrap().downcast_ref::<i32>().unwrap(), 5);
+    assert!(
+        evaluate(
+            &ExpressionContext::from_value(&root),
+            &Expression::field(pixui_reflect::FieldIndex(99))
+        )
+        .is_err()
+    );
+    let application = Application::default();
+    assert!(evaluate(&ExpressionContext::new(&application), &expression).is_err());
+    assert!(
+        evaluate(
+            &ExpressionContext::from_value(&root),
+            &Expression::field(
+                fields::Root::type_descriptor()
+                    .field_index("scalar")
+                    .unwrap()
+            ),
+        )
+        .is_err()
+    );
+}

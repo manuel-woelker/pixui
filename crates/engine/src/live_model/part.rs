@@ -2,8 +2,10 @@ use pixui_base::PixuiResult;
 use pixui_reflect::DynamicObject;
 
 use super::state::GenericComponentState;
+use crate::expression::expression::Expression;
 
 /// Creates fresh owned state from the current root or loop-element context.
+/// When the expression context has only application storage, receives unit.
 pub type StateFactory = for<'a> fn(&DynamicObject<'a>) -> PixuiResult<GenericComponentState>;
 
 pub enum LivePart {
@@ -34,8 +36,8 @@ impl Default for ComponentPart {
 }
 
 pub struct ForLoopPart {
-    /// Index of a reflected sequence field in the current context descriptor.
-    pub field_index: usize,
+    /// Evaluated in the enclosing context; the result must be a sequence.
+    pub expression: Expression,
     /// Reused for every element, with that element as the walking context.
     pub body: Box<LivePart>,
 }
