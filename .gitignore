@@ -1,4 +1,6 @@
 /target/
+*.drawio.svg
+.drawio-export.*/
 /.cache/
 /.tool-tool/v2/cache/
 /.nao/*

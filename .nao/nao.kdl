@@ -1,4 +1,12 @@
 recipe "default" {
+  task "render-diagrams" description="Generate SVGs from draw.io XML sources" {
+    run shell="./scripts/watch-drawio.sh --once"
+  }
+
+  task "watch-diagrams" description="Watch draw.io XML sources and regenerate SVGs" {
+    run shell="./scripts/watch-drawio.sh"
+  }
+
   task "format-markdown" description="Auto-format Markdown" {
     run shell="./t rumdl fmt ."
   }

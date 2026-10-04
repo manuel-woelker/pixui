@@ -2,5 +2,4 @@
 set -euo pipefail
 
 repository_root="$(git rev-parse --show-toplevel)"
-"${repository_root}/scripts/format-staged-markdown.sh"
-exec "${repository_root}/scripts/regenerate-drawio-svg.sh"
+exec "${repository_root}/scripts/format-staged-markdown.sh"

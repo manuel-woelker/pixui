@@ -51,13 +51,28 @@ Enable the repository pre-commit hook once per clone:
 git config core.hooksPath .githooks
 ```
 
-The hook auto-formats staged Markdown with rumdl and regenerates every staged
-added or modified `.drawio.svg` from its embedded diagram using `./t drawio`,
-then stages the regenerated SVG. It requires Bash and a working desktop display
-for draw.io. Unstaged edits are preserved; for partially staged diagrams, only
-the staged version is regenerated. Deleted diagrams are skipped. Export errors
-block the commit without changing staged files. To run regeneration manually,
-use `./scripts/regenerate-drawio-svg.sh`.
+The hook auto-formats staged Markdown with rumdl and preserves unstaged edits.
+
+## Diagrams
+
+Commit plain `.drawio` XML sources. Generated `.drawio.svg` files are ignored;
+they are local previews referenced by the architecture documentation. Edit a
+source with `./t drawio docs/diagrams/architecture.drawio`.
+
+```bash
+./n watch-diagrams                     # Export initially and watch for changes
+./n render-diagrams                    # Export once, including after checkout
+```
+
+The Bash watcher polls content hashes once per second, without an additional
+filesystem-watching dependency. It scans the repository for `.drawio` files,
+excluding Git, build, and tooling caches. New or changed sources are exported
+through pinned draw.io Desktop. SVGs are replaced only after a successful
+export; deleting a source removes its generated preview. Stop the watcher with
+Ctrl-C. Draw.io export requires a working desktop display. Diagram generation is
+independent of the pre-commit hook and repository checks.
+
+## Markdown formatting
 
 Markdown tooling is pinned through tool-tool, with settings in `.rumdl.toml`.
 `./n check` depends on `format-markdown` and updates Markdown files

@@ -9,9 +9,11 @@ and rendering. A web UI and persistence layer are not implemented.
 
 ![Application runtime: callers and the GUI thread send commands to the worker; the worker owns application and UI instance state and publishes display lists for native windows.](diagrams/architecture.drawio.svg)
 
-The SVG embeds its editable draw.io diagram. Open it with draw.io Desktop
-through `./t drawio docs/diagrams/architecture.drawio.svg` to edit it; save with
-diagram data embedded so the file remains both viewable and editable.
+The source is [plain draw.io XML](diagrams/architecture.drawio). Edit it with
+`./t drawio docs/diagrams/architecture.drawio`. Run `./n watch-diagrams` to
+generate the ignored SVG automatically on changes, or `./n render-diagrams`
+for a single export pass. A fresh checkout needs an export before this image
+is available.
 
 ### State organization
 

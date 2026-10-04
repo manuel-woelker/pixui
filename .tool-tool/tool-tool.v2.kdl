@@ -33,6 +33,13 @@ tools {
 		commands {
 			nao "nao"
 		}
+		env {
+			DISPLAY "${env:DISPLAY|}"
+			WAYLAND_DISPLAY "${env:WAYLAND_DISPLAY|}"
+			XAUTHORITY "${env:XAUTHORITY|}"
+			XDG_RUNTIME_DIR "${env:XDG_RUNTIME_DIR|}"
+			DBUS_SESSION_BUS_ADDRESS "${env:DBUS_SESSION_BUS_ADDRESS|}"
+		}
 	}
 	zig "0.16.0" {
 		download {
