@@ -30,6 +30,7 @@ pub struct DisplayListBuilder {
     display: DisplayList,
     images: ResourceTableBuilder<ImageData>,
     redraw_after: Option<Duration>,
+    animating: bool,
     font_indices: HashMap<FontKey, FontIndex>,
     fonts: Vec<(FontConfig, BTreeSet<char>)>,
 }
@@ -87,6 +88,14 @@ impl DisplayListBuilder {
     /// Append a command in final coordinates; finish validates geometry/resources.
     pub fn emit(&mut self, command: DrawCommand) {
         self.display.commands.push(command);
+    }
+    /// Requests another frame at the native host's next drawing opportunity.
+    /// Multiple painters combine their requests; headless consumers start no loop.
+    pub fn request_animation_frame(&mut self) {
+        self.animating = true;
+    }
+    pub(crate) fn animating(&self) -> bool {
+        self.animating
     }
     /// The shortest request wins. Excessively long requests are capped to one day.
     pub fn request_redraw_after(&mut self, delay: Duration) {

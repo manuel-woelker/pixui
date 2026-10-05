@@ -5,7 +5,7 @@ use crate::renderer::contract::RendererTimings;
 use pixui_base::PixuiResult;
 use pixui_engine::ui::{
     display_list::{Color, DisplayList, DrawCommand, RenderRevision},
-    geometry::{Point, Rect},
+    geometry::{Point, Rect, Size},
     performance::{FrameMemory, WorkerTimings},
     text::{
         font::{FontConfig, FontFace},
@@ -60,6 +60,7 @@ impl PerformanceOverlay {
         source: &DisplayList,
         worker: WorkerTimings,
         scale: f32,
+        viewport: Size,
         now: Instant,
     ) -> PixuiResult<DisplayList> {
         self.prune(now);
@@ -119,10 +120,12 @@ impl PerformanceOverlay {
         let index = FontIndex::from_raw(fonts.len());
         fonts.push(font.clone());
         display.fonts = fonts.into();
+        let width = 320.0_f32.min(viewport.width);
+        let height = height.min(viewport.height);
         let rect = Rect {
-            x: 8.0,
-            y: 8.0,
-            width: 320.0,
+            x: (viewport.width - width - 8.0).max(0.0),
+            y: (viewport.height - height - 8.0).max(0.0),
+            width,
             height,
         };
         display.commands.extend([
@@ -138,8 +141,8 @@ impl PerformanceOverlay {
             DrawCommand::PushClip { rect },
             DrawCommand::DrawText {
                 origin: Point {
-                    x: 18.0,
-                    y: 18.0 + font.metrics().ascent,
+                    x: rect.x + 10.0,
+                    y: rect.y + 10.0 + font.metrics().ascent,
                 },
                 text,
                 font: index,
@@ -175,7 +178,16 @@ mod tests {
         let source = DisplayList::default();
         let mut overlay = PerformanceOverlay::default();
         let display = overlay
-            .append(&source, WorkerTimings::default(), 1.0, Instant::now())
+            .append(
+                &source,
+                WorkerTimings::default(),
+                1.0,
+                Size {
+                    width: 640.0,
+                    height: 480.0,
+                },
+                Instant::now(),
+            )
             .unwrap();
         assert!(source.commands.is_empty());
         assert_eq!(display.commands.len(), 5);
@@ -183,7 +195,16 @@ mod tests {
         let first = display.fonts[0].identity();
         assert!(
             overlay
-                .append(&source, WorkerTimings::default(), 1.0, Instant::now())
+                .append(
+                    &source,
+                    WorkerTimings::default(),
+                    1.0,
+                    Size {
+                        width: 640.0,
+                        height: 480.0
+                    },
+                    Instant::now()
+                )
                 .unwrap()
                 .fonts[0]
                 .identity()
@@ -191,7 +212,16 @@ mod tests {
         );
         assert!(
             overlay
-                .append(&source, WorkerTimings::default(), 2.0, Instant::now())
+                .append(
+                    &source,
+                    WorkerTimings::default(),
+                    2.0,
+                    Size {
+                        width: 640.0,
+                        height: 480.0
+                    },
+                    Instant::now()
+                )
                 .unwrap()
                 .fonts[0]
                 .identity()

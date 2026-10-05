@@ -136,6 +136,7 @@ impl Renderer for FemtovgRenderer {
         let commands = self.scene.canvas.flush_to_output(output);
         self.gpu.queue.submit(commands);
         self.gpu.check()?;
+        self.window.pre_present_notify();
         self.gpu.queue.present(texture);
         self.scene.trim();
         self.timings = RendererTimings {

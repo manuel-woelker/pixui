@@ -29,6 +29,12 @@ pub enum UiCommand {
     Redraw {
         instance: UiInstanceId,
     },
+    /// Visual-only redraw with a host-generated, increasing request ID.
+    /// The completed output acknowledges it, even when batching other commands.
+    AnimationFrame {
+        instance: UiInstanceId,
+        request: u64,
+    },
     Close {
         instance: UiInstanceId,
     },
@@ -40,11 +46,13 @@ impl UiCommand {
             Self::Input { instance, .. }
             | Self::Present { instance, .. }
             | Self::Redraw { instance }
+            | Self::AnimationFrame { instance, .. }
             | Self::Close { instance } => *instance,
         }
     }
 
-    /// Only adjacent motion or presentation messages can replace each other.
+    /// Adjacent motion, presentation and ordinary redraws can replace each other.
+    /// Animation frame IDs are preserved for completion acknowledgement.
     /// Discrete input and close ordering are preserved.
     pub fn replaces(&self, earlier: &Self) -> bool {
         self.instance() == earlier.instance()

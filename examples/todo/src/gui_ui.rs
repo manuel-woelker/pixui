@@ -393,16 +393,26 @@ mod tests {
                         .unwrap()
                 )
             });
-        assert_eq!(initial.redraw_after, Some(Duration::from_millis(33)));
+        assert!(initial.animating);
+        assert_eq!(initial.redraw_after, None);
         assert_eq!(initial.display_list.images.len(), 1);
         let pixels = initial.display_list.images[0].pixels().to_vec();
-        for _ in 0..3 {
-            app.ui_command(UiCommand::Redraw { instance }).unwrap();
+        for request in 1..=3 {
+            app.ui_command(UiCommand::AnimationFrame { instance, request })
+                .unwrap();
             // Leave the mailbox unread while newer outputs replace pending ones.
             app.inspect(|_| Ok(())).unwrap();
         }
         let latest = outputs.recv_timeout(Duration::from_secs(2)).unwrap();
         assert!(latest.revision.0 >= initial.revision.0 + 3);
+        assert_eq!(latest.animation_request, Some(3));
+        assert!(
+            app.ui_command(UiCommand::AnimationFrame {
+                instance,
+                request: 3
+            })
+            .is_err()
+        );
         assert_ne!(
             latest.display_list.images[0],
             initial.display_list.images[0]
@@ -424,6 +434,7 @@ mod tests {
         })
         .unwrap();
         let added = outputs.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert_eq!(added.animation_request, Some(3));
         assert!(added.display_list.commands.iter().any(|command| matches!(command, DrawCommand::DrawText { text, .. } if text.contains("New todo"))));
         assert!(
             app.ui_command(UiCommand::Input {

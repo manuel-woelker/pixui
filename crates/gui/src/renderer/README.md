@@ -81,16 +81,19 @@ This measures command translation/upload and CPU submission separately from CPU
 rasterization, using an offscreen target. It does not measure worker traversal,
 compositor latency, or end-to-end GPU execution time. For actual GUI comparisons
 use identical window sizes, DPI, animation rates, and release builds. GPU
-drawing does not remove worker preparation or the host's finite mailbox polling.
+drawing does not remove worker preparation. Output publication wakes the GUI
+event loop immediately; only pending command admission/replies retain a finite
+retry timer.
 
 ## Performance overlay
 
-Press **F11** to toggle diagnostics in the focused window. The overlay is drawn
-last, has no hit regions, and works with both built-in renderers. Its font atlas
-uses embedded Geist Mono, is prepared once per DPI scale and reused. Numeric
-values use fixed-width columns with three decimal places for timings. While
-visible, it refreshes at 4 Hz without scheduling worker renders; hiding it stops
-those diagnostic redraws.
+Press **F11** to toggle diagnostics in the focused window. The overlay is
+anchored to the bottom-right corner with an eight logical pixel margin. It is
+drawn last, has no hit regions, and works with both built-in renderers. Its font
+atlas uses embedded Geist Mono, is prepared once per DPI scale and reused.
+Numeric values use fixed-width columns with three decimal places for timings.
+While visible, it refreshes at 4 Hz without scheduling worker renders; hiding it
+stops those diagnostic redraws.
 
 FPS counts distinct worker output revisions successfully presented during the
 last second. Diagnostic refreshes, failed submissions, and skipped presentations
@@ -122,3 +125,29 @@ capacities are included; font map storage is estimated from capacity. These are
 not process RSS: allocator/Arc overhead, parsed font faces, worker caches, GPU
 textures and the overlay itself are excluded. Resources shared between windows
 are counted in each window's frame.
+
+## Animation pacing
+
+Painters request `request_animation_frame()` on every frame needing a successor.
+After successful presentation the host schedules the next native redraw
+opportunity, then asks the worker for one frame. The returned request ID is
+acknowledged only in completed output; unrelated action output cannot create
+multiple outstanding animation requests. The existing latest-output mailbox
+still replaces stale outputs and worker batches remain bounded.
+
+Both built-in backends call `Window::pre_present_notify()` immediately before
+presenting, enabling Wayland frame-callback throttling. Femtovg retains FIFO.
+For platforms with unthrottled native redraw events, the host caps requests at
+the current monitor's refresh interval (60 Hz when unknown). Scheduling uses the
+previous request time, includes worker work in the interval, and skips missed
+intervals. This does not provide exact vsync or predicted presentation
+timestamps. Each window schedules independently; suspended, occluded and
+zero-size windows pause requests. Resume or restoration rearms scheduling from a
+presented output.
+
+`OutputReceiver::set_waker` attaches publication/disconnection notifications.
+The host coalesces them with one shared atomic flag and an event-loop proxy,
+clearing the flag before inspecting mailboxes to avoid lost wakeups. Idle
+windows use `ControlFlow::Wait`; delayed updates, overlays, surface retries and
+pending worker commands supply deadlines when needed. Headless consumers need no
+waker and explicitly drive animation through commands.

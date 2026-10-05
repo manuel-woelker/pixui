@@ -56,18 +56,37 @@ props. No image registry, upload queue, or GUI cache is required initially.
 
 ## Animation scheduling
 
-`context.request_redraw_after(delay)` asks for another worker render. The
-shortest request across components wins; requests are clamped between one
-millisecond and one day. `RenderOutput::redraw_after` is optional presentation
-metadata, not part of display-list identity. Headless consumers decide when to
-send `UiCommand::Redraw`.
+`context.request_animation_frame()` requests continuous animation. Requests
+combine across painters into `RenderOutput::animating`. Call it on every frame
+that needs a successor; an output without the flag ends continuous animation.
+Headless clients explicitly drive subsequent frames: publication starts no
+timer.
 
-The native host arms one deadline per window when a newer output arrives. A due
-deadline is consumed before its redraw command enters the finite nonblocking
-retry queue. No more ticks accumulate while waiting for output. Outputs without
-requests stop animation; closing or suspending the window cancels its deadline.
-A failed render publishes no new output, so that animation stops until another
-invalidation retries. Resuming refreshes presentation and obtains a new output.
+The native host presents an output, then requests the next native drawing
+opportunity. At that opportunity it sends `UiCommand::AnimationFrame` with an
+increasing request ID. `RenderOutput::animation_request` acknowledges the latest
+request actually incorporated into a completed worker render. Only that output
+releases the outstanding request, so unrelated actions cannot accidentally queue
+extra animation frames. One request may be queued, running, or awaiting output
+per window. A slow worker skips achievable frames without accumulating ticks.
+
+Both built-in renderers notify the window immediately before presentation.
+Native callbacks and FIFO pace presentation where supported. A monitor refresh
+interval caps unthrottled platforms (60 Hz if the monitor rate is unavailable),
+measured from the previous request rather than adding worker time to each tick.
+This is a portable cadence cap, not an exact vsync or presentation-time API.
+Publication wakes the GUI event loop through a coalesced notification, without
+polling output mailboxes every 16 ms. Suspension, occlusion and zero-size
+windows pause scheduling; restoration presents retained or updated output and
+rearms it.
+
+`context.request_redraw_after(delay)` remains available for occasional updates.
+The shortest delay wins, clamped between one millisecond and one day. Continuous
+animation supersedes a delayed request in the same output. A delayed deadline is
+consumed before queueing `UiCommand::Redraw` and rearmed only by newer output.
+Failed renders publish no output and stop the handshake until another
+invalidation succeeds. Pending worker command admission and replies still use a
+finite retry timer, independently of output delivery.
 
 Visual redraws preserve focus, hover, scroll, and existing action bindings when
 geometry matches. Older presented revisions in the same visual sequence can
@@ -106,10 +125,10 @@ converting to `f32`, avoiding large elapsed values losing small animation steps.
 The todo example's `OrbitingComets` painter derives phase from the master
 timestamp and emits a fresh 96 by 32 image. Its state remains a named `Default`
 unit type; there is no independent clock per node. Automatic time requests
-another frame after 33 ms; an explicit timestamp stops those requests until
-settings change. Shrinking, dithered tails expose either window's background
-without alpha. Retained output redraws reuse the snapshot; queue delays skip
-ahead in time rather than slowing the orbit.
+another frame at the next drawing opportunity; an explicit timestamp stops those
+requests until settings change. Shrinking, dithered tails expose either window's
+background without alpha. Retained output redraws reuse the snapshot; queue
+delays skip ahead in time rather than slowing the orbit.
 
 See [shared render resources](Resources.md) for typed indices, identity, and
 table ownership.

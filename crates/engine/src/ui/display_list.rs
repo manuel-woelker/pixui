@@ -127,4 +127,10 @@ pub struct RenderOutput {
     pub redraw_after: Option<std::time::Duration>,
     /// CPU work for this output, excluding queue waiting.
     pub timings: super::performance::WorkerTimings,
+    /// Any painter requested another frame. Native hosts pace this against
+    /// presentation; headless clients explicitly request subsequent frames.
+    pub animating: bool,
+    /// Latest animation request incorporated into this completed output. Hosts
+    /// use this acknowledgement to keep only one animation request outstanding.
+    pub animation_request: Option<u64>,
 }

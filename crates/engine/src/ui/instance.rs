@@ -43,6 +43,7 @@ pub struct UiInstance {
     pub(crate) geometry_stale: bool,
     pub(crate) outputs: OutputSender,
     pub(crate) error: Option<String>,
+    pub(crate) animation_request: Option<u64>,
 }
 
 impl UiInstance {

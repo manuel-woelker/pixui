@@ -88,7 +88,9 @@ render: cyan and orange comets orbit with shrinking, dithered tails. Reserved
 magenta pixels are transparent, revealing the row background in both themes.
 
 State initializes through `Default`. Painting derives phase from the shared
-`PaintContext::timestamp_us` timeline and requests another render after 33 ms.
+`PaintContext::timestamp_us` timeline and calls `request_animation_frame()` for
+another frame at the next native drawing opportunity. The host caps requests to
+the monitor refresh rate, with a 60 Hz fallback when unavailable.
 An explicit `PresentationSettings::timestamp_us` freezes or seeks the animation
 and stops its redraw requests; `None` resumes the application clock. The GUI
 schedules at most one outstanding request per window; animation keeps focus and

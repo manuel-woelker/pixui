@@ -23,7 +23,10 @@ use pixui_engine::{
 };
 use std::{
     collections::{HashMap, HashSet},
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
     time::{Duration, Instant},
 };
 use winit::{
@@ -53,6 +56,7 @@ struct NativeWindow {
     pointer: Point,
     redraw: RedrawSchedule,
     overlay: crate::performance_overlay::PerformanceOverlay,
+    occluded: bool,
 }
 
 impl NativeWindow {
@@ -77,16 +81,28 @@ impl NativeWindow {
         })
     }
 
-    fn draw(&mut self) -> PixuiResult<()> {
+    fn drawable(&self) -> bool {
+        let size = self.window.inner_size();
+        self.presentation.active && !self.occluded && size.width > 0 && size.height > 0
+    }
+
+    fn draw(&mut self) -> PixuiResult<bool> {
         let Some(output) = &self.output else {
-            return Ok(());
+            return Ok(false);
         };
+        if !self.drawable() {
+            return Ok(false);
+        }
         let size = self.window.inner_size();
         let overlay_display = if self.overlay.visible {
             Some(self.overlay.append(
                 &output.display_list,
                 output.timings,
                 self.settings.scale_factor,
+                Size {
+                    width: size.width as f32 / self.settings.scale_factor,
+                    height: size.height as f32 / self.settings.scale_factor,
+                },
                 Instant::now(),
             )?)
         } else {
@@ -110,8 +126,9 @@ impl NativeWindow {
                 self.presentation.renderer.timings(),
                 Instant::now(),
             );
+            return Ok(true);
         }
-        Ok(())
+        Ok(false)
     }
 }
 
@@ -122,6 +139,8 @@ struct Host {
     pending: PendingInput,
     error: Option<String>,
     factory: Box<dyn RendererFactory>,
+    proxy: winit::event_loop::EventLoopProxy<()>,
+    wake_pending: Arc<AtomicBool>,
 }
 
 impl Host {
@@ -152,6 +171,13 @@ impl ApplicationHandler for Host {
                         .map_err(|e| pixui_error!("create native window: {e}"))?,
                 );
                 let renderer = self.factory.create(window.clone())?;
+                let proxy = self.proxy.clone();
+                let wake_pending = self.wake_pending.clone();
+                specification.outputs.set_waker(move || {
+                    if !wake_pending.swap(true, Ordering::AcqRel) {
+                        let _ = proxy.send_event(());
+                    }
+                });
                 let mut native = NativeWindow {
                     window,
                     presentation: Presentation::new(renderer),
@@ -162,6 +188,7 @@ impl ApplicationHandler for Host {
                     pointer: Point::default(),
                     redraw: RedrawSchedule::default(),
                     overlay: Default::default(),
+                    occluded: false,
                 };
                 self.pending.push(native.presentation())?;
                 self.windows.insert(native.window.id(), native);
@@ -199,14 +226,54 @@ impl ApplicationHandler for Host {
                     instance: native.instance,
                 })
             }
+            WindowEvent::Occluded(occluded) => {
+                native.occluded = occluded;
+                if occluded {
+                    native.redraw.cancel();
+                } else {
+                    native.window.request_redraw();
+                }
+                None
+            }
             WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => {
+                if !native.drawable() {
+                    native.redraw.cancel();
+                }
                 Some(native.presentation())
             }
             WindowEvent::RedrawRequested => {
-                if let Err(error) = native.draw() {
-                    self.fail(event_loop, error);
+                let now = Instant::now();
+                let already_presented = native
+                    .output
+                    .as_ref()
+                    .is_some_and(|output| native.presentation.revision == Some(output.revision));
+                if native.drawable()
+                    && already_presented
+                    && let Some(request) = native.redraw.take_animation_request(now)
+                {
+                    Some(UiCommand::AnimationFrame {
+                        instance: native.instance,
+                        request,
+                    })
+                } else {
+                    match native.draw() {
+                        Ok(true) => {
+                            // Monitor cadence is a portable rate cap; native callbacks
+                            // and FIFO still determine actual presentation opportunities.
+                            let millihertz = native
+                                .window
+                                .current_monitor()
+                                .and_then(|monitor| monitor.refresh_rate_millihertz())
+                                .filter(|rate| *rate > 0)
+                                .unwrap_or(60_000);
+                            let interval = Duration::from_secs_f64(1000.0 / f64::from(millihertz));
+                            native.redraw.presented(Instant::now(), interval);
+                        }
+                        Ok(false) => {}
+                        Err(error) => self.fail(event_loop, error),
+                    }
+                    None
                 }
-                None
             }
             WindowEvent::CursorMoved { position, .. } => {
                 native.pointer = Point {
@@ -261,6 +328,9 @@ impl ApplicationHandler for Host {
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        // Clear before reading mailboxes: publication racing this pass schedules
+        // another wake, while outputs already published are observed below.
+        self.wake_pending.store(false, Ordering::Release);
         if let Err(error) = self.pending.flush(&self.application) {
             self.fail(event_loop, error);
             return;
@@ -280,9 +350,16 @@ impl ApplicationHandler for Host {
                         .as_ref()
                         .is_none_or(|previous| output.revision > previous.revision)
                     {
-                        native.redraw.received(Instant::now(), output.redraw_after);
+                        native.redraw.received(
+                            Instant::now(),
+                            output.redraw_after,
+                            output.animating,
+                            output.animation_request,
+                        );
                         native.output = Some(output);
-                        native.window.request_redraw();
+                        if native.drawable() {
+                            native.window.request_redraw();
+                        }
                     }
                 }
                 Err(TryRecvError::Empty) => {}
@@ -294,7 +371,7 @@ impl ApplicationHandler for Host {
         }
         let now = Instant::now();
         for native in self.windows.values_mut() {
-            if native.presentation.active
+            if native.drawable()
                 && native
                     .overlay
                     .refresh
@@ -303,7 +380,7 @@ impl ApplicationHandler for Host {
                 native.overlay.refresh = None;
                 native.window.request_redraw();
             }
-            if native.presentation.active
+            if native.drawable()
                 && native
                     .presentation
                     .retry
@@ -312,7 +389,10 @@ impl ApplicationHandler for Host {
                 native.presentation.retry = None;
                 native.window.request_redraw();
             }
-            if native.presentation.active
+            if native.drawable() && native.redraw.take_animation_wakeup(now) {
+                native.window.request_redraw();
+            }
+            if native.drawable()
                 && native.redraw.take_due(now)
                 && let Err(error) = self.pending.push(UiCommand::Redraw {
                     instance: native.instance,
@@ -329,16 +409,25 @@ impl ApplicationHandler for Host {
         if self.windows.is_empty() && self.specifications.is_empty() && self.pending.is_empty() {
             event_loop.exit();
         } else {
-            // A finite polling interval avoids a forwarding thread per window.
-            // Native input still wakes the loop immediately.
-            let poll = Instant::now() + Duration::from_millis(16);
+            // Output delivery wakes the loop immediately. A retry timer remains
+            // only while worker command admission or replies are pending.
+            let retry =
+                (!self.pending.is_empty()).then(|| Instant::now() + Duration::from_millis(16));
             let deadline = self
                 .windows
                 .values()
-                .filter_map(|native| native.redraw.deadline())
-                .min()
-                .map_or(poll, |deadline| deadline.min(poll));
-            event_loop.set_control_flow(ControlFlow::WaitUntil(deadline));
+                .filter(|native| native.drawable())
+                .flat_map(|native| {
+                    [
+                        native.redraw.deadline(),
+                        native.presentation.retry,
+                        native.overlay.refresh,
+                    ]
+                })
+                .flatten()
+                .chain(retry)
+                .min();
+            event_loop.set_control_flow(deadline.map_or(ControlFlow::Wait, ControlFlow::WaitUntil));
         }
     }
 }
@@ -380,7 +469,10 @@ pub fn run_with_factory(
             ));
         }
     }
-    let event_loop = EventLoop::new().map_err(|e| pixui_error!("create native event loop: {e}"))?;
+    let event_loop = EventLoop::<()>::with_user_event()
+        .build()
+        .map_err(|e| pixui_error!("create native event loop: {e}"))?;
+    let proxy = event_loop.create_proxy();
     let mut host = Host {
         application,
         specifications,
@@ -388,6 +480,8 @@ pub fn run_with_factory(
         pending: PendingInput::default(),
         error: None,
         factory,
+        proxy,
+        wake_pending: Arc::new(AtomicBool::new(false)),
     };
     event_loop
         .run_app(&mut host)

@@ -60,6 +60,7 @@ impl Renderer for SoftwareRenderer {
             .buffer_mut()
             .map_err(|e| pixui_error!("acquire software buffer: {e}"))?;
         buffer.copy_from_slice(&pixels);
+        self.window.pre_present_notify();
         buffer
             .present()
             .map_err(|e| pixui_error!("present software buffer: {e}"))?;

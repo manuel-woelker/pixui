@@ -14,10 +14,7 @@ use pixui_engine::{
         presentation::{PresentationSettings, Theme},
     },
 };
-use std::{
-    f32::consts::{PI, TAU},
-    time::Duration,
-};
+use std::f32::consts::{PI, TAU};
 
 const WIDTH: u32 = 96;
 const HEIGHT: u32 = 32;
@@ -84,7 +81,7 @@ impl Painter<OrbitingComets> for CometPainter {
             },
         );
         if context.settings.timestamp_us.is_none() {
-            context.request_redraw_after(Duration::from_millis(33));
+            context.request_animation_frame();
         }
         Ok(())
     }
@@ -197,18 +194,19 @@ mod tests {
                 timestamp_us,
                 ..Default::default()
             };
-            let (display, _, _, delay) =
-                renderer::render(&root, &mut state, &app, &settings, 0.0, None, None).unwrap();
-            (display.images[0].clone(), delay)
+            let rendered =
+                renderer::render_measured(&root, &mut state, &app, &settings, 0.0, None, None)
+                    .unwrap();
+            (rendered.display_list.images[0].clone(), rendered.animating)
         };
         let (initial, delay) = draw(Some(0));
-        assert_eq!(delay, None);
+        assert!(!delay);
         assert_eq!(initial.pixels(), draw(Some(0)).0.pixels());
         assert_ne!(initial.pixels(), draw(Some(1_000_000)).0.pixels());
         assert_eq!(initial.pixels(), draw(Some(4_000_000)).0.pixels());
         assert_eq!(initial.pixels(), draw(Some(0)).0.pixels());
         assert!(draw(Some(u64::MAX)).0.pixels().contains(&TRANSPARENT));
-        assert_eq!(draw(None).1, Some(Duration::from_millis(33)));
+        assert!(draw(None).1);
     }
 
     #[test]

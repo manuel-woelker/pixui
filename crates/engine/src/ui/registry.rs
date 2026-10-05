@@ -80,6 +80,7 @@ impl UiRegistry {
                 geometry_stale: true,
                 outputs,
                 error: None,
+                animation_request: None,
             },
         );
         Ok((id, receiver))
@@ -127,10 +128,26 @@ impl UiRegistry {
             .instances
             .get_mut(&command.instance())
             .ok_or_else(|| pixui_error!("unknown UI instance"))?;
-        if !matches!(command, UiCommand::Redraw { .. }) {
+        if !matches!(
+            command,
+            UiCommand::Redraw { .. } | UiCommand::AnimationFrame { .. }
+        ) {
             instance.redraw_only = false;
         }
         match command {
+            UiCommand::AnimationFrame { request, .. } => {
+                if instance
+                    .animation_request
+                    .is_some_and(|previous| request <= previous)
+                {
+                    return Err(pixui_error!("animation request ID must increase"));
+                }
+                instance.animation_request = Some(request);
+                if !instance.dirty {
+                    instance.redraw_only = true;
+                }
+                instance.dirty = true;
+            }
             UiCommand::Redraw { .. } => {
                 if !instance.dirty {
                     instance.redraw_only = true;
@@ -234,7 +251,14 @@ impl UiRegistry {
                 instance.hover,
             );
             match result {
-                Ok((display_list, mut layout, scroll, redraw_after, timings)) => {
+                Ok(renderer::RenderedUi {
+                    display_list,
+                    mut layout,
+                    scroll,
+                    redraw_after,
+                    timings,
+                    animating,
+                }) => {
                     // Visual-only redraws retain their existing action targets.
                     // Older presented revisions remain usable while geometry and
                     // content identity are unchanged, avoiding animated click races.
@@ -265,6 +289,8 @@ impl UiRegistry {
                         display_list,
                         redraw_after,
                         timings,
+                        animating,
+                        animation_request: instance.animation_request,
                     });
                 }
                 Err(error) => instance.error = Some(format!("{error:?}")),

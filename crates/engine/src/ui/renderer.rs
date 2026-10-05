@@ -64,6 +64,7 @@ impl Visitor for PrepareVisitor<'_> {
 /// Commands go directly to one shared builder; errors discard it, but do not
 /// roll back updates. Legacy nodes remain inert. The fourth result is the
 /// earliest painter-requested redraw delay for native or headless scheduling.
+/// Use `render_measured` to inspect continuous animation requests and timings.
 pub fn render(
     template: &LivePart,
     state: &mut LiveState,
@@ -73,9 +74,23 @@ pub fn render(
     focus: Option<usize>,
     hover: Option<usize>,
 ) -> PixuiResult<(DisplayList, LayoutState, f32, Option<Duration>)> {
-    let (display, layout, scroll, redraw, _) =
-        render_measured(template, state, application, settings, scroll, focus, hover)?;
-    Ok((display, layout, scroll, redraw))
+    let rendered = render_measured(template, state, application, settings, scroll, focus, hover)?;
+    Ok((
+        rendered.display_list,
+        rendered.layout,
+        rendered.scroll,
+        rendered.redraw_after,
+    ))
+}
+
+/// Complete worker render, including native scheduling hints and CPU diagnostics.
+pub struct RenderedUi {
+    pub display_list: DisplayList,
+    pub layout: LayoutState,
+    pub scroll: f32,
+    pub redraw_after: Option<Duration>,
+    pub animating: bool,
+    pub timings: super::performance::WorkerTimings,
 }
 
 /// Like `render`, with CPU durations for preparation, painting, and text finalization.
@@ -87,13 +102,7 @@ pub fn render_measured(
     scroll: f32,
     focus: Option<usize>,
     hover: Option<usize>,
-) -> PixuiResult<(
-    DisplayList,
-    LayoutState,
-    f32,
-    Option<Duration>,
-    super::performance::WorkerTimings,
-)> {
+) -> PixuiResult<RenderedUi> {
     let started = std::time::Instant::now();
     settings.validate()?;
     let timestamp_us = settings
@@ -198,21 +207,23 @@ pub fn render_measured(
     display.emit(DrawCommand::PopClip);
     let painting = started.elapsed();
     let started = std::time::Instant::now();
+    let animating = display.animating();
     let (display, redraw_after) = display.finish_with_text(
         &mut *application
             .text_service
             .try_borrow_mut()
             .map_err(|_| pixui_error!("text finalization is already active"))?,
     )?;
-    Ok((
-        display,
+    Ok(RenderedUi {
+        display_list: display,
         layout,
         scroll,
         redraw_after,
-        super::performance::WorkerTimings {
+        animating,
+        timings: super::performance::WorkerTimings {
             preparation,
             painting,
             text: started.elapsed(),
         },
-    ))
+    })
 }

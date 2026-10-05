@@ -257,14 +257,22 @@ rectangles; commands carry table indices. This avoids copying unchanged source
 pixels. The software backend retains full-frame CPU drawing costs; the
 femtovg backend uploads snapshots once per cache residency and draws on the GPU.
 
-A painter can request a redraw delay. The native host uses one deadline per
-window and the existing bounded retry queue. Each deadline is consumed until a
-new output arrives; a failed render or output without a request stops
-scheduling. Closing and suspension cancel pending deadlines. A visual redraw
-preserves focus, hover, scrolling, and existing bindings while geometry matches;
-compatible older presented revisions remain usable for clicks. Content changes
-still reject stale input. This avoids animation starving actions between worker
-publication and native presentation.
+Painters call `request_animation_frame()` on frames needing a successor. The
+worker combines these requests into `RenderOutput::animating`; the GUI owns
+pacing for each window. After successful presentation, the host requests a
+native drawing opportunity and then sends one `AnimationFrame` command. A
+request ID acknowledged in completed output keeps at most one animation request
+outstanding, including queueing and rendering. Unrelated action output cannot
+release it early. Slow workers skip achievable frames rather than accumulating
+ticks. Native redraw callbacks, presentation notification, FIFO and a monitor
+refresh-rate cap provide pacing; exact vsync timestamps are not exposed.
+
+Delayed `request_redraw_after()` requests remain available for occasional
+updates. Continuous animation takes precedence. Suspended, occluded and
+zero-size windows pause scheduling; restoration rearms it. Visual redraws retain
+focus, hover, scrolling and existing bindings while geometry matches. Compatible
+older presented revisions remain usable for clicks; content changes still reject
+stale input. See [animation scheduling](../crates/engine/src/ui/Images.md).
 
 The todo GUI includes an `OrbitingComets` custom component. Its painter
 generates a fresh small transparent image each frame, using the master
@@ -288,9 +296,12 @@ work before reading instance state. Action replies acknowledge execution;
 they do not acknowledge native presentation.
 
 Each instance has a latest-output mailbox with capacity one. Publication never
-waits: newer output replaces pending older output. The GUI host polls at a
-16 ms interval and retains the latest output for native redraws without another
-worker traversal. Output count is bounded; command payload sizes are not.
+waits: newer output replaces pending older output. Publication and mailbox
+disconnection wake the GUI through a callback attached by its consumer. The host
+coalesces those notifications into event-loop wakeups, reads the latest output,
+and retains it for native redraws without another worker traversal. Idle windows
+wait without output polling. A finite retry timer remains while GUI commands or
+replies are pending. Output count is bounded; command payload sizes are not.
 
 Native callbacks submit `UiCommand`s using `try_ui_command`. The host retains
 full-queue commands for retry in a bounded queue of 256 pending commands and

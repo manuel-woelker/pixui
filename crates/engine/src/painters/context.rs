@@ -133,6 +133,12 @@ impl<C: Component> PaintContext<'_, C> {
         let image = self.display.image_index(image);
         self.emit(DrawCommand::DrawImage { image, destination });
     }
+    /// Requests continuous animation, paced by the window's drawing loop.
+    /// Call on every frame that should be followed by another; requests combine
+    /// across painters. Frozen presentations should not request animation.
+    pub fn request_animation_frame(&mut self) {
+        self.display.request_animation_frame();
+    }
     /// Schedules a future worker render; does not mutate component state.
     pub fn request_redraw_after(&mut self, delay: std::time::Duration) {
         self.display.request_redraw_after(delay);

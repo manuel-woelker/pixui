@@ -20,8 +20,10 @@ impl PendingInput {
     pub fn push(&mut self, command: UiCommand) -> PixuiResult<()> {
         if matches!(command, UiCommand::Close { .. }) {
             self.commands.retain(|queued| {
-                !matches!(queued, UiCommand::Redraw { .. })
-                    || queued.instance() != command.instance()
+                !matches!(
+                    queued,
+                    UiCommand::Redraw { .. } | UiCommand::AnimationFrame { .. }
+                ) || queued.instance() != command.instance()
             });
         }
         if self
@@ -190,6 +192,12 @@ mod animation_tests {
         pending.push(UiCommand::Redraw { instance: id }).unwrap();
         pending.push(UiCommand::Redraw { instance: id }).unwrap();
         assert_eq!(pending.commands.len(), 1);
+        pending
+            .push(UiCommand::AnimationFrame {
+                instance: id,
+                request: 1,
+            })
+            .unwrap();
         pending.push(UiCommand::Close { instance: id }).unwrap();
         assert_eq!(pending.commands.len(), 1);
         assert!(matches!(
