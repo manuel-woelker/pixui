@@ -5,18 +5,14 @@ use super::{
     geometry::{Point, Rect},
     image::Image,
     instance::UiInstanceId,
+    text::resource::{FontIndex, FontResource},
 };
 use pixui_base::{PixuiResult, pixui_error};
+use std::sync::Arc;
 
 /// Opaque sRGB color. The initial painter does not support transparency.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Color(pub u8, pub u8, pub u8);
-
-/// Both threads use the same embedded bitmap font and metrics.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum FontId {
-    Builtin,
-}
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum DrawCommand {
@@ -29,12 +25,11 @@ pub enum DrawCommand {
         color: Color,
         width: f32,
     },
-    /// Origin is the top-left corner. Size is the height of an 8-by-8 glyph cell.
+    /// Origin is the first baseline in logical pixels. Font indices are local.
     DrawText {
         origin: Point,
         text: String,
-        font: FontId,
-        size: f32,
+        font: FontIndex,
         color: Color,
     },
     DrawImage {
@@ -50,11 +45,12 @@ pub enum DrawCommand {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct DisplayList {
     pub images: Vec<Image>,
+    pub fonts: Vec<Arc<FontResource>>,
     pub commands: Vec<DrawCommand>,
 }
 
 impl DisplayList {
-    /// Validates finite geometry, positive text/stroke sizes, and balanced clips.
+    /// Validates finite geometry, prepared glyphs, resource indices, and balanced clips.
     pub fn validate(&self) -> PixuiResult<()> {
         let mut depth = 0usize;
         for command in &self.commands {
@@ -79,6 +75,25 @@ impl DisplayList {
                 DrawCommand::DrawImage { image, .. } if image.0 >= self.images.len() => {
                     return Err(pixui_error!("image index outside display list table"));
                 }
+                DrawCommand::DrawText { origin, .. }
+                    if !origin.x.is_finite() || !origin.y.is_finite() =>
+                {
+                    return Err(pixui_error!("invalid text geometry"));
+                }
+                DrawCommand::DrawText { font, text, .. } => {
+                    let resource = self
+                        .fonts
+                        .get(font.0)
+                        .ok_or_else(|| pixui_error!("font index outside display list table"))?;
+                    for character in text.chars() {
+                        if character == '\n' {
+                            continue;
+                        }
+                        if character.is_control() || resource.glyph(character).is_none() {
+                            return Err(pixui_error!("text contains unprepared character"));
+                        }
+                    }
+                }
                 DrawCommand::PushClip { .. } => depth += 1,
                 DrawCommand::PopClip => {
                     depth = depth
@@ -87,14 +102,6 @@ impl DisplayList {
                 }
                 DrawCommand::StrokeRect { width, .. } if !width.is_finite() || *width <= 0.0 => {
                     return Err(pixui_error!("invalid stroke width"));
-                }
-                DrawCommand::DrawText { origin, size, .. }
-                    if !origin.x.is_finite()
-                        || !origin.y.is_finite()
-                        || !size.is_finite()
-                        || *size <= 0.0 =>
-                {
-                    return Err(pixui_error!("invalid text geometry"));
                 }
                 _ => {}
             }

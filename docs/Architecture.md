@@ -212,21 +212,34 @@ for the lifecycle, constraints, and alternatives.
 
 `RenderOutput` contains the instance ID, monotonic `RenderRevision`, and an
 owned `DisplayList`. Commands paint in order: `FillRect`, `StrokeRect`,
-`DrawText`, `DrawImage`, `PushClip`, and `PopClip`. Rectangles, glyph sizes, and
-stroke widths use logical pixels. Nested clips intersect and must be balanced.
-Colors are opaque sRGB. Commands contain no reflected application borrows,
-callbacks, or native handles. `DrawImage` uses an index into the display list's
-image table. Each immutable RGB snapshot shares pixels through `Arc`; the
-builder deduplicates snapshot identity and discards its reverse lookup on
-completion. Color-key transparency skips matching source pixels, and images use
-nearest-neighbor sampling. Retained outputs keep their exact image versions
-without upload history.
+`DrawText`, `DrawImage`, `PushClip`, and `PopClip`. Rectangles, glyph metrics,
+and stroke widths use logical pixels. Nested clips intersect and must be
+balanced. Colors are opaque sRGB. Commands contain no reflected application
+borrows, callbacks, or native handles. `DrawImage` uses an index into the
+display list's image table. Each immutable RGB snapshot shares pixels through
+`Arc`; the builder deduplicates snapshot identity and discards its reverse
+lookup on completion. Color-key transparency skips matching source pixels, and
+images use nearest-neighbor sampling. Retained outputs keep their exact image
+versions without upload history.
 
-Both threads use the same embedded 8-by-8 bitmap glyphs and fixed-cell metrics.
-The painter applies the native scale factor and produces softbuffer-compatible
-pixels. Basic Latin and Latin extensions support the English/German example;
-unknown characters use a fallback glyph. Complex shaping, bidi, font selection,
-and a general localization system are not implemented.
+### Text resources
+
+`DrawText` contains a string, first baseline, color, and index into
+`DisplayList::fonts`. The worker collects characters across all painters, then
+prepares missing glyphs with fontdue and packs them with etagere before
+publication. Each immutable `Arc<FontResource>` contains real logical metrics,
+a character map, and one grayscale coverage atlas rasterized for its DPI.
+Unchanged frames/windows reuse snapshots; growth preserves retained outputs.
+The worker owns a bounded LRU cache and commits each font snapshot atomically.
+
+Tool-tool downloads pinned static Geist Regular TTF; its bytes are embedded at
+build time. The GUI performs only prepared character lookup and coverage
+blending, with baseline bearings, fractional advances, explicit newlines, and
+physical pixel snapping. Retained frames safely resample during DPI transitions.
+Coverage blends in encoded RGB. Initial scope is Latin character-based text,
+without shaping, bidi, kerning, automatic wrapping, or system font discovery.
+See [the text contract](../crates/engine/src/ui/Text.md) and
+[DR-007](<decisions/DR-007 Prepare character atlases on the worker.md>).
 
 ### Images and animation
 

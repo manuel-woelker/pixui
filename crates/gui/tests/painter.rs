@@ -1,7 +1,11 @@
 use pixui_engine::ui::{
-    display_list::{Color, DisplayList, DrawCommand, FontId},
+    display_list::{Color, DisplayList, DrawCommand},
+    display_list_builder::DisplayListBuilder,
     geometry::{Point, Rect},
-    text,
+    text::{
+        font::{FontConfig, FontFace},
+        resource::FontIndex,
+    },
 };
 use pixui_gui::painter::paint;
 
@@ -18,6 +22,7 @@ fn rect(x: f32, y: f32, width: f32, height: f32) -> Rect {
 fn ordered_painting_nested_clips_and_scaling_match_logical_geometry() {
     let display = DisplayList {
         images: Vec::new(),
+        fonts: Vec::new(),
         commands: vec![
             DrawCommand::FillRect {
                 rect: rect(0.0, 0.0, 4.0, 4.0),
@@ -50,40 +55,31 @@ fn ordered_painting_nested_clips_and_scaling_match_logical_geometry() {
 }
 
 #[test]
-fn stroke_and_text_use_the_shared_font_and_cell_metrics() {
-    let display = DisplayList {
-        images: Vec::new(),
-        commands: vec![
-            DrawCommand::StrokeRect {
-                rect: rect(0.0, 0.0, 24.0, 24.0),
-                color: Color(0, 255, 0),
-                width: 1.0,
-            },
-            DrawCommand::DrawText {
-                origin: Point { x: 4.0, y: 4.0 },
-                text: "Aä".into(),
-                font: FontId::Builtin,
-                size: 8.0,
-                color: Color(255, 255, 255),
-            },
-        ],
-    };
-    let pixels = paint(&display, 24, 24, 1.0).unwrap();
-    for (row, bits) in text::glyph('A').into_iter().enumerate() {
-        for column in 0..8 {
-            assert_eq!(
-                pixels[(4 + row) * 24 + 4 + column],
-                if bits & (1 << column) == 0 {
-                    0
-                } else {
-                    0xffffff
-                }
-            );
-        }
-    }
+fn stroke_and_text_use_the_worker_atlas() {
+    let mut builder = DisplayListBuilder::default();
+    builder.emit(DrawCommand::StrokeRect {
+        rect: rect(0.0, 0.0, 40.0, 30.0),
+        color: Color(0, 255, 0),
+        width: 1.0,
+    });
+    builder
+        .text(
+            FontConfig::new(FontFace::geist().unwrap(), 16.0, 1.0).unwrap(),
+            Point { x: 4.0, y: 20.0 },
+            "Aä",
+            Color(255, 255, 255),
+        )
+        .unwrap();
+    let (display, _) = builder.finish().unwrap();
+    let pixels = paint(&display, 40, 30, 1.0).unwrap();
     assert_eq!(pixels[0], 0x00ff00);
-    assert_ne!(text::glyph('ä'), text::glyph('?'));
-    assert_eq!(text::wrap("abcdef\nxy", 8.0, 24.0), ["abc", "def", "xy"]);
+    assert!(
+        pixels
+            .iter()
+            .any(|&pixel| pixel != 0 && pixel != 0x00ff00 && pixel != 0xffffff)
+    );
+    assert_ne!(display.fonts[0].glyph('ä'), display.fonts[0].glyph('A'));
+    assert_eq!(pixels, paint(&display, 40, 30, 1.0).unwrap());
 }
 
 #[test]
@@ -100,8 +96,7 @@ fn invalid_lists_and_raster_sizes_fail_before_painting() {
         vec![DrawCommand::DrawText {
             origin: Point::default(),
             text: "bad".into(),
-            font: FontId::Builtin,
-            size: 0.0,
+            font: FontIndex(0),
             color: Color(0, 0, 0),
         }],
     ] {
@@ -109,6 +104,7 @@ fn invalid_lists_and_raster_sizes_fail_before_painting() {
             paint(
                 &DisplayList {
                     images: Vec::new(),
+                    fonts: Vec::new(),
                     commands
                 },
                 10,
@@ -131,6 +127,7 @@ fn image_display(transparent: Option<Color>, destination: Rect) -> DisplayList {
     use pixui_engine::ui::{display_list_builder::ImageIndex, image::Image};
     let key = Color(255, 0, 255);
     DisplayList {
+        fonts: Vec::new(),
         images: vec![
             Image::new(
                 2,
@@ -192,5 +189,119 @@ fn images_sample_pixel_centers_at_fractional_positions_and_downscale() {
             .unwrap()
             .iter()
             .all(|pixel| *pixel == 0x141e28)
+    );
+}
+
+fn coverage_display(origin: Point, scale: f32) -> DisplayList {
+    use pixui_engine::ui::text::resource::{
+        FontMetrics, FontResource, GlyphAtlas, GlyphInfo, PixelRect,
+    };
+    use std::{collections::HashMap, sync::Arc};
+    let atlas = Arc::new(GlyphAtlas::new(3, 1, vec![0, 128, 255]).unwrap());
+    let glyph = GlyphInfo {
+        atlas_rect: Some(PixelRect {
+            x: 0,
+            y: 0,
+            width: 3,
+            height: 1,
+        }),
+        advance: 4.0 / scale,
+        offset: Point {
+            x: -1.0 / scale,
+            y: -1.0 / scale,
+        },
+    };
+    let font = FontResource::new(
+        atlas,
+        HashMap::from([('A', glyph)]),
+        FontMetrics {
+            ascent: 1.0 / scale,
+            descent: 0.0,
+            line_height: 2.0 / scale,
+        },
+        scale,
+    )
+    .unwrap();
+    DisplayList {
+        images: Vec::new(),
+        fonts: vec![Arc::new(font)],
+        commands: vec![
+            DrawCommand::FillRect {
+                rect: rect(0.0, 0.0, 16.0, 8.0),
+                color: Color(20, 40, 60),
+            },
+            DrawCommand::DrawText {
+                origin,
+                text: "AA\nA".into(),
+                font: FontIndex(0),
+                color: Color(220, 140, 60),
+            },
+        ],
+    }
+}
+
+#[test]
+fn grayscale_blending_bearings_advances_and_newlines_are_exact() {
+    let display = coverage_display(Point { x: 1.0, y: 1.0 }, 1.0);
+    let pixels = paint(&display, 16, 8, 1.0).unwrap();
+    assert_eq!(pixels[0], 0x14283c); // zero coverage preserves background
+    assert_eq!(pixels[1], 0x785a3c); // rounded 128/255 encoded RGB blend
+    assert_eq!(pixels[2], 0xdc8c3c); // opaque coverage writes foreground
+    assert_eq!(pixels[3], 0x14283c); // advance is four, not glyph width three
+    assert_eq!(pixels[5], pixels[1]);
+    assert_eq!(pixels[6], pixels[2]);
+    assert_eq!(pixels[2 * 16 + 1], pixels[1]); // newline returns to initial x
+    assert_eq!(pixels[2 * 16 + 5], 0x14283c);
+    let mut clipped = display.clone();
+    clipped.commands.insert(
+        1,
+        DrawCommand::PushClip {
+            rect: rect(2.0, 0.0, 1.0, 1.0),
+        },
+    );
+    clipped.commands.push(DrawCommand::PopClip);
+    let pixels = paint(&clipped, 16, 8, 1.0).unwrap();
+    assert_eq!(pixels[1], 0x14283c);
+    assert_eq!(pixels[2], 0xdc8c3c); // clipping doesn't shift sampling
+    assert_eq!(pixels[6], 0x14283c);
+}
+
+#[test]
+fn snapping_and_dpi_transitions_preserve_safe_sampling() {
+    let display = coverage_display(Point { x: 1.25, y: 1.25 }, 1.0);
+    assert_eq!(
+        paint(&display, 16, 8, 1.0).unwrap(),
+        paint(&coverage_display(Point { x: 1.0, y: 1.0 }, 1.0), 16, 8, 1.0).unwrap()
+    );
+    let pixels = paint(
+        &coverage_display(Point { x: 1.0, y: 1.0 }, 1.0),
+        32,
+        16,
+        2.0,
+    )
+    .unwrap();
+    assert_eq!(pixels[2], 0x785a3c);
+    assert_eq!(pixels[3], pixels[2]);
+    assert_eq!(pixels[4], 0xdc8c3c);
+    assert_eq!(pixels[32 + 4], pixels[4]);
+    let physical = paint(
+        &coverage_display(Point { x: 0.5, y: 0.5 }, 2.0),
+        32,
+        16,
+        2.0,
+    )
+    .unwrap();
+    assert_eq!(physical[1], 0x785a3c);
+    assert_eq!(physical[2], 0xdc8c3c);
+    // A consumer that appears later needs only the retained list, no uploads.
+    assert_eq!(
+        pixels,
+        paint(
+            &coverage_display(Point { x: 1.0, y: 1.0 }, 1.0),
+            32,
+            16,
+            2.0
+        )
+        .unwrap()
     );
 }

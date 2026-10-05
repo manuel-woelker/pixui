@@ -119,3 +119,15 @@ and shared through each display list's indexed image table. New frames release
 old versions when outputs are dropped. The ordinary GUI command and
 `--custom-painter` both include this component; no extra binary or image asset
 is needed.
+
+### Text atlas reuse
+
+Labels use embedded Geist Regular TTF with coverage antialiasing. Tool-tool
+fetches the pinned font when building through `./t`; the binary does not need
+font files at runtime. Text uses real proportional advances and baseline
+centering, with no wrapping. English and German windows share the worker's font
+snapshot when face, size, and DPI match. Animating comets does not rasterize
+unchanged glyphs again. A new todo with additional Latin characters extends the
+snapshot while older outputs remain usable. Different DPI scales have separate
+font resources. See [text drawing](../../crates/engine/src/ui/Text.md) for
+limits and font licensing.

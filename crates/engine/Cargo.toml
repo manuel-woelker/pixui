@@ -5,7 +5,8 @@ edition.workspace = true
 publish = false
 
 [dependencies]
-font8x8 = "0.3.1"
+fontdue = "=0.9.4"
+etagere = "=0.2.15"
 crossbeam-channel = "0.5.17"
 pixui-base = { path = "../base" }
 pixui-reflect = { path = "../reflect" }

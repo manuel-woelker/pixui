@@ -102,7 +102,7 @@ impl pixui_engine::painters::painter::Painter<Row> for RowPainter {
             ),
             16.0,
             pixui_engine::ui::display_list::Color(50, 100, 150),
-        );
+        )?;
         Ok(())
     }
 }

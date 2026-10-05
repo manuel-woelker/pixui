@@ -3,12 +3,15 @@
 use crate::{
     live_model::component::Component,
     ui::{
-        display_list::{Color, DrawCommand, FontId},
+        display_list::{Color, DrawCommand},
         display_list_builder::DisplayListBuilder,
-        geometry::{Point, Rect},
+        geometry::{Point, Rect, Size},
         image::Image,
         presentation::PresentationSettings,
-        text,
+        text::{
+            font::{FontConfig, FontFace},
+            resource::FontMetrics,
+        },
     },
 };
 use pixui_base::PixuiResult;
@@ -66,7 +69,6 @@ impl<C: Component> PaintContext<'_, C> {
                 mut origin,
                 text,
                 font,
-                size,
                 color,
             } => {
                 origin.x += self.origin.x;
@@ -75,7 +77,6 @@ impl<C: Component> PaintContext<'_, C> {
                     origin,
                     text,
                     font,
-                    size,
                     color,
                 }
             }
@@ -104,14 +105,28 @@ impl<C: Component> PaintContext<'_, C> {
     pub fn stroke_rect(&mut self, rect: Rect, color: Color, width: f32) {
         self.emit(DrawCommand::StrokeRect { rect, color, width });
     }
-    pub fn text(&mut self, origin: Point, text: impl Into<String>, size: f32, color: Color) {
-        self.emit(DrawCommand::DrawText {
-            origin,
-            text: text.into(),
-            font: FontId::Builtin,
-            size,
-            color,
-        });
+    /// Draw normalized unkerned text at a local baseline using embedded Geist.
+    /// Metrics may be queried first; glyph coverage is prepared after painting.
+    pub fn text(
+        &mut self,
+        mut origin: Point,
+        text: impl Into<String>,
+        size: f32,
+        color: Color,
+    ) -> PixuiResult<()> {
+        let config = self.font_config(size)?;
+        origin.x += self.origin.x;
+        origin.y += self.origin.y;
+        self.display.text(config, origin, text, color)
+    }
+    pub fn font_metrics(&self, size: f32) -> PixuiResult<FontMetrics> {
+        Ok(self.font_config(size)?.metrics())
+    }
+    pub fn measure_text(&self, text: &str, size: f32) -> PixuiResult<Size> {
+        self.display.measure_text(&self.font_config(size)?, text)
+    }
+    fn font_config(&self, size: f32) -> PixuiResult<FontConfig> {
+        FontConfig::new(FontFace::geist()?, size, self.settings.scale_factor)
     }
     /// Registers the snapshot once in the shared image table and draws locally.
     pub fn image(&mut self, image: &Image, destination: Rect) {
@@ -122,8 +137,8 @@ impl<C: Component> PaintContext<'_, C> {
     pub fn request_redraw_after(&mut self, delay: std::time::Duration) {
         self.display.request_redraw_after(delay);
     }
-    pub fn line_height(&self, size: f32) -> f32 {
-        text::line_height(size)
+    pub fn line_height(&self, size: f32) -> PixuiResult<f32> {
+        Ok(self.font_metrics(size)?.line_height)
     }
     /// Restores the clip even when the nested drawing operation returns an error.
     pub fn with_clip(

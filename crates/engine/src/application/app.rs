@@ -25,6 +25,9 @@ pub struct Application {
     pub(crate) components: ComponentRegistry,
     pub(crate) painters: PainterRegistry,
     pub(crate) uis: crate::ui::registry::UiRegistry,
+    // Finalization mutates only this cache while renderers borrow application
+    // data immutably. RefCell is worker-local; no shared application-state lock.
+    pub(crate) text_service: std::cell::RefCell<crate::ui::text::service::TextService>,
     pub(crate) render_clock: crate::ui::render_clock::RenderClock,
     slices: Vec<ApplicationSlice>,
     slice_names: HashMap<String, usize>,

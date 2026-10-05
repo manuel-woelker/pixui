@@ -171,6 +171,11 @@ pub fn render(
         }
     }
     display.emit(DrawCommand::PopClip);
-    let (display, redraw_after) = display.finish()?;
+    let (display, redraw_after) = display.finish_with_text(
+        &mut *application
+            .text_service
+            .try_borrow_mut()
+            .map_err(|_| pixui_error!("text finalization is already active"))?,
+    )?;
     Ok((display, layout, scroll, redraw_after))
 }

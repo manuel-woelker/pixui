@@ -9,12 +9,14 @@ impl Painter<LabelComponent> for LabelPainter {
         context.text(
             Point {
                 x: 0.0,
-                y: (context.height - 16.0) / 2.0,
+                y: context
+                    .font_metrics(16.0)?
+                    .centered_baseline(context.height),
             },
             &context.props.text,
             16.0,
             Palette::for_theme(context.settings.theme).foreground,
-        );
+        )?;
         Ok(())
     }
 }

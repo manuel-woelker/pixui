@@ -88,7 +88,7 @@ impl<C: Component<Props = Props, State = State>> Painter<C> for CustomPainter {
                     ),
                     8.0,
                     Color(255, 255, 255),
-                );
+                )?;
                 Ok(())
             },
         )

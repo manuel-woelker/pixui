@@ -1,6 +1,12 @@
 cache-directory ".cache/tool-tool"
 
 tools {
+	geist "1.7.0" {
+		download {
+			linux "https://github.com/vercel/geist-font/releases/download/${version}/geist-font-${version}.zip"
+		}
+	}
+
 	rumdl "0.2.78" {
 		download {
 			linux "https://github.com/rvben/rumdl/releases/download/v${version}/rumdl-v${version}-x86_64-unknown-linux-musl.tar.gz"
@@ -59,6 +65,7 @@ tools {
 		env {
 			PATH "${dir:rust}/rustc/bin:${dir:rust}/cargo/bin:${dir:rust}/rustfmt-preview/bin:${dir:rust}/clippy-preview/bin:${dir:zig}"
 			LD_LIBRARY_PATH "${dir:rust}/rustc/lib"
+			PIXUI_GEIST_DIRECTORY "${dir:geist}"
 			AR "${dir:rust}/llvm-tools-preview/lib/rustlib/x86_64-unknown-linux-gnu/bin/llvm-ar"
 			CC "${base_path}/scripts/zig-cc"
 			CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER "${base_path}/scripts/zig-cc"
@@ -88,6 +95,7 @@ tools {
 			DBUS_SESSION_BUS_ADDRESS "${env:DBUS_SESSION_BUS_ADDRESS|}"
 			PATH "${dir:rust}/rustc/bin:${dir:rust}/cargo/bin:${dir:rust}/rustfmt-preview/bin:${dir:rust}/clippy-preview/bin:${dir:zig}"
 			LD_LIBRARY_PATH "${dir:rust}/rustc/lib"
+			PIXUI_GEIST_DIRECTORY "${dir:geist}"
 			AR "${dir:rust}/llvm-tools-preview/lib/rustlib/x86_64-unknown-linux-gnu/bin/llvm-ar"
 			CC "${base_path}/scripts/zig-cc"
 			CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER "${base_path}/scripts/zig-cc"

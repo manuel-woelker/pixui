@@ -404,4 +404,81 @@ mod tests {
                 .unwrap()
         );
     }
+
+    #[test]
+    fn animated_windows_share_font_snapshots_and_new_todos_grow_them() {
+        use std::sync::Arc;
+        let application = Application::new();
+        application.add_slice(create_slice().unwrap()).unwrap();
+        let actions = TodoActions::bind(&application).unwrap();
+        let components = application.register_standard_components().unwrap();
+        application.register_standard_painters().unwrap();
+        let definition = application
+            .register_ui(
+                definition(
+                    &application,
+                    components,
+                    crate::orbiting_comets::register(&application).unwrap(),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        let (light, light_outputs) = application
+            .create_ui(definition, PresentationSettings::default())
+            .unwrap();
+        let initial = light_outputs.recv_timeout(Duration::from_secs(2)).unwrap();
+        let (dark, dark_outputs) = application
+            .create_ui(
+                definition,
+                PresentationSettings {
+                    theme: Theme::Dark,
+                    locale: "de".into(),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        let german = dark_outputs.recv_timeout(Duration::from_secs(2)).unwrap();
+        application
+            .ui_command(UiCommand::Redraw { instance: light })
+            .unwrap();
+        let shared = light_outputs.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert!(Arc::ptr_eq(
+            &shared.display_list.fonts[0],
+            &german.display_list.fonts[0]
+        ));
+        for _ in 0..3 {
+            application
+                .ui_command(UiCommand::Redraw { instance: light })
+                .unwrap();
+            let animated = light_outputs.recv_timeout(Duration::from_secs(2)).unwrap();
+            assert!(Arc::ptr_eq(
+                &shared.display_list.fonts[0],
+                &animated.display_list.fonts[0]
+            ));
+        }
+        let alphabet: String = (' '..='~').chain('\u{a0}'..='\u{24f}').collect();
+        actions.add_todo(alphabet).unwrap();
+        application.inspect(|_| Ok(())).unwrap();
+        let grown = light_outputs.recv_timeout(Duration::from_secs(2)).unwrap();
+        let dark_grown = dark_outputs.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert!(
+            grown.display_list.fonts[0].atlas().width()
+                > initial.display_list.fonts[0].atlas().width()
+        );
+        assert!(Arc::ptr_eq(
+            &grown.display_list.fonts[0],
+            &dark_grown.display_list.fonts[0]
+        ));
+        assert!(
+            initial.display_list.fonts[0].characters().len()
+                < grown.display_list.fonts[0].characters().len()
+        );
+        initial.display_list.validate().unwrap();
+        application
+            .ui_command(UiCommand::Close { instance: light })
+            .unwrap();
+        application
+            .ui_command(UiCommand::Close { instance: dark })
+            .unwrap();
+    }
 }

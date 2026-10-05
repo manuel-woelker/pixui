@@ -30,7 +30,7 @@ impl Painter<ClockComponent> for ClockPainter {
             context.timestamp_us.to_string(),
             16.0,
             Color(1, 2, 3),
-        );
+        )?;
         Ok(())
     }
 }

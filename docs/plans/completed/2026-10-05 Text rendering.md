@@ -1,8 +1,7 @@
 # Text rendering plan
 
-Status: reviewed implementation plan. The architecture below reflects the agreed
-scope; open choices and suggested defaults are listed separately. No runtime
-implementation or dependency changes have been made.
+Status: implemented. The reviewed choices and verification results below
+describe the completed worker atlas renderer.
 
 ## Goal
 
@@ -39,7 +38,7 @@ snapshots across frames, including while the todo comets animate.
 - Keep existing fixed-height component rows, local-coordinate translation,
   clipping, latest-output delivery, and last-good-output failure behavior.
 
-## Current implementation
+## Previous implementation
 
 The engine emits `DrawText` with a string, position, bitmap font ID, size, and
 RGB color. The GUI iterates characters and paints each set bit of an 8 by 8
@@ -63,7 +62,7 @@ struct FontResource {
     ascent: f32,
     descent: f32,
     line_height: f32,
-    // Font identity, logical size, and rasterization scale.
+    // Rasterization scale; cache configuration retains face and logical size.
 }
 
 struct GlyphAtlas {
@@ -235,7 +234,7 @@ Pin released versions and validate these APIs during implementation. Avoid
 treating upstream benchmark claims as evidence for this application's
 performance.
 
-## Open questions and suggested defaults
+## Choices reviewed before implementation
 
 | Decision                          | Suggested initial default                                                            | Why it matters                                                                                   |
 |-----------------------------------|--------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------|
@@ -274,53 +273,83 @@ helpers.
 
 ## Implementation checklist
 
-- [ ] Resolve font asset/license, origin, control-character policy, kerning
+- [x] Resolve font asset/license, origin, control-character policy, kerning
       scope, atlas limits, cache limits, and DPI transition behavior.
-- [ ] Define our font handles, logical metrics, pixel rectangles, `GlyphInfo`,
+- [x] Define our font handles, logical metrics, pixel rectangles, `GlyphInfo`,
       coverage atlas, immutable font resource, and local font indices.
-- [ ] Implement private font loading and fontdue metric/rasterization adapters;
+- [x] Implement private font loading and fontdue metric/rasterization adapters;
       add the bundled asset with its license and attribution.
-- [ ] Implement etagere packing, deterministic batch preparation,
+- [x] Implement etagere packing, deterministic batch preparation,
       growth/repacking, and transactional publication of each font snapshot.
-- [ ] Add the worker text service and builder's font reverse lookup/missing
+- [x] Add the worker text service and builder's font reverse lookup/missing
       sets; finalize all font resources after painting before output
       publication.
-- [ ] Update compact text commands and painter measurement/drawing helpers.
+- [x] Update compact text commands and painter measurement/drawing helpers.
       Migrate label/button/checkbox painters to real metrics and the agreed
       origin.
-- [ ] Implement GUI character lookup, advances/newlines, DPI handling, clipping,
+- [x] Implement GUI character lookup, advances/newlines, DPI handling, clipping,
       and grayscale coverage blending.
-- [ ] Exercise font growth and reuse in the existing animated two-window todo
+- [x] Exercise font growth and reuse in the existing animated two-window todo
       GUI; remove bitmap-cell assumptions from production rendering.
-- [ ] Update API/architecture documentation and plain architecture XML, leaving
+- [x] Update API/architecture documentation and plain architecture XML, leaving
       SVG export to the running watcher. Record accepted decisions and explicit
       limits.
-- [ ] Run `./n check` after each implementation unit.
+- [x] Run `./n check` after each implementation unit.
 
 ## Verification checklist
 
-- [ ] Test invalid font bytes, dimensions, coverage length, indices, source
+- [x] Test invalid font bytes, dimensions, coverage length, indices, source
       bounds, sizes/scales, empty strings, and configured limits.
-- [ ] Verify missing characters from multiple painters deduplicate and all
+- [x] Verify missing characters from multiple painters deduplicate and all
       commands resolve the same finalized resource regardless of painter order.
-- [ ] Verify unchanged frames reuse snapshots without pixel
+- [x] Verify unchanged frames reuse snapshots without pixel
       copying/rasterization; changes in color/origin do not generate a new
       atlas.
-- [ ] Test one replacement per changed configuration, growth/repacking,
+- [x] Test one replacement per changed configuration, growth/repacking,
       overflow, spaces, missing-glyph aliasing, newline/control policy, and
       consistent metrics.
-- [ ] Verify old frames survive new characters, repacking, cache eviction,
+- [x] Verify old frames survive new characters, repacking, cache eviction,
       dropped intermediate frames, and new consumers without upload history.
-- [ ] Test coverage zero/255/intermediate values on contrasting backgrounds,
+- [x] Test coverage zero/255/intermediate values on contrasting backgrounds,
       clipping, translations, bearings, negative offsets, physical scale, and
       snapping.
-- [ ] Test atlas/configuration reuse across windows and misses for
+- [x] Test atlas/configuration reuse across windows and misses for
       font/face/size/ scale changes. Verify retained-output behavior during a
       DPI transition.
-- [ ] Verify finalization errors preserve last-good frame/revision/geometry and
+- [x] Verify finalization errors preserve last-good frame/revision/geometry and
       cannot publish a partial atlas/map combination.
-- [ ] Use pinned fonts for reproducible metric/pixel tests; document unsupported
+- [x] Use pinned fonts for reproducible metric/pixel tests; document unsupported
       shaping and bidi behavior rather than testing them as implemented
       features.
-- [ ] Manually inspect English/German labels, themes, scale changes, and actions
-      while comets animate. Confirm unchanged text does not rebuild atlases.
+- [x] Inspect English/German rendered frames at 1× and 2× in both themes. Launch
+      native windows and exercise actions/animated resource reuse in tests.
+      Confirm unchanged text does not rebuild atlases.
+
+## Implementation and verification results
+
+Implemented with fontdue 0.9.4 and etagere 0.2.15. Our public font resources
+contain no parser/allocator types. Tool-tool downloads/checksums Geist 1.7.0;
+its static Regular TTF is embedded at build time. The font license is retained
+in `docs/licenses/Geist OFL.txt`. See `crates/engine/src/ui/Text.md` and DR-007
+for exact contracts and limitations.
+
+The worker cache uses configuration identity and bounded LRU ownership. The
+builder collects demands for all painters and finalizes them together.
+Alias-only changes share coverage; growth preserves old snapshots and existing
+pixels. Glyph dimensions and total padded area are checked before allocating
+an impossible batch. Finalization failures retain the last published revision,
+geometry, and resource. A worker-local RefCell permits cache updates through
+the renderer's immutable application view without sharing application state.
+
+Tests cover invalid metadata/font data, batching/order/deduplication, metrics
+and controls, one replacement glyph, append/growth, Arc reuse, LRU and byte
+budgets, old snapshots, failed publication/recovery, exact coverage blending,
+bearings, newlines, clipping, snapping, and DPI transitions. The animated todo
+example verifies cross-window resource reuse and atlas growth after adding
+Latin characters. Manually inspected rendered English/light 1× and German/dark
+2× frames; native windows were also opened for optional user smoke testing.
+Native interaction and animation behavior are exercised by automated tests.
+The user confirmed successful manual UI verification on 2026-10-05.
+
+Ran `./n check` throughout implementation. Updated architecture documentation,
+API guides, and the existing draw.io XML; SVG export stays with the watcher.

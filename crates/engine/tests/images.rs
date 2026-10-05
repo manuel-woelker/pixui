@@ -74,6 +74,7 @@ fn missing_image_indices_and_invalid_geometry_are_errors() {
         },
     ] {
         let display = DisplayList {
+            fonts: Vec::new(),
             images: vec![],
             commands: vec![DrawCommand::DrawImage {
                 image: ImageIndex(0),

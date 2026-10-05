@@ -21,12 +21,14 @@ impl Painter<ButtonComponent> for ButtonPainter {
         context.text(
             Point {
                 x: 8.0,
-                y: (context.height - 16.0) / 2.0,
+                y: context
+                    .font_metrics(16.0)?
+                    .centered_baseline(context.height),
             },
             &context.props.label,
             16.0,
             palette.foreground,
-        );
+        )?;
         Ok(())
     }
 }

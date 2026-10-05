@@ -4,7 +4,7 @@ use pixui_base::{PixuiResult, pixui_error};
 use pixui_engine::ui::{
     display_list::{Color, DisplayList, DrawCommand},
     geometry::{Point, Rect},
-    text,
+    text::resource::{FontResource, GlyphInfo},
 };
 
 struct Canvas {
@@ -16,6 +16,80 @@ struct Canvas {
 }
 
 impl Canvas {
+    fn text(&mut self, font: &FontResource, origin: Point, text: &str, color: Color) {
+        let mut pen = origin;
+        for character in text.chars() {
+            if character == '\n' {
+                pen.x = origin.x;
+                pen.y += font.metrics().line_height;
+                continue;
+            }
+            let glyph = font.glyph(character).expect("validated text resource");
+            self.glyph(font, glyph, pen, color);
+            pen.x += glyph.advance;
+        }
+    }
+
+    fn glyph(&mut self, font: &FontResource, glyph: &GlyphInfo, pen: Point, color: Color) {
+        let Some(source) = glyph.atlas_rect else {
+            return;
+        };
+        // Snap the bitmap origin, never round advances cumulatively. During DPI
+        // transitions an old atlas is safely resampled until a fresh frame arrives.
+        let destination = Rect {
+            x: ((pen.x + glyph.offset.x) * self.scale).round() / self.scale,
+            y: ((pen.y + glyph.offset.y) * self.scale).round() / self.scale,
+            width: source.width as f32 / font.scale(),
+            height: source.height as f32 / font.scale(),
+        };
+        let visible = destination.intersect(*self.clips.last().expect("viewport clip"));
+        if visible.width <= 0.0 || visible.height <= 0.0 {
+            return;
+        }
+        let left = (visible.x * self.scale)
+            .floor()
+            .clamp(0.0, self.width as f32) as u32;
+        let top = (visible.y * self.scale)
+            .floor()
+            .clamp(0.0, self.height as f32) as u32;
+        let right = ((visible.x + visible.width) * self.scale)
+            .ceil()
+            .clamp(0.0, self.width as f32) as u32;
+        let bottom = ((visible.y + visible.height) * self.scale)
+            .ceil()
+            .clamp(0.0, self.height as f32) as u32;
+        let atlas = font.atlas();
+        for y in top..bottom {
+            for x in left..right {
+                let point = Point {
+                    x: (x as f32 + 0.5) / self.scale,
+                    y: (y as f32 + 0.5) / self.scale,
+                };
+                if !visible.contains(point) {
+                    continue;
+                }
+                let sx = ((point.x - destination.x) * font.scale())
+                    .floor()
+                    .clamp(0.0, (source.width - 1) as f32) as u32
+                    + source.x;
+                let sy = ((point.y - destination.y) * font.scale())
+                    .floor()
+                    .clamp(0.0, (source.height - 1) as f32) as u32
+                    + source.y;
+                let coverage = u32::from(atlas.coverage()[(sy * atlas.width() + sx) as usize]);
+                let pixel = &mut self.pixels[(y * self.width + x) as usize];
+                // Rounded interpolation in encoded sRGB, not linear-light or LCD AA.
+                let blend = |foreground: u8, shift: u32| {
+                    (u32::from(foreground) * coverage
+                        + ((*pixel >> shift) & 255_u32) * (255 - coverage)
+                        + 127)
+                        / 255
+                };
+                *pixel = (blend(color.0, 16) << 16) | (blend(color.1, 8) << 8) | blend(color.2, 0);
+            }
+        }
+    }
+
     fn fill(&mut self, rect: Rect, Color(red, green, blue): Color) {
         let rect = rect.intersect(*self.clips.last().expect("viewport clip"));
         let left = (rect.x * self.scale).floor().clamp(0.0, self.width as f32) as usize;
@@ -88,29 +162,11 @@ pub fn paint(display: &DisplayList, width: u32, height: u32, scale: f32) -> Pixu
             }
             DrawCommand::DrawText {
                 origin,
-                text: content,
-                size,
+                text,
+                font,
                 color,
-                ..
             } => {
-                let cell = size / 8.0;
-                for (index, character) in content.chars().enumerate() {
-                    for (row, bits) in text::glyph(character).into_iter().enumerate() {
-                        for column in 0..8 {
-                            if bits & (1 << column) != 0 {
-                                canvas.fill(
-                                    Rect {
-                                        x: origin.x + index as f32 * size + column as f32 * cell,
-                                        y: origin.y + row as f32 * cell,
-                                        width: cell,
-                                        height: cell,
-                                    },
-                                    *color,
-                                );
-                            }
-                        }
-                    }
-                }
+                canvas.text(&display.fonts[font.0], *origin, text, *color);
             }
             DrawCommand::DrawImage { image, destination } => {
                 let source = &display.images[image.0];

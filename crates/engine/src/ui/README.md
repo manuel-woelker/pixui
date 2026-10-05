@@ -33,9 +33,12 @@ until keyed reconciliation is implemented.
 The renderer prepares typed props and paints constant-height rows, translates
 and clips local commands, and generates a complete `RenderOutput`. Every row is
 36 logical pixels high; text overflow is clipped. Its `DisplayList` contains
-ordered opaque-color rectangle, stroke, text, and clipping commands in logical
-pixels. The shared font has basic Latin and Latin-extension glyphs; complex
-shaping, bidi, kerning, and font fallback are outside the first implementation.
+ordered rectangle, stroke, text, image, and clipping commands in logical
+pixels. Text references immutable indexed grayscale font atlases prepared in a
+worker batch. Embedded Geist supplies Latin glyphs, real metrics, and coverage
+antialiasing. Complex shaping, bidi, kerning, and system fallback remain outside
+the initial scope. See [text drawing](Text.md) for baseline placement, font
+acquisition, cache limits, and DPI behavior.
 
 Each instance retains at most one pending output; publication never waits for
 the consumer. Use `OutputReceiver::try_recv` in a native event loop, or
