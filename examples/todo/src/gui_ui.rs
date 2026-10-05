@@ -132,6 +132,7 @@ fn mark_action(
 mod tests {
     use super::*;
     use crate::todo::{actions::TodoActions, create_slice};
+    use pixui_engine::ui::resource::Resource;
     use pixui_engine::{
         application::app::Application,
         ui::{
@@ -407,7 +408,6 @@ mod tests {
 
     #[test]
     fn animated_windows_share_font_snapshots_and_new_todos_grow_them() {
-        use std::sync::Arc;
         let application = Application::new();
         application.add_slice(create_slice().unwrap()).unwrap();
         let actions = TodoActions::bind(&application).unwrap();
@@ -442,7 +442,7 @@ mod tests {
             .ui_command(UiCommand::Redraw { instance: light })
             .unwrap();
         let shared = light_outputs.recv_timeout(Duration::from_secs(2)).unwrap();
-        assert!(Arc::ptr_eq(
+        assert!(Resource::ptr_eq(
             &shared.display_list.fonts[0],
             &german.display_list.fonts[0]
         ));
@@ -451,7 +451,7 @@ mod tests {
                 .ui_command(UiCommand::Redraw { instance: light })
                 .unwrap();
             let animated = light_outputs.recv_timeout(Duration::from_secs(2)).unwrap();
-            assert!(Arc::ptr_eq(
+            assert!(Resource::ptr_eq(
                 &shared.display_list.fonts[0],
                 &animated.display_list.fonts[0]
             ));
@@ -465,7 +465,7 @@ mod tests {
             grown.display_list.fonts[0].atlas().width()
                 > initial.display_list.fonts[0].atlas().width()
         );
-        assert!(Arc::ptr_eq(
+        assert!(Resource::ptr_eq(
             &grown.display_list.fonts[0],
             &dark_grown.display_list.fonts[0]
         ));

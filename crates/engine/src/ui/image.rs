@@ -1,13 +1,13 @@
 #![doc = include_str!("Images.md")]
 
-use super::display_list::Color;
+use super::{display_list::Color, resource::Resource};
 use pixui_base::{PixuiResult, pixui_error};
-use std::{fmt, sync::Arc};
+use std::fmt;
 
 /// Source pixel ceiling, independent of total application memory usage.
 pub const MAX_IMAGE_PIXELS: usize = 64_000_000;
 
-struct ImageData {
+pub struct ImageData {
     width: u32,
     height: u32,
     pixels: Vec<Color>,
@@ -17,11 +17,7 @@ struct ImageData {
 /// An immutable row-major RGB image with optional exact color-key transparency.
 /// Equality compares allocation identity, not pixel content. Each separately
 /// constructed image is a new version, even if its pixels match an older image.
-#[derive(Clone)]
-pub struct Image(Arc<ImageData>);
-
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) struct ImageIdentity(usize);
+pub type Image = Resource<ImageData>;
 
 impl Image {
     /// Consumes the pixels without copying. Rejects zero dimensions, overflow,
@@ -40,41 +36,35 @@ impl Image {
         {
             return Err(pixui_error!("invalid image dimensions or pixel count"));
         }
-        Ok(Self(Arc::new(ImageData {
+        Ok(Self::from_value(ImageData {
             width,
             height,
             pixels,
             transparent_color,
-        })))
+        }))
     }
+}
+
+impl ImageData {
     pub fn width(&self) -> u32 {
-        self.0.width
+        self.width
     }
     pub fn height(&self) -> u32 {
-        self.0.height
+        self.height
     }
     pub fn pixels(&self) -> &[Color] {
-        &self.0.pixels
+        &self.pixels
     }
     pub fn transparent_color(&self) -> Option<Color> {
-        self.0.transparent_color
-    }
-    pub(crate) fn identity(&self) -> ImageIdentity {
-        ImageIdentity(Arc::as_ptr(&self.0) as usize)
+        self.transparent_color
     }
 }
-impl PartialEq for Image {
-    fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.0, &other.0)
-    }
-}
-impl Eq for Image {}
-impl fmt::Debug for Image {
+impl fmt::Debug for ImageData {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Image")
-            .field("width", &self.width())
-            .field("height", &self.height())
-            .field("transparent_color", &self.transparent_color())
+            .field("width", &self.width)
+            .field("height", &self.height)
+            .field("transparent_color", &self.transparent_color)
             .finish_non_exhaustive()
     }
 }
@@ -85,7 +75,7 @@ mod tests {
     #[test]
     fn table_and_frames_release_their_owned_versions() {
         let image = Image::new(1, 1, vec![Color(1, 2, 3)], None).unwrap();
-        let weak = Arc::downgrade(&image.0);
+        let weak = image.downgrade();
         let mut builder = super::super::display_list_builder::DisplayListBuilder::default();
         builder.image_index(&image);
         let (frame, _) = builder.finish().unwrap();

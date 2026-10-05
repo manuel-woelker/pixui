@@ -3,13 +3,10 @@
 use super::{
     font::{FontConfig, FontKey},
     packing::Packing,
-    resource::FontResource,
+    resource::{Font, FontResource},
 };
 use pixui_base::{PixuiResult, pixui_error};
-use std::{
-    collections::{BTreeMap, BTreeSet, HashMap},
-    sync::Arc,
-};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 /// Bounded cache ownership. Retained render outputs may keep evicted resources
 /// alive; these limits cannot bound resources intentionally retained by clients.
@@ -36,7 +33,7 @@ impl Default for TextLimits {
 struct CachedFont {
     config: FontConfig,
     packing: Packing,
-    resource: Arc<FontResource>,
+    resource: Font,
 }
 
 /// Concrete worker-owned service; no locks or backend plugin machinery. A
@@ -95,7 +92,7 @@ impl TextService {
         &mut self,
         config: &FontConfig,
         requested: &BTreeSet<char>,
-    ) -> PixuiResult<Arc<FontResource>> {
+    ) -> PixuiResult<Font> {
         if requested.iter().any(|character| character.is_control()) {
             return Err(pixui_error!("normalize controls before preparing glyphs"));
         }
@@ -174,11 +171,11 @@ impl TextService {
             (entry.packing.clone(), entry.resource.atlas().clone())
         } else {
             let (packing, atlas) = packing.prepare(
-                old.map(|entry| entry.resource.atlas().as_ref()),
+                old.map(|entry| &**entry.resource.atlas()),
                 &rasterized,
                 self.limits.maximum_dimension,
             )?;
-            (packing, Arc::new(atlas))
+            (packing, atlas)
         };
         let map: HashMap<_, _> = characters
             .into_iter()
@@ -189,7 +186,7 @@ impl TextService {
                 )
             })
             .collect();
-        let resource = Arc::new(FontResource::new(
+        let resource = Font::from_value(FontResource::new(
             atlas,
             map,
             config.metrics(),
@@ -287,7 +284,7 @@ mod tests {
         app.render_dirty();
         let recovered = outputs.try_recv().unwrap();
         assert!(recovered.revision > good.revision);
-        assert!(Arc::ptr_eq(
+        assert!(Font::ptr_eq(
             &good.display_list.fonts[0],
             &recovered.display_list.fonts[0]
         ));

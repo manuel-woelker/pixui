@@ -21,8 +21,8 @@ fn rect(x: f32, y: f32, width: f32, height: f32) -> Rect {
 #[test]
 fn ordered_painting_nested_clips_and_scaling_match_logical_geometry() {
     let display = DisplayList {
-        images: Vec::new(),
-        fonts: Vec::new(),
+        images: Default::default(),
+        fonts: Default::default(),
         commands: vec![
             DrawCommand::FillRect {
                 rect: rect(0.0, 0.0, 4.0, 4.0),
@@ -96,15 +96,15 @@ fn invalid_lists_and_raster_sizes_fail_before_painting() {
         vec![DrawCommand::DrawText {
             origin: Point::default(),
             text: "bad".into(),
-            font: FontIndex(0),
+            font: FontIndex::from_raw(0),
             color: Color(0, 0, 0),
         }],
     ] {
         assert!(
             paint(
                 &DisplayList {
-                    images: Vec::new(),
-                    fonts: Vec::new(),
+                    images: Default::default(),
+                    fonts: Default::default(),
                     commands
                 },
                 10,
@@ -127,7 +127,7 @@ fn image_display(transparent: Option<Color>, destination: Rect) -> DisplayList {
     use pixui_engine::ui::{display_list_builder::ImageIndex, image::Image};
     let key = Color(255, 0, 255);
     DisplayList {
-        fonts: Vec::new(),
+        fonts: Default::default(),
         images: vec![
             Image::new(
                 2,
@@ -136,14 +136,15 @@ fn image_display(transparent: Option<Color>, destination: Rect) -> DisplayList {
                 transparent,
             )
             .unwrap(),
-        ],
+        ]
+        .into(),
         commands: vec![
             DrawCommand::FillRect {
                 rect: rect(0.0, 0.0, 8.0, 8.0),
                 color: Color(20, 30, 40),
             },
             DrawCommand::DrawImage {
-                image: ImageIndex(0),
+                image: ImageIndex::from_raw(0),
                 destination,
             },
         ],
@@ -196,8 +197,8 @@ fn coverage_display(origin: Point, scale: f32) -> DisplayList {
     use pixui_engine::ui::text::resource::{
         FontMetrics, FontResource, GlyphAtlas, GlyphInfo, PixelRect,
     };
-    use std::{collections::HashMap, sync::Arc};
-    let atlas = Arc::new(GlyphAtlas::new(3, 1, vec![0, 128, 255]).unwrap());
+    use std::collections::HashMap;
+    let atlas = GlyphAtlas::new(3, 1, vec![0, 128, 255]).unwrap();
     let glyph = GlyphInfo {
         atlas_rect: Some(PixelRect {
             x: 0,
@@ -223,8 +224,8 @@ fn coverage_display(origin: Point, scale: f32) -> DisplayList {
     )
     .unwrap();
     DisplayList {
-        images: Vec::new(),
-        fonts: vec![Arc::new(font)],
+        images: Default::default(),
+        fonts: vec![pixui_engine::ui::text::resource::Font::from_value(font)].into(),
         commands: vec![
             DrawCommand::FillRect {
                 rect: rect(0.0, 0.0, 16.0, 8.0),
@@ -233,7 +234,7 @@ fn coverage_display(origin: Point, scale: f32) -> DisplayList {
             DrawCommand::DrawText {
                 origin,
                 text: "AA\nA".into(),
-                font: FontIndex(0),
+                font: FontIndex::from_raw(0),
                 color: Color(220, 140, 60),
             },
         ],

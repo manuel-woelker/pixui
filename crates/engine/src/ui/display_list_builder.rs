@@ -3,22 +3,22 @@
 use super::{
     display_list::{DisplayList, DrawCommand},
     geometry::{Point, Size},
-    image::{Image, ImageIdentity},
+    image::{Image, ImageData},
+    resource_table::{ResourceIndex, ResourceTableBuilder},
     text::{
         font::{FontConfig, FontKey, normalize},
-        resource::FontIndex,
+        resource::{FontIndex, FontResource},
         service::TextService,
     },
 };
-use pixui_base::PixuiResult;
+use pixui_base::{PixuiResult, pixui_error};
 use std::{
     collections::{BTreeSet, HashMap},
     time::Duration,
 };
 
 /// An index into this display list's image table, not a global resource ID.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ImageIndex(pub usize);
+pub type ImageIndex = ResourceIndex<ImageData>;
 
 /// The minimum painter-requested redraw interval, preventing zero-delay loops.
 pub const MIN_REDRAW_DELAY: Duration = Duration::from_millis(1);
@@ -28,7 +28,7 @@ pub const MIN_REDRAW_DELAY: Duration = Duration::from_millis(1);
 #[derive(Default)]
 pub struct DisplayListBuilder {
     display: DisplayList,
-    image_indices: HashMap<ImageIdentity, ImageIndex>,
+    images: ResourceTableBuilder<ImageData>,
     redraw_after: Option<Duration>,
     font_indices: HashMap<FontKey, FontIndex>,
     fonts: Vec<(FontConfig, BTreeSet<char>)>,
@@ -46,11 +46,11 @@ impl DisplayListBuilder {
     ) -> PixuiResult<()> {
         let text = normalize(&text.into())?;
         let index = *self.font_indices.entry(config.key()).or_insert_with(|| {
-            let index = FontIndex(self.fonts.len());
+            let index = FontIndex::from_raw(self.fonts.len());
             self.fonts.push((config, BTreeSet::new()));
             index
         });
-        self.fonts[index.0]
+        self.fonts[index.as_usize()]
             .1
             .extend(text.chars().filter(|&character| character != '\n'));
         self.emit(DrawCommand::DrawText {
@@ -82,14 +82,7 @@ impl DisplayListBuilder {
     /// Owns one reference per distinct snapshot. Its allocation cannot be reused
     /// while the builder's image table retains that reference.
     pub fn image_index(&mut self, image: &Image) -> ImageIndex {
-        *self
-            .image_indices
-            .entry(image.identity())
-            .or_insert_with(|| {
-                let index = ImageIndex(self.display.images.len());
-                self.display.images.push(image.clone());
-                index
-            })
+        self.images.insert(image)
     }
     /// Append a command in final coordinates; finish validates geometry/resources.
     pub fn emit(&mut self, command: DrawCommand) {
@@ -113,11 +106,22 @@ impl DisplayListBuilder {
         mut self,
         service: &mut TextService,
     ) -> PixuiResult<(DisplayList, Option<Duration>)> {
+        let mut fonts = ResourceTableBuilder::<FontResource>::default();
+        let mut indices = Vec::with_capacity(self.fonts.len());
         for (config, characters) in &self.fonts {
-            self.display
-                .fonts
-                .push(service.prepare(config, characters)?);
+            indices.push(fonts.insert(&service.prepare(config, characters)?));
         }
+        // Painting uses demand indices. Finalization translates them to shared
+        // table indices, allowing snapshot deduplication to change table order.
+        for command in &mut self.display.commands {
+            if let DrawCommand::DrawText { font, .. } = command {
+                *font = *indices
+                    .get(font.as_usize())
+                    .ok_or_else(|| pixui_error!("font index outside pending demands"))?;
+            }
+        }
+        self.display.fonts = fonts.finish();
+        self.display.images = self.images.finish();
         self.display.validate()?;
         Ok((self.display, self.redraw_after))
     }

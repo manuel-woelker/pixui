@@ -1,19 +1,17 @@
 //! Font snapshots are self-contained and stable across batching and eviction.
 
+use pixui_engine::ui::resource::Resource;
 use pixui_engine::ui::{
     display_list::{Color, DrawCommand},
     display_list_builder::DisplayListBuilder,
     geometry::Point,
     text::{
-        font::{FontConfig, FontFace, normalize},
+        font::{FontConfig, FontFace, GEIST_REGULAR_TTF, normalize},
         resource::{FontIndex, FontMetrics, FontResource, GlyphAtlas, GlyphInfo, PixelRect},
         service::{TextLimits, TextService},
     },
 };
-use std::{
-    collections::{BTreeSet, HashMap},
-    sync::Arc,
-};
+use std::collections::{BTreeSet, HashMap};
 
 fn config(size: f32, scale: f32) -> FontConfig {
     FontConfig::new(FontFace::geist().unwrap(), size, scale).unwrap()
@@ -65,9 +63,8 @@ fn painters_batch_into_one_resource_and_order_does_not_change_packing() {
     assert!(display.commands.iter().all(|command| matches!(
         command,
         DrawCommand::DrawText {
-            font: FontIndex(0),
-            ..
-        }
+            font, ..
+        } if font.as_usize() == 0
     )));
     let other = frame(
         &mut TextService::default(),
@@ -75,14 +72,19 @@ fn painters_batch_into_one_resource_and_order_does_not_change_packing() {
         Color(0, 0, 0),
         Point::default(),
     );
-    assert_eq!(display.fonts, other.fonts);
+    assert_eq!(display.fonts[0].characters(), other.fonts[0].characters());
+    assert_eq!(display.fonts[0].metrics(), other.fonts[0].metrics());
+    assert_eq!(
+        display.fonts[0].atlas().coverage(),
+        other.fonts[0].atlas().coverage()
+    );
     let next = frame(
         &mut service,
         &["ABC"],
         Color(255, 255, 255),
         Point { x: 400.0, y: 32.0 },
     );
-    assert!(Arc::ptr_eq(&display.fonts[0], &next.fonts[0]));
+    assert!(Resource::ptr_eq(&display.fonts[0], &next.fonts[0]));
     assert_eq!(service.rasterized_glyphs(), 4);
 }
 
@@ -99,8 +101,8 @@ fn spaces_controls_and_missing_characters_follow_one_measurement_policy() {
     assert!(resource.glyph(' ').unwrap().advance > 0.0);
     assert_eq!(resource.glyph(' ').unwrap().atlas_rect, None);
     let added_alias = service.prepare(&config(16.0, 1.0), &chars("🙂")).unwrap();
-    assert!(!Arc::ptr_eq(&resource, &added_alias));
-    assert!(Arc::ptr_eq(resource.atlas(), added_alias.atlas()));
+    assert!(!Resource::ptr_eq(&resource, &added_alias));
+    assert!(Resource::ptr_eq(resource.atlas(), added_alias.atlas()));
     assert_eq!(service.rasterized_glyphs(), 2);
     let mut builder = DisplayListBuilder::default();
     let measured = builder
@@ -151,7 +153,7 @@ fn growth_preserves_old_outputs_and_existing_coverage_without_rerasterization() 
     assert_eq!(glyph_pixels(&first, 'A'), glyph_pixels(&expanded, 'A'));
     assert_eq!(service.rasterized_glyphs(), alphabet.len() as u64);
     let again = service.prepare(&config(16.0, 1.0), &alphabet).unwrap();
-    assert!(Arc::ptr_eq(&expanded, &again));
+    assert!(Resource::ptr_eq(&expanded, &again));
 }
 
 #[test]
@@ -162,15 +164,15 @@ fn configuration_identity_scale_and_lru_eviction_preserve_retained_frames() {
     })
     .unwrap();
     let first = service.prepare(&config(16.0, 1.0), &chars("A")).unwrap();
-    let weak = Arc::downgrade(&first);
+    let weak = first.downgrade();
     let other_size = service.prepare(&config(20.0, 1.0), &chars("A")).unwrap();
     let touched = service.prepare(&config(16.0, 1.0), &chars("A")).unwrap();
-    assert!(Arc::ptr_eq(&first, &touched));
+    assert!(Resource::ptr_eq(&first, &touched));
     let scaled = service.prepare(&config(16.0, 2.0), &chars("A")).unwrap();
     assert_eq!(scaled.scale(), 2.0);
     assert_eq!(service.cached_configurations(), 2);
     let refreshed = service.prepare(&config(20.0, 1.0), &chars("A")).unwrap();
-    assert!(!Arc::ptr_eq(&other_size, &refreshed));
+    assert!(!Resource::ptr_eq(&other_size, &refreshed));
     assert_eq!(
         glyph_pixels(&other_size, 'A'),
         glyph_pixels(&refreshed, 'A')
@@ -179,14 +181,11 @@ fn configuration_identity_scale_and_lru_eviction_preserve_retained_frames() {
     drop(first);
     drop(touched);
     assert!(weak.upgrade().is_none()); // evicted cache + released frames
-    let bytes = include_bytes!(concat!(
-        env!("PIXUI_GEIST_DIRECTORY"),
-        "/fonts/Geist/ttf/Geist-Regular.ttf"
-    ));
+    let bytes = GEIST_REGULAR_TTF;
     let separately_loaded =
         FontConfig::new(FontFace::from_bytes(bytes, 0).unwrap(), 20.0, 1.0).unwrap();
     let different = service.prepare(&separately_loaded, &chars("A")).unwrap();
-    assert!(!Arc::ptr_eq(&different, &refreshed));
+    assert!(!Resource::ptr_eq(&different, &refreshed));
 }
 
 #[test]
@@ -204,7 +203,7 @@ fn exhausted_atlas_and_alias_limits_do_not_replace_usable_cache_entry() {
             .is_err()
     );
     assert_eq!(service.rasterized_glyphs(), 1); // impossible batch rejected before bitmap allocation
-    assert!(Arc::ptr_eq(
+    assert!(Resource::ptr_eq(
         &first,
         &service.prepare(&config(16.0, 1.0), &chars("A")).unwrap()
     ));
@@ -215,7 +214,7 @@ fn exhausted_atlas_and_alias_limits_do_not_replace_usable_cache_entry() {
     .unwrap();
     let first = service.prepare(&config(16.0, 1.0), &chars("A")).unwrap();
     assert!(service.prepare(&config(16.0, 1.0), &chars("B")).is_err());
-    assert!(Arc::ptr_eq(
+    assert!(Resource::ptr_eq(
         &first,
         &service.prepare(&config(16.0, 1.0), &chars("A")).unwrap()
     ));
@@ -228,10 +227,7 @@ fn exhausted_atlas_and_alias_limits_do_not_replace_usable_cache_entry() {
 
 #[test]
 fn metadata_fonts_and_commands_are_validated() {
-    let bytes = include_bytes!(concat!(
-        env!("PIXUI_GEIST_DIRECTORY"),
-        "/fonts/Geist/ttf/Geist-Regular.ttf"
-    ));
+    let bytes = GEIST_REGULAR_TTF;
     assert!(FontFace::from_bytes(bytes, u32::MAX).is_err());
     assert!(FontFace::from_bytes(b"invalid", 0).is_err());
     for (size, scale) in [
@@ -246,7 +242,7 @@ fn metadata_fonts_and_commands_are_validated() {
     assert!(GlyphAtlas::new(0, 1, Vec::new()).is_err());
     assert!(GlyphAtlas::new(2049, 1, vec![0; 2049]).is_err());
     assert!(GlyphAtlas::new(1, 1, vec![0, 0]).is_err());
-    let atlas = Arc::new(GlyphAtlas::new(1, 1, vec![128]).unwrap());
+    let atlas = GlyphAtlas::new(1, 1, vec![128]).unwrap();
     let metrics = FontMetrics {
         ascent: 1.0,
         descent: 0.0,
@@ -286,7 +282,7 @@ fn metadata_fonts_and_commands_are_validated() {
     }
     assert!(display.validate().is_err());
     if let DrawCommand::DrawText { font, .. } = &mut display.commands[0] {
-        *font = FontIndex(1);
+        *font = FontIndex::from_raw(1);
     }
     assert!(display.validate().is_err());
     assert!(
@@ -308,7 +304,7 @@ fn coverage_budget_evicts_cache_ownership_without_invalidating_snapshots() {
     })
     .unwrap();
     let retained = service.prepare(&config(16.0, 1.0), &chars("A")).unwrap();
-    let weak = Arc::downgrade(&retained);
+    let weak = retained.downgrade();
     service.prepare(&config(20.0, 1.0), &chars("B")).unwrap();
     assert_eq!(service.cached_configurations(), 1);
     assert_eq!(service.cached_coverage_bytes(), 128 * 128);
@@ -324,10 +320,10 @@ fn appending_glyphs_keeps_coordinates_and_allocates_one_new_snapshot() {
     let next = service.prepare(&config(16.0, 1.0), &chars("BBAB")).unwrap();
     assert_eq!(first.glyph('A'), next.glyph('A'));
     assert_eq!(first.atlas().width(), next.atlas().width());
-    assert!(!Arc::ptr_eq(first.atlas(), next.atlas()));
+    assert!(!Resource::ptr_eq(first.atlas(), next.atlas()));
     assert!(first.glyph('B').is_none());
     assert_eq!(service.rasterized_glyphs(), 2);
-    assert!(Arc::ptr_eq(
+    assert!(Resource::ptr_eq(
         &next,
         &service.prepare(&config(16.0, 1.0), &chars("AB")).unwrap()
     ));

@@ -80,3 +80,6 @@ See [the architecture](../../../../docs/Architecture.md) and
 Image commands share immutable RGB snapshots through an indexed resource table.
 Painters can request a future visual redraw without invalidating focus or hover.
 See [dynamic images](Images.md) for drawing and scheduling contracts.
+
+Images, fonts, and glyph atlases use
+[shared typed resource handles and tables](Resources.md).

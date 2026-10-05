@@ -1,12 +1,14 @@
 //! Self-contained, immutable text resources crossing the worker/GUI boundary.
 
 use crate::ui::geometry::Point;
+use crate::ui::{resource::Resource, resource_table::ResourceIndex};
 use pixui_base::{PixuiResult, pixui_error};
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 
 /// A font index is local to one display list, just like its image indices.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct FontIndex(pub usize);
+pub type FontIndex = ResourceIndex<FontResource>;
+pub type Font = Resource<FontResource>;
+pub type GlyphAtlas = Resource<GlyphAtlasData>;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PixelRect {
@@ -41,13 +43,13 @@ pub struct GlyphInfo {
 }
 
 #[derive(PartialEq)]
-pub struct GlyphAtlas {
+pub struct GlyphAtlasData {
     width: u32,
     height: u32,
     coverage: Vec<u8>,
 }
 
-impl std::fmt::Debug for GlyphAtlas {
+impl std::fmt::Debug for GlyphAtlasData {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
             .debug_struct("GlyphAtlas")
@@ -72,12 +74,15 @@ impl GlyphAtlas {
                 "invalid glyph atlas dimensions or coverage length"
             ));
         }
-        Ok(Self {
+        Ok(Self::from_value(GlyphAtlasData {
             width,
             height,
             coverage,
-        })
+        }))
     }
+}
+
+impl GlyphAtlasData {
     pub fn width(&self) -> u32 {
         self.width
     }
@@ -93,7 +98,7 @@ impl GlyphAtlas {
 /// parser or allocator lives here. Retained outputs survive repacking/eviction.
 #[derive(Debug, PartialEq)]
 pub struct FontResource {
-    atlas: Arc<GlyphAtlas>,
+    atlas: GlyphAtlas,
     characters: HashMap<char, GlyphInfo>,
     metrics: FontMetrics,
     scale: f32,
@@ -101,7 +106,7 @@ pub struct FontResource {
 
 impl FontResource {
     pub fn new(
-        atlas: Arc<GlyphAtlas>,
+        atlas: GlyphAtlas,
         characters: HashMap<char, GlyphInfo>,
         metrics: FontMetrics,
         scale: f32,
@@ -142,7 +147,7 @@ impl FontResource {
             scale,
         })
     }
-    pub fn atlas(&self) -> &Arc<GlyphAtlas> {
+    pub fn atlas(&self) -> &GlyphAtlas {
         &self.atlas
     }
     pub fn characters(&self) -> &HashMap<char, GlyphInfo> {

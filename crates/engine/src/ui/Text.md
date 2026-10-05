@@ -1,9 +1,10 @@
 # Text drawing
 
 Text commands contain a string, first baseline, color, and `FontIndex` into
-`DisplayList::fonts`. Each table entry is an immutable `Arc<FontResource>`:
-character metrics, one grayscale coverage atlas, and rasterization scale. A
-retained frame is sufficient for a new renderer; there is no upload history.
+`DisplayList::fonts`. Each table entry is an immutable `Font`
+(`Resource<FontResource>`): character metrics, one grayscale coverage atlas, and
+rasterization scale. A retained frame is sufficient for a new renderer; there is
+no upload history.
 
 ## Painter API
 
@@ -34,10 +35,19 @@ chains are not implemented. Library parser and allocator types stay private.
 
 ## Font acquisition and scope
 
-Tool-tool downloads the pinned official Geist 1.7.0 release. Its
-`PIXUI_GEIST_DIRECTORY` environment variable lets the compiler embed
-`fonts/Geist/ttf/Geist-Regular.ttf`. Always build through `./t`; executables
-need neither this directory nor a runtime download. The source TTF includes
+Tool-tool downloads the pinned official Geist 1.7.0 release using the
+platform-independent `default` download key. Cargo's build script copies
+`fonts/Geist/ttf/Geist-Regular.ttf` from the host's tool-tool cache into
+`OUT_DIR` for embedding. It uses tool-tool's `PIXUI_GEIST_DIRECTORY` when
+available and otherwise resolves `.cache/tool-tool/geist-1.7.0-{host_os}`. IDE
+builds therefore need no custom environment variable after the font is
+downloaded. The cache version in `build.rs` must follow the tool-tool pin when
+upgrading Geist.
+
+Download first through `./t` if the font cache is missing; build failures report
+that prerequisite explicitly. Build scripts perform no network access. Use
+`./t` for development tools to retain the pinned Rust toolchain. Executables
+need neither the cache directory nor a runtime download. The source TTF includes
 more scripts; this initial renderer restricts coverage to U+0020–024F (Latin)
 and U+FFFD. It does not run a separate byte-subsetting pipeline.
 
@@ -64,8 +74,8 @@ Painters append commands to the shared builder and collect a union of required
 characters per face/size/scale. After all painters finish, `finish_with_text`
 uses the worker's `TextService` to prepare missing glyphs once in deterministic
 order and replace each changed configuration at most once. Unchanged
-configurations reuse their resource `Arc`; alias-only additions also reuse atlas
-pixels. `finish` uses a temporary service for standalone consumers.
+configurations reuse their resource handle; alias-only additions also reuse
+atlas pixels. `finish` uses a temporary service for standalone consumers.
 
 Fontdue 0.9.4 parses and rasterizes individual glyphs. Etagere 0.2.15 allocates
 padded rectangles. Atlas preparation copies coverage once for a changed batch,
@@ -104,3 +114,7 @@ font parsing, rasterization, or atlas allocation.
 See
 [DR-007](<../../../../docs/decisions/DR-007 Prepare character atlases on the worker.md>)
 for the decision and alternatives.
+
+The image, font, and atlas handles use
+[shared resource infrastructure](Resources.md). Their equality compares snapshot
+identity; pixel and metric comparisons are explicit.

@@ -166,10 +166,10 @@ pub fn paint(display: &DisplayList, width: u32, height: u32, scale: f32) -> Pixu
                 font,
                 color,
             } => {
-                canvas.text(&display.fonts[font.0], *origin, text, *color);
+                canvas.text(&display.fonts[*font], *origin, text, *color);
             }
             DrawCommand::DrawImage { image, destination } => {
-                let source = &display.images[image.0];
+                let source = &display.images[*image];
                 let visible = destination.intersect(*canvas.clips.last().expect("viewport clip"));
                 if visible.width <= 0.0 || visible.height <= 0.0 {
                     continue;

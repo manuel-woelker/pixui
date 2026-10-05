@@ -3,7 +3,7 @@
 
 use super::{
     rasterizer::RasterGlyph,
-    resource::{GlyphAtlas, GlyphInfo, PixelRect},
+    resource::{GlyphAtlas, GlyphAtlasData, GlyphInfo, PixelRect},
 };
 use pixui_base::{PixuiResult, pixui_error};
 use std::collections::{BTreeMap, HashMap};
@@ -50,7 +50,7 @@ impl Packing {
     /// rasterizing existing glyphs again. Sorted input makes allocation stable.
     pub fn prepare(
         &self,
-        old: Option<&GlyphAtlas>,
+        old: Option<&GlyphAtlasData>,
         new: &BTreeMap<char, RasterGlyph>,
         maximum: u32,
     ) -> PixuiResult<(Self, GlyphAtlas)> {

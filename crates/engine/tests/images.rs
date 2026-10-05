@@ -36,12 +36,12 @@ fn image_validation_and_identity() {
 fn builder_deduplicates_and_retains_snapshots_after_finish() {
     let first = image(Color(1, 2, 3));
     let mut builder = DisplayListBuilder::default();
-    assert_eq!(builder.image_index(&first), ImageIndex(0));
-    assert_eq!(builder.image_index(&first.clone()), ImageIndex(0));
+    assert_eq!(builder.image_index(&first), ImageIndex::from_raw(0));
+    assert_eq!(builder.image_index(&first.clone()), ImageIndex::from_raw(0));
     let second = image(Color(1, 2, 3));
-    assert_eq!(builder.image_index(&second), ImageIndex(1));
+    assert_eq!(builder.image_index(&second), ImageIndex::from_raw(1));
     builder.emit(DrawCommand::DrawImage {
-        image: ImageIndex(0),
+        image: ImageIndex::from_raw(0),
         destination: Rect {
             x: 0.0,
             y: 0.0,
@@ -74,10 +74,10 @@ fn missing_image_indices_and_invalid_geometry_are_errors() {
         },
     ] {
         let display = DisplayList {
-            fonts: Vec::new(),
-            images: vec![],
+            fonts: Default::default(),
+            images: Default::default(),
             commands: vec![DrawCommand::DrawImage {
-                image: ImageIndex(0),
+                image: ImageIndex::from_raw(0),
                 destination,
             }],
         };

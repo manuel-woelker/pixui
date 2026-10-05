@@ -512,13 +512,13 @@ fn shared_image_table_spans_multiple_component_painters() {
         None,
     )
     .unwrap();
-    assert_eq!(display.images, vec![image]);
+    assert_eq!(display.images, vec![image].into());
     let destinations: Vec<_> = display
         .commands
         .iter()
         .filter_map(|command| match command {
             DrawCommand::DrawImage { image, destination } => {
-                assert_eq!(*image, ImageIndex(0));
+                assert_eq!(*image, ImageIndex::from_raw(0));
                 Some(*destination)
             }
             _ => None,

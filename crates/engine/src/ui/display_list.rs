@@ -3,12 +3,12 @@
 use super::{
     display_list_builder::ImageIndex,
     geometry::{Point, Rect},
-    image::Image,
+    image::ImageData,
     instance::UiInstanceId,
+    resource_table::ResourceTable,
     text::resource::{FontIndex, FontResource},
 };
 use pixui_base::{PixuiResult, pixui_error};
-use std::sync::Arc;
 
 /// Opaque sRGB color. The initial painter does not support transparency.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -44,8 +44,8 @@ pub enum DrawCommand {
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct DisplayList {
-    pub images: Vec<Image>,
-    pub fonts: Vec<Arc<FontResource>>,
+    pub images: ResourceTable<ImageData>,
+    pub fonts: ResourceTable<FontResource>,
     pub commands: Vec<DrawCommand>,
 }
 
@@ -72,7 +72,7 @@ impl DisplayList {
                 _ => {}
             }
             match command {
-                DrawCommand::DrawImage { image, .. } if image.0 >= self.images.len() => {
+                DrawCommand::DrawImage { image, .. } if self.images.get(*image).is_none() => {
                     return Err(pixui_error!("image index outside display list table"));
                 }
                 DrawCommand::DrawText { origin, .. }
@@ -83,7 +83,7 @@ impl DisplayList {
                 DrawCommand::DrawText { font, text, .. } => {
                     let resource = self
                         .fonts
-                        .get(font.0)
+                        .get(*font)
                         .ok_or_else(|| pixui_error!("font index outside display list table"))?;
                     for character in text.chars() {
                         if character == '\n' {

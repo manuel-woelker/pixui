@@ -1,41 +1,41 @@
 //! Parsed worker-side faces. Public handles hide the rasterizer implementation.
 
 use super::{rasterizer::Rasterizer, resource::FontMetrics};
+use crate::ui::resource::{Resource, ResourceIdentity};
 use pixui_base::{PixuiResult, pixui_error};
-use std::sync::{Arc, OnceLock};
+use std::sync::OnceLock;
 
 /// Immutable parsed face. Cloning retains its identity; separately loaded bytes
 /// create a different identity even when equal. Only the worker uses this handle.
 /// The initial character repertoire is Latin U+0020–024F plus U+FFFD.
 #[derive(Clone)]
-pub struct FontFace(pub(crate) Arc<Rasterizer>);
+pub struct FontFace(pub(crate) Resource<Rasterizer>);
+
+/// Static font bytes prepared by Cargo's build script from the pinned tool-tool
+/// download. The executable never needs a cache path or runtime font files.
+pub const GEIST_REGULAR_TTF: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/Geist-Regular.ttf"));
 
 impl FontFace {
     /// Parses a static TTF/OTF face. Collection indices are validated by fontdue.
     /// Variable axes, shaping, kerning, and system fallback are not supported.
     pub fn from_bytes(bytes: &[u8], face_index: u32) -> PixuiResult<Self> {
-        Ok(Self(Arc::new(Rasterizer::new(bytes, face_index)?)))
+        Ok(Self(Resource::from_value(Rasterizer::new(
+            bytes, face_index,
+        )?)))
     }
 
     /// The pinned, embedded Geist Regular TTF. No runtime file access is needed.
     pub fn geist() -> PixuiResult<Self> {
         static FACE: OnceLock<Result<FontFace, String>> = OnceLock::new();
         FACE.get_or_init(|| {
-            Self::from_bytes(
-                include_bytes!(concat!(
-                    env!("PIXUI_GEIST_DIRECTORY"),
-                    "/fonts/Geist/ttf/Geist-Regular.ttf"
-                )),
-                0,
-            )
-            .map_err(|error| error.to_string())
+            Self::from_bytes(GEIST_REGULAR_TTF, 0).map_err(|error| error.to_string())
         })
         .clone()
         .map_err(|error| pixui_error!("loading Geist: {error}"))
     }
 
-    pub(crate) fn identity(&self) -> usize {
-        Arc::as_ptr(&self.0) as usize
+    pub(crate) fn identity(&self) -> ResourceIdentity<Rasterizer> {
+        self.0.identity()
     }
 }
 
@@ -75,7 +75,7 @@ impl FontConfig {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) struct FontKey(usize, u32, u32);
+pub(crate) struct FontKey(ResourceIdentity<Rasterizer>, u32, u32);
 
 /// A shared normalization policy for measurement and drawing. Four spaces per
 /// tab; CRLF and CR become LF. Other controls are rejected, not rendered as tofu.

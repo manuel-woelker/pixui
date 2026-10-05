@@ -1,6 +1,7 @@
 # Dynamic images
 
-`Image` owns an immutable, row-major RGB snapshot through `Arc`. Cloning shares
+`Image` is a `Resource<ImageData>` owning an immutable, row-major RGB snapshot
+through the shared Arc-backed handle. Cloning shares
 the allocation; construct a new snapshot to change pixels or metadata. Published
 frames keep their exact versions until dropped, even if a newer frame replaces
 them. Pixels, width, height, and the optional transparent color are readable.
@@ -26,12 +27,12 @@ makes every pixel opaque, including magenta. Visible artwork must avoid its key.
 
 ## Shared command construction
 
-There is one `DisplayListBuilder` per render. Its image table owns one reference
-per distinct snapshot; a reverse map deduplicates by allocation identity. It
-retains the allocation before caching that identity, preventing address reuse.
-Finishing discards the map and returns a complete `DisplayList` and optional
-redraw delay. Each `DrawImage` contains an `ImageIndex` scoped to that list.
-Invalid indices are rejected before rasterization.
+There is one `DisplayListBuilder` per render. Its typed image table owns one
+reference per distinct snapshot; a reverse map deduplicates by allocation
+identity. It retains the allocation before caching that identity, preventing
+address reuse. Finishing discards the map and returns a complete `DisplayList`
+and optional redraw delay. Each `DrawImage` contains an `ImageIndex` scoped to
+that list. Invalid indices are rejected before rasterization.
 
 Painters call `context.image(&image, destination)` using local logical
 coordinates. The context registers the image and translates the rectangle
@@ -109,3 +110,6 @@ another frame after 33 ms; an explicit timestamp stops those requests until
 settings change. Shrinking, dithered tails expose either window's background
 without alpha. Retained output redraws reuse the snapshot; queue delays skip
 ahead in time rather than slowing the orbit.
+
+See [shared render resources](Resources.md) for typed indices, identity, and
+table ownership.

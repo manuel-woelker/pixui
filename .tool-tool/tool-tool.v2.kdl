@@ -3,7 +3,7 @@ cache-directory ".cache/tool-tool"
 tools {
 	geist "1.7.0" {
 		download {
-			linux "https://github.com/vercel/geist-font/releases/download/${version}/geist-font-${version}.zip"
+			default "https://github.com/vercel/geist-font/releases/download/1.7.0/geist-font-1.7.0.zip"
 		}
 	}
 

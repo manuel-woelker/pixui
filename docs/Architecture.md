@@ -222,12 +222,19 @@ lookup on completion. Color-key transparency skips matching source pixels, and
 images use nearest-neighbor sampling. Retained outputs keep their exact image
 versions without upload history.
 
+Image and font tables share `ResourceTable<T>` and `ResourceTableBuilder<T>`.
+Images, fonts, and glyph atlases use `Resource<T>` handles with allocation
+identity and immutable Arc-backed ownership. Typed `ResourceIndex<T>` aliases
+prevent mixing image and font indices, while remaining local to a frame/table.
+See [shared render resources](../crates/engine/src/ui/Resources.md) for lifetime
+and validation contracts.
+
 ### Text resources
 
 `DrawText` contains a string, first baseline, color, and index into
 `DisplayList::fonts`. The worker collects characters across all painters, then
 prepares missing glyphs with fontdue and packs them with etagere before
-publication. Each immutable `Arc<FontResource>` contains real logical metrics,
+publication. Each immutable `Font` resource contains real logical metrics,
 a character map, and one grayscale coverage atlas rasterized for its DPI.
 Unchanged frames/windows reuse snapshots; growth preserves retained outputs.
 The worker owns a bounded LRU cache and commits each font snapshot atomically.
