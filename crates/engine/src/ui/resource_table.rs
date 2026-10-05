@@ -65,6 +65,9 @@ pub struct ResourceTable<T> {
     entries: Vec<Resource<T>>,
 }
 impl<T> ResourceTable<T> {
+    pub(crate) fn storage_bytes(&self) -> usize {
+        self.entries.capacity() * std::mem::size_of::<Resource<T>>()
+    }
     pub fn len(&self) -> usize {
         self.entries.len()
     }

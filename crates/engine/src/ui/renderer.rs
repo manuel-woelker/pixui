@@ -73,6 +73,28 @@ pub fn render(
     focus: Option<usize>,
     hover: Option<usize>,
 ) -> PixuiResult<(DisplayList, LayoutState, f32, Option<Duration>)> {
+    let (display, layout, scroll, redraw, _) =
+        render_measured(template, state, application, settings, scroll, focus, hover)?;
+    Ok((display, layout, scroll, redraw))
+}
+
+/// Like `render`, with CPU durations for preparation, painting, and text finalization.
+pub fn render_measured(
+    template: &LivePart,
+    state: &mut LiveState,
+    application: &Application,
+    settings: &PresentationSettings,
+    scroll: f32,
+    focus: Option<usize>,
+    hover: Option<usize>,
+) -> PixuiResult<(
+    DisplayList,
+    LayoutState,
+    f32,
+    Option<Duration>,
+    super::performance::WorkerTimings,
+)> {
+    let started = std::time::Instant::now();
     settings.validate()?;
     let timestamp_us = settings
         .timestamp_us
@@ -120,6 +142,8 @@ pub fn render(
         width: settings.viewport.width,
         height: settings.viewport.height,
     };
+    let preparation = started.elapsed();
+    let started = std::time::Instant::now();
     let mut display = DisplayListBuilder::default();
     display.emit(DrawCommand::FillRect {
         rect: viewport,
@@ -172,11 +196,23 @@ pub fn render(
         }
     }
     display.emit(DrawCommand::PopClip);
+    let painting = started.elapsed();
+    let started = std::time::Instant::now();
     let (display, redraw_after) = display.finish_with_text(
         &mut *application
             .text_service
             .try_borrow_mut()
             .map_err(|_| pixui_error!("text finalization is already active"))?,
     )?;
-    Ok((display, layout, scroll, redraw_after))
+    Ok((
+        display,
+        layout,
+        scroll,
+        redraw_after,
+        super::performance::WorkerTimings {
+            preparation,
+            painting,
+            text: started.elapsed(),
+        },
+    ))
 }

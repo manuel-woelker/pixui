@@ -46,6 +46,9 @@ impl Image {
 }
 
 impl ImageData {
+    pub(crate) fn storage_bytes(&self) -> usize {
+        std::mem::size_of::<Self>() + self.pixels.capacity() * std::mem::size_of::<Color>()
+    }
     pub fn width(&self) -> u32 {
         self.width
     }

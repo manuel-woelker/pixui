@@ -83,6 +83,9 @@ impl GlyphAtlas {
 }
 
 impl GlyphAtlasData {
+    pub(crate) fn storage_bytes(&self) -> usize {
+        std::mem::size_of::<Self>() + self.coverage.capacity()
+    }
     pub fn width(&self) -> u32 {
         self.width
     }

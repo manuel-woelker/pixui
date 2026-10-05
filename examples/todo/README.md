@@ -128,3 +128,7 @@ versions. See [renderer plugins](../../crates/gui/src/renderer/README.md).
 
 Use `--freeze-animation` to fix the shared paint timestamp at zero and stop
 animation redraws, useful for idle CPU comparisons and inspecting still frames.
+
+Press **F11** in either window to toggle its performance overlay: FPS, worker
+and renderer CPU stage timings, and referenced frame memory estimates. Idle FPS
+is zero; refreshing diagnostics does not trigger worker painting.

@@ -82,3 +82,43 @@ rasterization, using an offscreen target. It does not measure worker traversal,
 compositor latency, or end-to-end GPU execution time. For actual GUI comparisons
 use identical window sizes, DPI, animation rates, and release builds. GPU
 drawing does not remove worker preparation or the host's finite mailbox polling.
+
+## Performance overlay
+
+Press **F11** to toggle diagnostics in the focused window. The overlay is drawn
+last, has no hit regions, and works with both built-in renderers. Its font atlas
+uses embedded Geist Mono, is prepared once per DPI scale and reused. Numeric
+values use fixed-width columns with three decimal places for timings. While
+visible, it refreshes at 4 Hz without scheduling worker renders; hiding it stops
+those diagnostic redraws.
+
+FPS counts distinct worker output revisions successfully presented during the
+last second. Diagnostic refreshes, failed submissions, and skipped presentations
+do not increase it. An idle application therefore shows zero FPS. Timings show
+the latest presented application frame, so they can differ in age from the FPS
+window. The overlay shows these CPU stages:
+
+- **Prepare:** component validation, expression evaluation, state updates,
+  props preparation and fixed-row geometry.
+- **Paint:** painter calls and shared display list construction.
+- **Text / finalize:** glyph batching, atlas creation, resource indexing and
+  command validation.
+- **Acquire / validate:** renderer validation and GPU surface acquisition.
+- **Resources / upload:** GPU texture conversion and upload recording; zero
+  for the software backend.
+- **Draw / rasterize:** GPU command translation or software pixel rendering.
+- **Submit / present:** GPU encoding, queue submission, presentation and cache
+  cleanup; software surface resize, buffer acquisition, copying and
+  presentation.
+
+GPU numbers measure CPU work and may include surface waits. They do not measure
+GPU execution or compositor latency. Custom renderers can expose timings through
+`Renderer::timings`; otherwise the overlay reports them unavailable.
+
+Memory figures estimate the current application's display list storage,
+referenced RGB image allocations, and font metadata plus glyph coverage atlases.
+Repeated snapshot handles and shared atlases are counted once per frame. Vector
+capacities are included; font map storage is estimated from capacity. These are
+not process RSS: allocator/Arc overhead, parsed font faces, worker caches, GPU
+textures and the overlay itself are excluded. Resources shared between windows
+are counted in each window's frame.

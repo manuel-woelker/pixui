@@ -125,4 +125,6 @@ pub struct RenderOutput {
     pub display_list: DisplayList,
     /// Optional scheduling request; no timer is started by headless consumers.
     pub redraw_after: Option<std::time::Duration>,
+    /// CPU work for this output, excluding queue waiting.
+    pub timings: super::performance::WorkerTimings,
 }

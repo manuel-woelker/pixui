@@ -224,7 +224,7 @@ impl UiRegistry {
                 instance.error = Some("render revision exhausted".into());
                 continue;
             };
-            let result = renderer::render(
+            let result = renderer::render_measured(
                 &self.definitions[&instance.definition].template,
                 &mut instance.state,
                 application,
@@ -234,7 +234,7 @@ impl UiRegistry {
                 instance.hover,
             );
             match result {
-                Ok((display_list, mut layout, scroll, redraw_after)) => {
+                Ok((display_list, mut layout, scroll, redraw_after, timings)) => {
                     // Visual-only redraws retain their existing action targets.
                     // Older presented revisions remain usable while geometry and
                     // content identity are unchanged, avoiding animated click races.
@@ -264,6 +264,7 @@ impl UiRegistry {
                         revision: instance.revision,
                         display_list,
                         redraw_after,
+                        timings,
                     });
                 }
                 Err(error) => instance.error = Some(format!("{error:?}")),

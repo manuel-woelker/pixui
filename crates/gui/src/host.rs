@@ -52,6 +52,7 @@ struct NativeWindow {
     output: Option<RenderOutput>,
     pointer: Point,
     redraw: RedrawSchedule,
+    overlay: crate::performance_overlay::PerformanceOverlay,
 }
 
 impl NativeWindow {
@@ -81,13 +82,36 @@ impl NativeWindow {
             return Ok(());
         };
         let size = self.window.inner_size();
+        let overlay_display = if self.overlay.visible {
+            Some(self.overlay.append(
+                &output.display_list,
+                output.timings,
+                self.settings.scale_factor,
+                Instant::now(),
+            )?)
+        } else {
+            None
+        };
         self.presentation.draw(
-            &output.display_list,
+            overlay_display.as_ref().unwrap_or(&output.display_list),
             output.revision,
             size.width,
             size.height,
             self.settings.scale_factor,
-        )
+        )?;
+        if self.presentation.retry.is_none()
+            && self.presentation.revision == Some(output.revision)
+            && size.width > 0
+            && size.height > 0
+            && self.presentation.active
+        {
+            self.overlay.presented(
+                output.revision,
+                self.presentation.renderer.timings(),
+                Instant::now(),
+            );
+        }
+        Ok(())
     }
 }
 
@@ -137,6 +161,7 @@ impl ApplicationHandler for Host {
                     output: None,
                     pointer: Point::default(),
                     redraw: RedrawSchedule::default(),
+                    overlay: Default::default(),
                 };
                 self.pending.push(native.presentation())?;
                 self.windows.insert(native.window.id(), native);
@@ -211,6 +236,11 @@ impl ApplicationHandler for Host {
                 if event.state == ElementState::Pressed && !event.repeat =>
             {
                 match event.logical_key {
+                    Key::Named(NamedKey::F11) => {
+                        native.overlay.toggle();
+                        native.window.request_redraw();
+                        None
+                    }
                     Key::Named(NamedKey::Tab) => native.input(UiInput::FocusNext),
                     Key::Named(NamedKey::Enter | NamedKey::Space) => {
                         native.input(UiInput::ActivateFocused)
@@ -264,6 +294,15 @@ impl ApplicationHandler for Host {
         }
         let now = Instant::now();
         for native in self.windows.values_mut() {
+            if native.presentation.active
+                && native
+                    .overlay
+                    .refresh
+                    .is_some_and(|deadline| deadline <= now)
+            {
+                native.overlay.refresh = None;
+                native.window.request_redraw();
+            }
             if native.presentation.active
                 && native
                     .presentation

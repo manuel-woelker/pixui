@@ -7,6 +7,7 @@ pub mod image;
 pub mod input;
 pub mod instance;
 pub mod mailbox;
+pub mod performance;
 pub mod presentation;
 pub mod registry;
 pub(crate) mod render_clock;

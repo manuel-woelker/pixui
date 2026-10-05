@@ -13,6 +13,16 @@ pub enum RenderOutcome {
     Skipped,
 }
 
+/// Last successful frame's CPU timings; submission is not GPU execution time.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct RendererTimings {
+    pub acquisition: std::time::Duration,
+    /// Resource conversion, texture allocation and upload recording.
+    pub resources: std::time::Duration,
+    pub drawing: std::time::Duration,
+    pub submission: std::time::Duration,
+}
+
 /// Executes immutable display lists and owns one window's presentation resources.
 /// Renderers need not be Send. Coordinates are logical pixels; dimensions are
 /// physical pixels. Suspend must release native surfaces. Render must validate
@@ -20,6 +30,10 @@ pub enum RenderOutcome {
 pub trait Renderer {
     fn resize(&mut self, width: u32, height: u32, scale: f32) -> PixuiResult<()>;
     fn render(&mut self, display: &DisplayList) -> PixuiResult<RenderOutcome>;
+    /// Optional CPU diagnostics. Custom renderers can leave this unavailable.
+    fn timings(&self) -> Option<RendererTimings> {
+        None
+    }
     fn suspend(&mut self);
     fn resume(&mut self) -> PixuiResult<()>;
 }

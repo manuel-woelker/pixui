@@ -15,6 +15,10 @@ pub struct FontFace(pub(crate) Resource<Rasterizer>);
 /// download. The executable never needs a cache path or runtime font files.
 pub const GEIST_REGULAR_TTF: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/Geist-Regular.ttf"));
 
+/// Embedded monospace face from the same pinned Geist download.
+pub const GEIST_MONO_REGULAR_TTF: &[u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/GeistMono-Regular.ttf"));
+
 impl FontFace {
     /// Parses a static TTF/OTF face. Collection indices are validated by fontdue.
     /// Variable axes, shaping, kerning, and system fallback are not supported.
@@ -32,6 +36,16 @@ impl FontFace {
         })
         .clone()
         .map_err(|error| pixui_error!("loading Geist: {error}"))
+    }
+
+    /// Embedded Geist Mono Regular, suitable for aligned diagnostic columns.
+    pub fn geist_mono() -> PixuiResult<Self> {
+        static FACE: OnceLock<Result<FontFace, String>> = OnceLock::new();
+        FACE.get_or_init(|| {
+            Self::from_bytes(GEIST_MONO_REGULAR_TTF, 0).map_err(|error| error.to_string())
+        })
+        .clone()
+        .map_err(|error| pixui_error!("loading Geist Mono: {error}"))
     }
 
     pub(crate) fn identity(&self) -> ResourceIdentity<Rasterizer> {

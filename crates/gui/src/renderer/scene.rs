@@ -21,6 +21,7 @@ pub struct CacheStats {
 
 pub(crate) struct Scene {
     pub canvas: Canvas<WGPURenderer>,
+    pub resource_time: std::time::Duration,
     images: TextureCache<ImageData>,
     fonts: TextureCache<FontResource>,
     frame: u64,
@@ -57,6 +58,7 @@ impl Scene {
             .map_err(|e| pixui_error!("create femtovg canvas: {e}"))?;
         Ok(Self {
             canvas,
+            resource_time: std::time::Duration::ZERO,
             images: Default::default(),
             fonts: Default::default(),
             frame: 0,
@@ -88,6 +90,7 @@ impl Scene {
         scale: f32,
     ) -> PixuiResult<()> {
         display.validate()?;
+        let started = std::time::Instant::now();
         self.frame = self.frame.wrapping_add(1);
         // Complete all uploads before recording commands, so upload errors do not
         // leave a partially recorded frame in the canvas.
@@ -147,6 +150,7 @@ impl Scene {
                 self.fonts.insert(font, id, coverage.len(), self.frame);
             }
         }
+        self.resource_time = started.elapsed();
         self.canvas.set_size(width, height, 1.0);
         self.canvas.reset();
         self.canvas

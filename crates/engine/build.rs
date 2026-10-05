@@ -18,10 +18,18 @@ fn main() {
         },
         PathBuf::from,
     );
-    let source = directory.join("fonts/Geist/ttf/Geist-Regular.ttf");
-    println!("cargo:rerun-if-changed={}", source.display());
     let output = PathBuf::from(env::var_os("OUT_DIR").expect("Cargo sets output directory"));
-    fs::copy(&source, output.join("Geist-Regular.ttf")).unwrap_or_else(|error| {
-        panic!("Cannot embed Geist from {}: {error}. Download the pinned font through tool-tool (run ./t cargo check from the repository root), then retry. PIXUI_GEIST_DIRECTORY may optionally override its cache directory.", source.display())
-    });
+    for (relative, filename) in [
+        ("fonts/Geist/ttf/Geist-Regular.ttf", "Geist-Regular.ttf"),
+        (
+            "fonts/GeistMono/ttf/GeistMono-Regular.ttf",
+            "GeistMono-Regular.ttf",
+        ),
+    ] {
+        let source = directory.join(relative);
+        println!("cargo:rerun-if-changed={}", source.display());
+        fs::copy(&source, output.join(filename)).unwrap_or_else(|error| {
+            panic!("Cannot embed {filename} from {}: {error}. Download the pinned font through tool-tool (run ./t cargo check from the repository root), then retry. PIXUI_GEIST_DIRECTORY may optionally override its cache directory.", source.display())
+        });
+    }
 }

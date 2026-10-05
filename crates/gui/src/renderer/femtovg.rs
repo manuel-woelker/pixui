@@ -1,6 +1,6 @@
 //! GPU window renderer using femtovg and the worker's immutable image/text resources.
 use super::{
-    contract::{RenderOutcome, Renderer},
+    contract::{RenderOutcome, Renderer, RendererTimings},
     gpu::Gpu,
     scene::{DEFAULT_CACHE_BYTES, Scene},
 };
@@ -20,6 +20,7 @@ pub struct FemtovgRenderer {
     width: u32,
     height: u32,
     scale: f32,
+    timings: RendererTimings,
 }
 impl FemtovgRenderer {
     /// Creates an independent GPU device for this renderer. Built-in factories
@@ -47,6 +48,7 @@ impl FemtovgRenderer {
             width: 0,
             height: 0,
             scale: 1.0,
+            timings: RendererTimings::default(),
         };
         result.configure()?;
         Ok(result)
@@ -99,6 +101,7 @@ impl Renderer for FemtovgRenderer {
         Ok(())
     }
     fn render(&mut self, display: &DisplayList) -> PixuiResult<RenderOutcome> {
+        let started = std::time::Instant::now();
         display.validate()?;
         self.gpu.check()?;
         if self.config.is_none() || self.surface.is_none() {
@@ -117,8 +120,13 @@ impl Renderer for FemtovgRenderer {
             }
             other => return Err(pixui_error!("acquire GPU surface: {other:?}")),
         };
+        let acquisition = started.elapsed();
+        let started = std::time::Instant::now();
         self.scene
             .prepare(display, self.width, self.height, self.scale)?;
+        let resources = self.scene.resource_time;
+        let drawing = started.elapsed().saturating_sub(resources);
+        let started = std::time::Instant::now();
         let output = femtovg::renderer::WGPURenderOutput {
             view: texture.texture.create_view(&Default::default()),
             width: self.width,
@@ -130,7 +138,16 @@ impl Renderer for FemtovgRenderer {
         self.gpu.check()?;
         self.gpu.queue.present(texture);
         self.scene.trim();
+        self.timings = RendererTimings {
+            acquisition,
+            resources,
+            drawing,
+            submission: started.elapsed(),
+        };
         Ok(RenderOutcome::Presented)
+    }
+    fn timings(&self) -> Option<RendererTimings> {
+        Some(self.timings)
     }
     fn suspend(&mut self) {
         self.surface = None;
