@@ -31,6 +31,8 @@ The resolver is an ordinary function taking `&ExpressionContext` and
 once per physical component per render. `ComponentPart::typed_with_update`
 additionally accepts a function taking `&Props` and `&mut State`, returning
 `PixuiResult<()>`. Updates run once after resolving props and before painting.
+All components finish preparation before any painter runs; physical state is
+then reborrowed in tree order without another expression walk or state cloning.
 
 `ComponentId<C>` contains a registry identity and append-only index. It is
 copyable without placing extra bounds on `C`. Component names and concrete types
@@ -62,9 +64,11 @@ component.
 
 Draw relative to `(0, 0)`. Every component currently receives 36 logical pixels
 of height and the viewport width minus 32 pixels of outer padding, clamped to
-zero. Rows have 8 pixels of spacing. The renderer translates commands after
-clamping scrolling and clips each component and the viewport. There is no
-measurement or general layout API; oversized content is clipped.
+zero. Rows have 8 pixels of spacing. The renderer clamps scrolling after
+preparation. Paint contexts translate commands as they enter the shared builder
+and enforce local clip balance; the renderer clips each component and the
+viewport. There is no measurement or general layout API; oversized content is
+clipped.
 
 Painting must preserve interaction and should be deterministic for its inputs.
 Use the separate update callback for local transitions. Attach actions through
@@ -79,3 +83,6 @@ customizing a standard component does not require modifying the renderer.
 Rendering errors discard partial commands and geometry and preserve the last
 published revision. Initialization and updates already executed are not rolled
 back. Panics follow the application worker's panic policy.
+
+See the [image and animation guide](../ui/Images.md) for snapshot ownership,
+color-key transparency, and painter-requested redraw scheduling.

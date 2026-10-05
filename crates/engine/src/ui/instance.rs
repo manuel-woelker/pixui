@@ -25,7 +25,8 @@ pub struct LayoutState {
 }
 
 /// All geometry and interaction live on the application worker. Layout belongs
-/// to `revision`; stale discrete input is rejected and old motion is discarded. Focus and hover are
+/// to `revision`; visual redraws preserve compatible presented input revisions.
+/// Stale discrete input is rejected and old motion is discarded. Focus and hover are
 /// cleared when content is invalidated because loop reconciliation is positional.
 pub struct UiInstance {
     pub(crate) definition: UiDefinitionId,
@@ -33,6 +34,8 @@ pub struct UiInstance {
     pub(crate) settings: PresentationSettings,
     pub(crate) layout: LayoutState,
     pub(crate) revision: RenderRevision,
+    pub(crate) compatible_revision: RenderRevision,
+    pub(crate) redraw_only: bool,
     pub(crate) focus: Option<usize>,
     pub(crate) hover: Option<usize>,
     pub(crate) scroll: f32,

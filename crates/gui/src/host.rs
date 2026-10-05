@@ -2,7 +2,7 @@
 //! The application worker owns UI state; this host retains only complete outputs,
 //! native resources, and a finite nonblocking event retry queue.
 
-use super::{painter, pending_input::PendingInput};
+use super::{painter, pending_input::PendingInput, redraw_schedule::RedrawSchedule};
 use crossbeam_channel::TryRecvError;
 use pixui_base::{PixuiResult, pixui_error};
 use pixui_engine::{
@@ -49,6 +49,7 @@ struct NativeWindow {
     output: Option<RenderOutput>,
     presented: Option<Presented>,
     pointer: Point,
+    redraw: RedrawSchedule,
 }
 
 /// Input is tagged with the revision actually painted, rather than a newer
@@ -169,6 +170,7 @@ impl ApplicationHandler for Host {
                     output: None,
                     presented: None,
                     pointer: Point::default(),
+                    redraw: RedrawSchedule::default(),
                 };
                 native.surface()?;
                 self.pending.push(native.presentation())?;
@@ -191,6 +193,7 @@ impl ApplicationHandler for Host {
         for native in self.windows.values_mut() {
             native.surface = None;
             native.presented = None;
+            native.redraw.cancel();
         }
     }
 
@@ -282,6 +285,7 @@ impl ApplicationHandler for Host {
                         .as_ref()
                         .is_none_or(|previous| output.revision > previous.revision)
                     {
+                        native.redraw.received(Instant::now(), output.redraw_after);
                         native.output = Some(output);
                         native.window.request_redraw();
                     }
@@ -293,14 +297,35 @@ impl ApplicationHandler for Host {
                 }
             }
         }
+        let now = Instant::now();
+        for native in self.windows.values_mut() {
+            if native.surface.is_some()
+                && native.redraw.take_due(now)
+                && let Err(error) = self.pending.push(UiCommand::Redraw {
+                    instance: native.instance,
+                })
+            {
+                self.fail(event_loop, error);
+                return;
+            }
+        }
+        if let Err(error) = self.pending.flush(&self.application) {
+            self.fail(event_loop, error);
+            return;
+        }
         if self.windows.is_empty() && self.specifications.is_empty() && self.pending.is_empty() {
             event_loop.exit();
         } else {
             // A finite polling interval avoids a forwarding thread per window.
             // Native input still wakes the loop immediately.
-            event_loop.set_control_flow(ControlFlow::WaitUntil(
-                Instant::now() + Duration::from_millis(16),
-            ));
+            let poll = Instant::now() + Duration::from_millis(16);
+            let deadline = self
+                .windows
+                .values()
+                .filter_map(|native| native.redraw.deadline())
+                .min()
+                .map_or(poll, |deadline| deadline.min(poll));
+            event_loop.set_control_flow(ControlFlow::WaitUntil(deadline));
         }
     }
 }

@@ -1,7 +1,9 @@
 //! Owned, backend-independent drawing commands in painting order.
 
 use super::{
+    display_list_builder::ImageIndex,
     geometry::{Point, Rect},
+    image::Image,
     instance::UiInstanceId,
 };
 use pixui_base::{PixuiResult, pixui_error};
@@ -35,6 +37,10 @@ pub enum DrawCommand {
         size: f32,
         color: Color,
     },
+    DrawImage {
+        image: ImageIndex,
+        destination: Rect,
+    },
     PushClip {
         rect: Rect,
     },
@@ -43,6 +49,7 @@ pub enum DrawCommand {
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct DisplayList {
+    pub images: Vec<Image>,
     pub commands: Vec<DrawCommand>,
 }
 
@@ -54,6 +61,9 @@ impl DisplayList {
             match command {
                 DrawCommand::FillRect { rect, .. }
                 | DrawCommand::StrokeRect { rect, .. }
+                | DrawCommand::DrawImage {
+                    destination: rect, ..
+                }
                 | DrawCommand::PushClip { rect }
                     if ![rect.x, rect.y, rect.width, rect.height]
                         .iter()
@@ -66,6 +76,9 @@ impl DisplayList {
                 _ => {}
             }
             match command {
+                DrawCommand::DrawImage { image, .. } if image.0 >= self.images.len() => {
+                    return Err(pixui_error!("image index outside display list table"));
+                }
                 DrawCommand::PushClip { .. } => depth += 1,
                 DrawCommand::PopClip => {
                     depth = depth
@@ -103,4 +116,6 @@ pub struct RenderOutput {
     pub instance_id: UiInstanceId,
     pub revision: RenderRevision,
     pub display_list: DisplayList,
+    /// Optional scheduling request; no timer is started by headless consumers.
+    pub redraw_after: Option<std::time::Duration>,
 }

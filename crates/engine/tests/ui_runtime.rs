@@ -511,3 +511,42 @@ fn definition_registration_and_owned_sendable_boundary_are_explicit() {
     );
     app.ui_command(UiCommand::Close { instance: id }).unwrap();
 }
+
+#[test]
+fn visual_redraws_preserve_targets_and_do_not_starve_presented_clicks() {
+    let (app, actions, definition) = setup(128);
+    actions.add("one").unwrap();
+    let (id, receiver) = app
+        .create_ui(definition, PresentationSettings::default())
+        .unwrap();
+    let initial = output(&receiver);
+    let ids = state_ids(&app, id);
+    app.ui_command(UiCommand::Input {
+        instance: id,
+        revision: initial.revision,
+        input: UiInput::FocusNext,
+    })
+    .unwrap();
+    let focused = output(&receiver);
+    for _ in 0..3 {
+        app.ui_command(UiCommand::Redraw { instance: id }).unwrap();
+        let redrawn = output(&receiver);
+        assert!(redrawn.revision > focused.revision);
+        assert_eq!(redrawn.display_list, focused.display_list);
+    }
+    assert_eq!(state_ids(&app, id), ids);
+    // This revision was actually displayed before several visual redraws.
+    app.ui_command(UiCommand::Input {
+        instance: id,
+        revision: focused.revision,
+        input: UiInput::ActivateFocused,
+    })
+    .unwrap();
+    let marked = output(&receiver);
+    assert!(marked.display_list.commands.iter().any(
+        |command| matches!(command, DrawCommand::DrawText { text, .. } if text.contains("[x]"))
+    ));
+    assert!(click(&app, &focused).is_err()); // A content change invalidated it.
+    app.ui_command(UiCommand::Close { instance: id }).unwrap();
+    assert!(app.ui_command(UiCommand::Redraw { instance: id }).is_err());
+}

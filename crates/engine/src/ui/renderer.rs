@@ -1,43 +1,41 @@
-//! Fixed-height component painting. There is no measurement or general layout API.
+//! Prepare once, then paint into one shared builder at final fixed-row positions.
 
 use super::{
     activation::ActionBinding,
     display_list::{DisplayList, DrawCommand},
+    display_list_builder::DisplayListBuilder,
     geometry::{Point, Rect},
     instance::{HitRegion, LayoutState},
     presentation::PresentationSettings,
 };
 use crate::{
     application::app::Application,
+    component_registry::component_id::ComponentAddress,
     expression::context::ExpressionContext,
     live_model::{
         part::LivePart,
-        state::{LiveState, PartState},
+        state::{GenericComponentState, LiveState, PartState},
         walk::{Visitor, WalkEntry, walk},
     },
     painters::{palette::Palette, registry::PaintInput},
 };
 use pixui_base::{PixuiResult, pixui_error};
+use std::{any::Any, time::Duration};
 
 pub const COMPONENT_HEIGHT: f32 = 36.0;
 const PADDING: f32 = 16.0;
 const SPACING: f32 = 8.0;
 
-struct PaintedComponent {
-    display: DisplayList,
+struct PreparedComponent {
+    address: ComponentAddress,
+    props: Box<dyn Any + Send>,
     activate: Option<ActionBinding>,
 }
-struct PaintVisitor<'a> {
-    application: &'a Application,
+struct PrepareVisitor<'a> {
     settings: &'a PresentationSettings,
-    width: f32,
-    focus: Option<usize>,
-    hover: Option<usize>,
-    interactive_count: usize,
-    components: Vec<PaintedComponent>,
+    components: Vec<PreparedComponent>,
 }
-
-impl Visitor for PaintVisitor<'_> {
+impl Visitor for PrepareVisitor<'_> {
     fn visit(&mut self, entry: &mut WalkEntry) -> PixuiResult<()> {
         let LivePart::Component(part) = &*entry.part else {
             return Ok(());
@@ -53,34 +51,19 @@ impl Visitor for PaintVisitor<'_> {
             .activation
             .map(|factory| factory(entry.context, self.settings))
             .transpose()?;
-        let interactive = activate.is_some();
-        let index = self.interactive_count;
-        let display = self.application.painters().paint(
-            binding.address(),
-            self.application.components(),
-            PaintInput {
-                props: props.as_ref(),
-                state: &state.state,
-                settings: self.settings,
-                width: self.width,
-                height: COMPONENT_HEIGHT,
-                focused: interactive && self.focus == Some(index),
-                hovered: interactive && self.hover == Some(index),
-            },
-        )?;
-        if interactive {
-            self.interactive_count += 1;
-        }
-        self.components.push(PaintedComponent { display, activate });
+        self.components.push(PreparedComponent {
+            address: binding.address(),
+            props,
+            activate,
+        });
         Ok(())
     }
 }
 
-/// Prepares props/updates and paints exactly once per physical component. Only
-/// owned local commands and bindings survive traversal. Translation and clipping
-/// are applied after clamping scrolling against the fixed-height content.
-/// Rendering errors publish no partial geometry or commands; state updates are
-/// not rolled back. Legacy components without typed registration remain inert.
+/// Preparing finishes before painting. Resolvers and updates run once per node.
+/// Commands go directly to one shared builder; errors discard it, but do not
+/// roll back updates. Legacy nodes remain inert. The fourth result is the
+/// earliest painter-requested redraw delay for native or headless scheduling.
 pub fn render(
     template: &LivePart,
     state: &mut LiveState,
@@ -89,20 +72,14 @@ pub fn render(
     scroll: f32,
     focus: Option<usize>,
     hover: Option<usize>,
-) -> PixuiResult<(DisplayList, LayoutState, f32)> {
+) -> PixuiResult<(DisplayList, LayoutState, f32, Option<Duration>)> {
     settings.validate()?;
     application
         .components()
         .validate(template, application.painters())?;
     let mut template = template.clone();
-    let width = (settings.viewport.width - 2.0 * PADDING).max(0.0);
-    let mut visitor = PaintVisitor {
-        application,
+    let mut visitor = PrepareVisitor {
         settings,
-        width,
-        focus,
-        hover,
-        interactive_count: 0,
         components: Vec::new(),
     };
     walk(
@@ -111,7 +88,25 @@ pub fn render(
         &ExpressionContext::new(application),
         &mut visitor,
     )?;
+    // Reborrow physical state in the same depth-first order without evaluating
+    // expressions again, cloning state, or keeping borrowed state through updates.
+    let mut states: Vec<&GenericComponentState> = Vec::new();
+    let mut pending = vec![state.root_state()];
+    while let Some(node) = pending.pop() {
+        match node {
+            PartState::Component(state) if state.state.component_address().is_some() => {
+                states.push(&state.state)
+            }
+            PartState::Composite(state) => pending.extend(state.parts.iter().rev()),
+            PartState::ForLoop(state) => pending.extend(state.items.iter().rev()),
+            _ => {}
+        }
+    }
+    if states.len() != visitor.components.len() {
+        return Err(pixui_error!("prepared component state count mismatch"));
+    }
     let count = visitor.components.len();
+    let width = (settings.viewport.width - 2.0 * PADDING).max(0.0);
     let content_height =
         2.0 * PADDING + count as f32 * COMPONENT_HEIGHT + count.saturating_sub(1) as f32 * SPACING;
     let scroll = scroll.clamp(0.0, (content_height - settings.viewport.height).max(0.0));
@@ -121,20 +116,20 @@ pub fn render(
         width: settings.viewport.width,
         height: settings.viewport.height,
     };
-    let mut display = DisplayList {
-        commands: vec![
-            DrawCommand::FillRect {
-                rect: viewport,
-                color: Palette::for_theme(settings.theme).background,
-            },
-            DrawCommand::PushClip { rect: viewport },
-        ],
-    };
+    let mut display = DisplayListBuilder::default();
+    display.emit(DrawCommand::FillRect {
+        rect: viewport,
+        color: Palette::for_theme(settings.theme).background,
+    });
+    display.emit(DrawCommand::PushClip { rect: viewport });
     let mut layout = LayoutState {
         content_height,
         ..Default::default()
     };
-    for (index, component) in visitor.components.into_iter().enumerate() {
+    for (index, (component, state)) in visitor.components.into_iter().zip(states).enumerate() {
+        if state.component_address() != Some(component.address) {
+            return Err(pixui_error!("prepared component identity mismatch"));
+        }
         let bounds = Rect {
             x: PADDING,
             y: PADDING + index as f32 * (COMPONENT_HEIGHT + SPACING) - scroll,
@@ -142,19 +137,28 @@ pub fn render(
             height: COMPONENT_HEIGHT,
         };
         layout.component_bounds.push(bounds);
-        display
-            .commands
-            .push(DrawCommand::PushClip { rect: bounds });
-        for command in component.display.commands {
-            display.commands.push(translate(
-                command,
-                Point {
+        display.emit(DrawCommand::PushClip { rect: bounds });
+        let interactive = component.activate.is_some();
+        let interaction_index = layout.hit_regions.len();
+        application.painters().paint(
+            component.address,
+            application.components(),
+            PaintInput {
+                props: component.props.as_ref(),
+                state,
+                settings,
+                width,
+                height: COMPONENT_HEIGHT,
+                focused: interactive && focus == Some(interaction_index),
+                hovered: interactive && hover == Some(interaction_index),
+                origin: Point {
                     x: bounds.x,
                     y: bounds.y,
                 },
-            ));
-        }
-        display.commands.push(DrawCommand::PopClip);
+            },
+            &mut display,
+        )?;
+        display.emit(DrawCommand::PopClip);
         if let Some(activate) = component.activate {
             layout.hit_regions.push(HitRegion {
                 bounds: bounds.intersect(viewport),
@@ -162,52 +166,7 @@ pub fn render(
             });
         }
     }
-    display.commands.push(DrawCommand::PopClip);
-    display.validate()?;
-    Ok((display, layout, scroll))
-}
-
-fn translate(command: DrawCommand, offset: Point) -> DrawCommand {
-    let rect = |mut rect: Rect| {
-        rect.x += offset.x;
-        rect.y += offset.y;
-        rect
-    };
-    match command {
-        DrawCommand::FillRect {
-            rect: bounds,
-            color,
-        } => DrawCommand::FillRect {
-            rect: rect(bounds),
-            color,
-        },
-        DrawCommand::StrokeRect {
-            rect: bounds,
-            color,
-            width,
-        } => DrawCommand::StrokeRect {
-            rect: rect(bounds),
-            color,
-            width,
-        },
-        DrawCommand::PushClip { rect: bounds } => DrawCommand::PushClip { rect: rect(bounds) },
-        DrawCommand::DrawText {
-            mut origin,
-            text,
-            font,
-            size,
-            color,
-        } => {
-            origin.x += offset.x;
-            origin.y += offset.y;
-            DrawCommand::DrawText {
-                origin,
-                text,
-                font,
-                size,
-                color,
-            }
-        }
-        DrawCommand::PopClip => DrawCommand::PopClip,
-    }
+    display.emit(DrawCommand::PopClip);
+    let (display, redraw_after) = display.finish()?;
+    Ok((display, layout, scroll, redraw_after))
 }

@@ -189,10 +189,13 @@ heterogeneous tree to typed callbacks.
 
 `Painter<C>` implementations are registered independently and receive a
 `PaintContext` with immutable props/state, dimensions, settings, focus, and
-hover. Commands use local coordinates. One painter per component per application
-allows different applications to customize the same component type. Explicit
-standard component and painter helpers remain independent. Activation factories
-create action bindings separately, so changing appearance preserves behavior.
+hover. Commands use local coordinates and enter one shared builder through the
+context. All components resolve props and update state before painting; state is
+reborrowed in physical tree order without evaluating expressions again. One
+painter per component per application allows different applications to customize
+the same component type. Explicit standard component and painter helpers remain
+independent. Activation factories create action bindings separately, so changing
+appearance preserves behavior.
 
 The worker paints fixed vertical rows with 36 logical pixels of height, 8 pixels
 of spacing, and 16 pixels of outer padding. Available width is clamped to zero.
@@ -209,16 +212,45 @@ for the lifecycle, constraints, and alternatives.
 
 `RenderOutput` contains the instance ID, monotonic `RenderRevision`, and an
 owned `DisplayList`. Commands paint in order: `FillRect`, `StrokeRect`,
-`DrawText`, `PushClip`, and `PopClip`. Rectangles, glyph sizes, and stroke
-widths use logical pixels. Nested clips intersect and must be balanced. Colors
-are opaque sRGB. Commands contain no reflected application borrows, callbacks,
-or native handles.
+`DrawText`, `DrawImage`, `PushClip`, and `PopClip`. Rectangles, glyph sizes, and
+stroke widths use logical pixels. Nested clips intersect and must be balanced.
+Colors are opaque sRGB. Commands contain no reflected application borrows,
+callbacks, or native handles. `DrawImage` uses an index into the display list's
+image table. Each immutable RGB snapshot shares pixels through `Arc`; the
+builder deduplicates snapshot identity and discards its reverse lookup on
+completion. Color-key transparency skips matching source pixels, and images use
+nearest-neighbor sampling. Retained outputs keep their exact image versions
+without upload history.
 
 Both threads use the same embedded 8-by-8 bitmap glyphs and fixed-cell metrics.
 The painter applies the native scale factor and produces softbuffer-compatible
 pixels. Basic Latin and Latin extensions support the English/German example;
 unknown characters use a fallback glyph. Complex shaping, bidi, font selection,
 and a general localization system are not implemented.
+
+### Images and animation
+
+Runtime code constructs an `Image` from dimensions, RGB pixels, and an optional
+transparent color. Replacement creates a new snapshot, leaving old output
+unchanged. Painters insert images directly into the shared builder with local
+rectangles; commands carry table indices. This avoids copying unchanged source
+pixels while retaining full-frame CPU drawing costs.
+
+A painter can request a redraw delay. The native host uses one deadline per
+window and the existing bounded retry queue. Each deadline is consumed until a
+new output arrives; a failed render or output without a request stops
+scheduling. Closing and suspension cancel pending deadlines. A visual redraw
+preserves focus, hover, scrolling, and existing bindings while geometry matches;
+compatible older presented revisions remain usable for clicks. Content changes
+still reject stale input. This avoids animation starving actions between worker
+publication and native presentation.
+
+The todo GUI includes an `OrbitingComets` custom component. Its painter
+generates a fresh small transparent image each frame, using elapsed time rather
+than a paint counter. Both themed windows retain independent start state.
+
+See the [image guide](../crates/engine/src/ui/Images.md) and
+[DR-006](<decisions/DR-006 Share immutable images in indexed display lists.md>).
 
 ### Updates and communication
 
@@ -241,14 +273,15 @@ replies. Adjacent pointer-motion or presentation updates can be coalesced;
 discrete commands keep their order. Overflow or worker disconnection reports a
 host error rather than silently losing an activation.
 
-Input identifies its instance and the revision actually painted by the GUI.
-The worker performs hit testing against its corresponding geometry and builds
-an owned action call from the target binding. Exact revision matching rejects
-stale discrete events; superseded pointer motion is discarded. Pending content,
-settings, or scroll changes also invalidate old
-geometry. Hover or focus painting does not invalidate geometry within a command
-batch. Item bindings capture checked opaque references, so a deleted item cannot
-silently resolve to a replacement arena slot.
+Input identifies its instance and the revision actually painted by the GUI. The
+worker performs hit testing against its corresponding geometry and builds an
+owned action call from the target binding. Revision matching rejects stale
+discrete events; visual-only redraws permit older revisions in the same
+compatible geometry sequence. Superseded pointer motion is discarded. Pending
+content, settings, or scroll changes also invalidate old geometry. Hover or
+focus painting does not invalidate geometry within a command batch. Item
+bindings capture checked opaque references, so a deleted item cannot silently
+resolve to a replacement arena slot.
 
 A rendering failure publishes no partial output. The previous successful
 output and geometry remain; details are inspectable through

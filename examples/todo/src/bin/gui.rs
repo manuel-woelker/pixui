@@ -32,7 +32,11 @@ fn main() -> PixuiResult<()> {
     } else {
         application.register_standard_painters()?;
     }
-    let definition = application.register_ui(gui_ui::definition(&application, components)?)?;
+    let definition = application.register_ui(gui_ui::definition(
+        &application,
+        components,
+        pixui_example_todo::orbiting_comets::register(&application)?,
+    )?)?;
     let mut windows = Vec::new();
     for (title, theme, locale, width, height) in [
         ("Todos - English / light", Theme::Light, "en", 640.0, 480.0),

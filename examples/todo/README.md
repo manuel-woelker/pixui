@@ -101,3 +101,18 @@ Try an alternative button appearance without changing component behavior:
 `custom_button_painter.rs` composes the standard painter with an accent strip.
 The application chooses this painter instead of the standard button painter;
 label and checkbox painters remain separately registered.
+
+### Animated image component
+
+The same GUI includes `OrbitingComets`, defined in `orbiting_comets.rs`. Its
+custom painter manually generates a fresh 96 by 32 RGB snapshot on each worker
+render: cyan and orange comets orbit with shrinking, dithered tails. Reserved
+magenta pixels are transparent, revealing the row background in both themes.
+
+State initializes with a start time through `Default`. Painting derives phase
+from elapsed time and requests another render after 33 ms. The GUI schedules at
+most one outstanding request per window; animation keeps focus and hover and
+permits clicks on compatible presented frames. Pixels are immutable and shared
+through each display list's indexed image table. New frames release old versions
+when outputs are dropped. The ordinary GUI command and `--custom-painter` both
+include this component; no extra binary or image asset is needed.

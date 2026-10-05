@@ -1,9 +1,13 @@
 //! Typed component props and action bindings for the native todo example.
 
-use crate::todo::TodoItem;
+use crate::{
+    orbiting_comets::{self, OrbitingComets},
+    todo::TodoItem,
+};
 use pixui_base::{PixuiResult, pixui_error};
 use pixui_engine::{
     application::application_handle::ApplicationHandle,
+    component_registry::component_id::ComponentId,
     components::{button::ButtonProps, checkbox::CheckboxProps, label::LabelProps},
     expression::{context::ExpressionContext, expression::Expression},
     live_model::part::{ComponentPart, CompositePart, ForLoopPart, LivePart},
@@ -14,6 +18,7 @@ use pixui_engine::{
 pub fn definition(
     application: &ApplicationHandle,
     components: StandardComponents,
+    comets: ComponentId<OrbitingComets>,
 ) -> PixuiResult<UiDefinition> {
     let todos = application.collection_key("todo", "todos")?;
     Ok(UiDefinition::new(
@@ -24,6 +29,7 @@ pub fn definition(
                 LivePart::Component(
                     ComponentPart::typed(components.button, add_button).with_activation(add_action),
                 ),
+                LivePart::Component(ComponentPart::typed(comets, orbiting_comets::props)),
                 LivePart::ForLoop(ForLoopPart {
                     expression: Expression::from_collection(todos),
                     body: Box::new(LivePart::Component(
@@ -138,6 +144,62 @@ mod tests {
     use std::time::Duration;
 
     #[test]
+    fn animation_replaces_snapshots_without_invalidating_presented_actions() {
+        let app = Application::new();
+        app.add_slice(create_slice().unwrap()).unwrap();
+        let components = app.register_standard_components().unwrap();
+        app.register_standard_painters().unwrap();
+        let comets = crate::orbiting_comets::register(&app).unwrap();
+        let definition = app
+            .register_ui(definition(&app, components, comets).unwrap())
+            .unwrap();
+        let (instance, outputs) = app
+            .create_ui(definition, PresentationSettings::default())
+            .unwrap();
+        let initial = outputs.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert_eq!(initial.redraw_after, Some(Duration::from_millis(33)));
+        assert_eq!(initial.display_list.images.len(), 1);
+        let pixels = initial.display_list.images[0].pixels().to_vec();
+        for _ in 0..3 {
+            app.ui_command(UiCommand::Redraw { instance }).unwrap();
+            // Leave the mailbox unread while newer outputs replace pending ones.
+            app.inspect(|_| Ok(())).unwrap();
+        }
+        let latest = outputs.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert!(latest.revision.0 >= initial.revision.0 + 3);
+        assert_ne!(
+            latest.display_list.images[0],
+            initial.display_list.images[0]
+        );
+        assert_eq!(initial.display_list.images[0].pixels(), pixels);
+        let point = app
+            .inspect(move |app| {
+                let bounds = app.uis().instance(instance)?.layout().hit_regions[0].bounds;
+                Ok(Point {
+                    x: bounds.x + 1.0,
+                    y: bounds.y + 1.0,
+                })
+            })
+            .unwrap();
+        app.ui_command(UiCommand::Input {
+            instance,
+            revision: initial.revision,
+            input: UiInput::Activate(point),
+        })
+        .unwrap();
+        let added = outputs.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert!(added.display_list.commands.iter().any(|command| matches!(command, DrawCommand::DrawText { text, .. } if text.contains("New todo"))));
+        assert!(
+            app.ui_command(UiCommand::Input {
+                instance,
+                revision: initial.revision,
+                input: UiInput::Activate(point)
+            })
+            .is_err()
+        );
+    }
+
+    #[test]
     fn custom_button_painter_preserves_activation_and_changes_appearance() {
         let mut displays = Vec::new();
         for custom in [false, true] {
@@ -161,7 +223,14 @@ mod tests {
                 app.register_standard_painters().unwrap();
             }
             let definition = app
-                .register_ui(definition(&app, components).unwrap())
+                .register_ui(
+                    definition(
+                        &app,
+                        components,
+                        crate::orbiting_comets::register(&app).unwrap(),
+                    )
+                    .unwrap(),
+                )
                 .unwrap();
             let (instance, outputs) = app
                 .create_ui(definition, PresentationSettings::default())
@@ -243,7 +312,14 @@ mod tests {
         let components = application.register_standard_components().unwrap();
         application.register_standard_painters().unwrap();
         let definition = application
-            .register_ui(definition(&application, components).unwrap())
+            .register_ui(
+                definition(
+                    &application,
+                    components,
+                    crate::orbiting_comets::register(&application).unwrap(),
+                )
+                .unwrap(),
+            )
             .unwrap();
         let (light, light_outputs) = application
             .create_ui(definition, PresentationSettings::default())

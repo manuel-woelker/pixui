@@ -18,6 +18,12 @@ pub(crate) struct PendingInput {
 
 impl PendingInput {
     pub fn push(&mut self, command: UiCommand) -> PixuiResult<()> {
+        if matches!(command, UiCommand::Close { .. }) {
+            self.commands.retain(|queued| {
+                !matches!(queued, UiCommand::Redraw { .. })
+                    || queued.instance() != command.instance()
+            });
+        }
         if self
             .commands
             .back()
@@ -128,6 +134,67 @@ mod tests {
                 input: UiInput::Activate(_),
                 ..
             })
+        ));
+    }
+}
+
+#[cfg(test)]
+mod animation_tests {
+    use super::*;
+    use pixui_engine::{
+        application::app::Application,
+        live_model::part::{ComponentPart, LivePart},
+        ui::{definition::UiDefinition, presentation::PresentationSettings},
+    };
+
+    #[test]
+    fn redraws_retry_full_worker_queue_and_close_discards_unsent_ticks() {
+        let app = Application::with_capacity(1);
+        let definition = app
+            .register_ui(UiDefinition::new(
+                "retry",
+                LivePart::Component(ComponentPart::default()),
+            ))
+            .unwrap();
+        let (id, _outputs) = app
+            .create_ui(definition, PresentationSettings::default())
+            .unwrap();
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let worker = app.clone();
+        let blocker = std::thread::spawn(move || {
+            worker
+                .inspect(move |_| {
+                    started_tx.send(()).unwrap();
+                    release_rx.recv().unwrap();
+                    Ok(())
+                })
+                .unwrap()
+        });
+        started_rx.recv().unwrap();
+        let admitted = app
+            .try_ui_command(UiCommand::Redraw { instance: id })
+            .unwrap();
+        let mut pending = PendingInput::default();
+        pending.push(UiCommand::Redraw { instance: id }).unwrap();
+        pending.flush(&app).unwrap();
+        assert_eq!(pending.commands.len(), 1);
+        release_tx.send(()).unwrap();
+        blocker.join().unwrap();
+        admitted.wait().unwrap();
+        pending.flush(&app).unwrap();
+        assert!(pending.commands.is_empty());
+        app.inspect(|_| Ok(())).unwrap();
+        pending.flush(&app).unwrap();
+        assert!(pending.is_empty());
+        pending.push(UiCommand::Redraw { instance: id }).unwrap();
+        pending.push(UiCommand::Redraw { instance: id }).unwrap();
+        assert_eq!(pending.commands.len(), 1);
+        pending.push(UiCommand::Close { instance: id }).unwrap();
+        assert_eq!(pending.commands.len(), 1);
+        assert!(matches!(
+            pending.commands.front(),
+            Some(UiCommand::Close { .. })
         ));
     }
 }

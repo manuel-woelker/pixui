@@ -1,8 +1,8 @@
 # Dynamic image drawing plan
 
-Status: proposed. Shared immutable snapshots, an indexed image table, and direct
-painting into one shared builder are agreed directions. This plan adds an
-animated example and the minimal scheduling needed to exercise it.
+Status: completed. The plan was committed as `975bcf7` before implementation.
+Shared snapshots, an indexed resource table, and direct shared insertion are
+implemented; the animated component is part of the existing todo GUI.
 
 ## Goal
 
@@ -130,8 +130,9 @@ currently depends on the total component count. Refactor into two stages:
 
 1. Walk once, reconcile default state, resolve props once, execute updates once,
    and collect prepared nodes with owned props, component identity, and resolved
-   activation bindings. Retain positional paths into the physical state tree,
-   not component-local command buffers or state clones.
+   activation bindings. Reborrow the physical state tree in depth-first order
+   after preparation, retaining references only for painting. Use no
+   component-local command buffers or state clones.
 2. Calculate fixed content height and clamp scrolling. Reborrow each node's
    state by its path, dispatch its checked painter, and append directly into the
    shared builder at the known origin. All preparation finishes before any
@@ -254,51 +255,51 @@ requests.
 
 ## Implementation checklist
 
-- [ ] Finalize image limits, identity equality, builder API, and clip error
+- [x] Finalize image limits, identity equality, builder API, and clip error
       reporting; document the preparation-before-painting lifecycle.
-- [ ] Implement immutable images, read accessors, cheap clones, and identity
+- [x] Implement immutable images, read accessors, cheap clones, and identity
       keys.
-- [ ] Add the image table, typed indices, reverse lookup, and consuming builder.
-- [ ] Refactor component preparation and painting to use one shared builder with
+- [x] Add the image table, typed indices, reverse lookup, and consuming builder.
+- [x] Refactor component preparation and painting to use one shared builder with
       correct origins and renderer-owned clipping; remove local command buffers.
-- [ ] Implement `DrawImage`, context helpers, index validation, and
+- [x] Implement `DrawImage`, context helpers, index validation, and
       scaled/clipped nearest-neighbor CPU rasterization.
-- [ ] Add optional redraw requests and bounded per-instance host scheduling that
+- [x] Add optional redraw requests and bounded per-instance host scheduling that
       preserves interaction and stops on closure or absent requests.
-- [ ] Implement and document the custom orbiting-comets component and painter.
-- [ ] Update architecture and component API documentation, plain architecture
+- [x] Implement and document the custom orbiting-comets component and painter.
+- [x] Update architecture and component API documentation, plain architecture
       XML, and a decision record; use the running watcher for the ignored SVG
       preview.
-- [ ] Run `./n check` after each implementation unit.
+- [x] Run `./n check` after each implementation unit.
 
 ## Verification checklist
 
-- [ ] Test invalid dimensions, overflow, pixel count, source limits, and concise
+- [x] Test invalid dimensions, overflow, pixel count, source limits, and concise
       debug output.
-- [ ] Verify shared allocation, image identity deduplication, distinct
+- [x] Verify shared allocation, image identity deduplication, distinct
       equal-pixel snapshots, invalid indices, and reverse-map lifetime through
       builder finish.
-- [ ] Verify old output draws old pixels after replacement; dropping frames and
+- [x] Verify old output draws old pixels after replacement; dropping frames and
       closing windows releases their references. Test resource-independent new
       consumers and skipped intermediate outputs.
-- [ ] Test exact RGB output, color-key transparency over contrasting
+- [x] Test exact RGB output, color-key transparency over contrasting
       backgrounds, command ordering, scales, fractional destinations, clipping,
       translation, up/downsampling, and zero-sized destinations.
-- [ ] Verify preparation and update callbacks run once, state remains
+- [x] Verify preparation and update callbacks run once, state remains
       independent, and shared insertion preserves row positions, scroll
       clamping, and errors.
-- [ ] Test painter clip underflow/unbalanced clips without permitting it to pop
+- [x] Test painter clip underflow/unbalanced clips without permitting it to pop
       a renderer clip. Test failure discards all partial commands and image
       entries.
-- [ ] Test redraw-request minimum and earliest-deadline selection, coalescing,
+- [x] Test redraw-request minimum and earliest-deadline selection, coalescing,
       queue-full retry, stopping requests, window closure, and retained
       focus/hover.
-- [ ] Test animation pixel generation at explicit times: periodic motion,
+- [x] Test animation pixel generation at explicit times: periodic motion,
       changing snapshots, transparent coverage, reserved-color avoidance, and
       source size.
-- [ ] Verify animation revisions retain usable actions and last-good-output
+- [x] Verify animation revisions retain usable actions and last-good-output
       error behavior; reuse existing GUI scale and clipping tests.
-- [ ] Manually inspect animated light/dark windows, resizing, interaction, and
+- [x] Manually inspect animated light/dark windows, resizing, interaction, and
       closure without animation requests leaking after shutdown.
 
 ## Assumptions and limits
@@ -312,3 +313,25 @@ requests.
   memory. Callers may retain old versions indefinitely.
 - Preparing all components before painting is a deliberate lifecycle change;
   existing state and error tests must exercise it before implementation is done.
+
+## Completion evidence
+
+- Immutable images validate metadata, use identity equality, and expose readable
+  pixels without mutable published access. The consuming builder deduplicates
+  snapshots and releases its reverse lookup.
+- Components prepare once, then paint directly into one builder with guarded
+  local clips. Physical state is reborrowed in depth-first order; no paths,
+  state clones, local command lists, or table merges are needed.
+- Image and rasterizer tests cover sharing, lifetime, invalid resources,
+  transparency, placement, scaling, and retained versions. Runtime tests cover
+  compatible visual revisions, stale content input, dropped output, and
+  failures.
+- Scheduler and retry-queue tests cover deadlines, clamping, stop behavior,
+  coalescing, full-queue admission, and canceling unsent ticks on closure.
+- The custom comet painter generates fresh 96 by 32 snapshots in the existing
+  two-window todo GUI. Deterministic pixel tests cover phases and transparency;
+  the user manually verified the running animation and actions.
+- Architecture XML and documentation were updated; SVG generation remains with
+  the user's watcher. DR-006 records the ownership and builder decisions.
+- `./n check` passes after implementation units; the final check also covers the
+  completed plan and public image documentation example.

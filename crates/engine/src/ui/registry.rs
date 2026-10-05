@@ -71,6 +71,8 @@ impl UiRegistry {
                 settings,
                 layout: LayoutState::default(),
                 revision: RenderRevision::default(),
+                compatible_revision: RenderRevision::default(),
+                redraw_only: false,
                 focus: None,
                 hover: None,
                 scroll: 0.0,
@@ -101,6 +103,7 @@ impl UiRegistry {
     pub fn invalidate_all(&mut self) {
         for instance in self.instances.values_mut() {
             instance.dirty = true;
+            instance.redraw_only = false;
             instance.geometry_stale = true;
             instance.focus = None;
             instance.hover = None;
@@ -108,7 +111,8 @@ impl UiRegistry {
     }
 
     /// Resolves an input binding without borrowing the registry during dispatch.
-    /// Discrete input requires an exact revision; stale pointer motion is
+    /// Discrete input requires a compatible revision; visual redraws preserve older
+    /// presented revisions while geometry and targets match. Stale pointer motion is
     /// superseded and discarded. Stale activations return errors, never retarget.
     pub fn command(
         &mut self,
@@ -123,7 +127,16 @@ impl UiRegistry {
             .instances
             .get_mut(&command.instance())
             .ok_or_else(|| pixui_error!("unknown UI instance"))?;
+        if !matches!(command, UiCommand::Redraw { .. }) {
+            instance.redraw_only = false;
+        }
         match command {
+            UiCommand::Redraw { .. } => {
+                if !instance.dirty {
+                    instance.redraw_only = true;
+                }
+                instance.dirty = true;
+            }
             UiCommand::Present { settings, .. } => {
                 settings.validate()?;
                 instance.settings = settings;
@@ -133,7 +146,11 @@ impl UiRegistry {
             UiCommand::Input {
                 revision, input, ..
             } => {
-                if revision != instance.revision || revision.0 == 0 || instance.geometry_stale {
+                if revision < instance.compatible_revision
+                    || revision > instance.revision
+                    || revision.0 == 0
+                    || instance.geometry_stale
+                {
                     if matches!(input, UiInput::PointerMoved(_)) {
                         return Ok(None);
                     }
@@ -217,7 +234,26 @@ impl UiRegistry {
                 instance.hover,
             );
             match result {
-                Ok((display_list, layout, scroll)) => {
+                Ok((display_list, mut layout, scroll, redraw_after)) => {
+                    // Visual-only redraws retain their existing action targets.
+                    // Older presented revisions remain usable while geometry and
+                    // content identity are unchanged, avoiding animated click races.
+                    let same_geometry = layout.component_bounds == instance.layout.component_bounds
+                        && layout
+                            .hit_regions
+                            .iter()
+                            .map(|region| region.bounds)
+                            .eq(instance
+                                .layout
+                                .hit_regions
+                                .iter()
+                                .map(|region| region.bounds));
+                    if instance.redraw_only && !instance.geometry_stale && same_geometry {
+                        layout.hit_regions = std::mem::take(&mut instance.layout.hit_regions);
+                    } else {
+                        instance.compatible_revision = RenderRevision(revision);
+                    }
+                    instance.redraw_only = false;
                     instance.layout = layout;
                     instance.scroll = scroll;
                     instance.revision = RenderRevision(revision);
@@ -227,6 +263,7 @@ impl UiRegistry {
                         instance_id: *id,
                         revision: instance.revision,
                         display_list,
+                        redraw_after,
                     });
                 }
                 Err(error) => instance.error = Some(format!("{error:?}")),

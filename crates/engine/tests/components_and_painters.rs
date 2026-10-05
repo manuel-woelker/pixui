@@ -220,7 +220,7 @@ fn default_state_persists_props_refresh_and_updates_run_once_before_painting() {
         locale: "7".into(),
         ..Default::default()
     };
-    let (first, geometry, _) =
+    let (first, geometry, _, _) =
         renderer::render(&root, &mut live, &app, &settings, 0.0, None, None).unwrap();
     let serial = state(&live).serial;
     assert_eq!(state(&live).updates.get(), 1);
@@ -239,7 +239,7 @@ fn default_state_persists_props_refresh_and_updates_run_once_before_painting() {
         },
         ..Default::default()
     };
-    let (second, _, _) =
+    let (second, _, _, _) =
         renderer::render(&root, &mut live, &app, &settings, 0.0, None, None).unwrap();
     assert_eq!(state(&live).serial, serial);
     assert_eq!(state(&live).updates.get(), 2);
@@ -305,7 +305,7 @@ fn separate_applications_choose_different_painters_and_zero_width_is_valid() {
     let mut app = Application::default();
     let id = app.register_component::<A>("a").unwrap();
     app.register_painter::<A>(painter(Color(1, 2, 3))).unwrap();
-    let (display, geometry, _) = renderer::render(
+    let (display, geometry, _, _) = renderer::render(
         &LivePart::Component(ComponentPart::typed(id, props)),
         &mut LiveState::new(),
         &app,
@@ -336,7 +336,7 @@ fn fixed_rows_translate_in_order_and_scrolling_is_clamped() {
             LivePart::Component(ComponentPart::typed(id, props)),
         ],
     });
-    let (display, geometry, _) = renderer::render(
+    let (display, geometry, _, _) = renderer::render(
         &root,
         &mut LiveState::new(),
         &app,
@@ -362,7 +362,7 @@ fn fixed_rows_translate_in_order_and_scrolling_is_clamped() {
         })
         .collect();
     assert_eq!(origins, [19.0, 63.0]);
-    let (_, geometry, scroll) = renderer::render(
+    let (_, geometry, scroll, _) = renderer::render(
         &root,
         &mut LiveState::new(),
         &app,
@@ -462,4 +462,108 @@ fn failed_updates_stop_rendering_and_non_sync_types_are_supported() {
     assert_send::<State>();
     assert_send::<CustomPainter>();
     assert_send::<ComponentPart>();
+}
+
+#[test]
+fn shared_image_table_spans_multiple_component_painters() {
+    use pixui_engine::ui::{display_list_builder::ImageIndex, image::Image};
+    struct Picture;
+    impl Component for Picture {
+        type Props = ();
+        type State = ();
+    }
+    struct PicturePainter {
+        image: Image,
+    }
+    impl Painter<Picture> for PicturePainter {
+        fn paint(&self, ctx: &mut PaintContext<'_, Picture>) -> PixuiResult<()> {
+            ctx.image(&self.image, ctx.bounds());
+            ctx.image(
+                &self.image,
+                Rect {
+                    x: 2.0,
+                    y: 3.0,
+                    width: 5.0,
+                    height: 6.0,
+                },
+            );
+            Ok(())
+        }
+    }
+    let mut app = Application::default();
+    let id = app.register_component::<Picture>("picture").unwrap();
+    let image = Image::new(1, 1, vec![Color(1, 2, 3)], None).unwrap();
+    app.register_painter::<Picture>(PicturePainter {
+        image: image.clone(),
+    })
+    .unwrap();
+    let root = LivePart::Composite(CompositePart {
+        parts: (0..2)
+            .map(|_| LivePart::Component(ComponentPart::typed(id, |_, _| Ok(()))))
+            .collect(),
+    });
+    let (display, _, _, _) = renderer::render(
+        &root,
+        &mut LiveState::new(),
+        &app,
+        &PresentationSettings::default(),
+        0.0,
+        None,
+        None,
+    )
+    .unwrap();
+    assert_eq!(display.images, vec![image]);
+    let destinations: Vec<_> = display
+        .commands
+        .iter()
+        .filter_map(|command| match command {
+            DrawCommand::DrawImage { image, destination } => {
+                assert_eq!(*image, ImageIndex(0));
+                Some(*destination)
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(destinations.len(), 4);
+    assert_eq!(destinations[1].x, 18.0);
+    assert_eq!(destinations[1].y, 19.0);
+    assert_eq!(destinations[3].y, 63.0);
+}
+
+#[test]
+fn shared_builder_guards_renderer_clips_even_when_painter_tries_to_rebalance() {
+    struct BadClip;
+    impl Component for BadClip {
+        type Props = ();
+        type State = ();
+    }
+    struct BadPainter(bool);
+    impl Painter<BadClip> for BadPainter {
+        fn paint(&self, ctx: &mut PaintContext<'_, BadClip>) -> PixuiResult<()> {
+            if self.0 {
+                ctx.emit(DrawCommand::PopClip);
+            }
+            ctx.emit(DrawCommand::PushClip { rect: ctx.bounds() });
+            Ok(())
+        }
+    }
+    for underflow in [false, true] {
+        let mut app = Application::default();
+        let id = app.register_component::<BadClip>("bad clip").unwrap();
+        app.register_painter::<BadClip>(BadPainter(underflow))
+            .unwrap();
+        let root = LivePart::Component(ComponentPart::typed(id, |_, _| Ok(())));
+        let error = renderer::render(
+            &root,
+            &mut LiveState::new(),
+            &app,
+            &PresentationSettings::default(),
+            0.0,
+            None,
+            None,
+        )
+        .err()
+        .unwrap();
+        assert!(error.to_string().contains("painter clips"));
+    }
 }

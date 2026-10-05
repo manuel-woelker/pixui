@@ -3,7 +3,7 @@
 use pixui_base::{PixuiResult, pixui_error};
 use pixui_engine::ui::{
     display_list::{Color, DisplayList, DrawCommand},
-    geometry::Rect,
+    geometry::{Point, Rect},
     text,
 };
 
@@ -108,6 +108,50 @@ pub fn paint(display: &DisplayList, width: u32, height: u32, scale: f32) -> Pixu
                                     *color,
                                 );
                             }
+                        }
+                    }
+                }
+            }
+            DrawCommand::DrawImage { image, destination } => {
+                let source = &display.images[image.0];
+                let visible = destination.intersect(*canvas.clips.last().expect("viewport clip"));
+                if visible.width <= 0.0 || visible.height <= 0.0 {
+                    continue;
+                }
+                let left = (visible.x * scale).floor().clamp(0.0, width as f32) as u32;
+                let top = (visible.y * scale).floor().clamp(0.0, height as f32) as u32;
+                let right = ((visible.x + visible.width) * scale)
+                    .ceil()
+                    .clamp(0.0, width as f32) as u32;
+                let bottom = ((visible.y + visible.height) * scale)
+                    .ceil()
+                    .clamp(0.0, height as f32) as u32;
+                for y in top..bottom {
+                    for x in left..right {
+                        let logical_x = (x as f32 + 0.5) / scale;
+                        let logical_y = (y as f32 + 0.5) / scale;
+                        if !visible.contains(Point {
+                            x: logical_x,
+                            y: logical_y,
+                        }) {
+                            continue;
+                        }
+                        let sx = (((logical_x - destination.x) / destination.width)
+                            * source.width() as f32)
+                            .floor()
+                            .clamp(0.0, (source.width() - 1) as f32)
+                            as usize;
+                        let sy = (((logical_y - destination.y) / destination.height)
+                            * source.height() as f32)
+                            .floor()
+                            .clamp(0.0, (source.height() - 1) as f32)
+                            as usize;
+                        let color = source.pixels()[sy * source.width() as usize + sx];
+                        if source.transparent_color() != Some(color) {
+                            canvas.pixels[y as usize * width as usize + x as usize] =
+                                (u32::from(color.0) << 16)
+                                    | (u32::from(color.1) << 8)
+                                    | u32::from(color.2);
                         }
                     }
                 }

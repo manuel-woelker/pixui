@@ -7,7 +7,10 @@ use crate::{
         registry::{ComponentDescriptor, ComponentRegistry},
     },
     live_model::{component::Component, state::GenericComponentState},
-    ui::{display_list::DisplayList, presentation::PresentationSettings},
+    ui::{
+        display_list_builder::DisplayListBuilder, geometry::Point,
+        presentation::PresentationSettings,
+    },
 };
 use pixui_base::{PixuiResult, pixui_error};
 use std::any::Any;
@@ -20,10 +23,11 @@ pub(crate) struct PaintInput<'a> {
     pub height: f32,
     pub focused: bool,
     pub hovered: bool,
+    pub origin: Point,
 }
 
 trait ErasedPainter: Send {
-    fn paint(&self, input: PaintInput<'_>) -> PixuiResult<DisplayList>;
+    fn paint(&self, input: PaintInput<'_>, display: &mut DisplayListBuilder) -> PixuiResult<()>;
 }
 
 struct Adapter<C: Component, P: Painter<C>> {
@@ -31,7 +35,7 @@ struct Adapter<C: Component, P: Painter<C>> {
     marker: std::marker::PhantomData<fn() -> C>,
 }
 impl<C: Component, P: Painter<C>> ErasedPainter for Adapter<C, P> {
-    fn paint(&self, input: PaintInput<'_>) -> PixuiResult<DisplayList> {
+    fn paint(&self, input: PaintInput<'_>, display: &mut DisplayListBuilder) -> PixuiResult<()> {
         let props = input.props.downcast_ref::<C::Props>().ok_or_else(|| {
             pixui_error!(
                 "painter props type mismatch for `{}`; expected `{}`",
@@ -46,8 +50,7 @@ impl<C: Component, P: Painter<C>> ErasedPainter for Adapter<C, P> {
                 std::any::type_name::<C::State>()
             )
         })?;
-        let mut display = DisplayList::default();
-        self.painter.paint(&mut PaintContext {
+        let mut context = PaintContext {
             props,
             state,
             settings: input.settings,
@@ -55,10 +58,18 @@ impl<C: Component, P: Painter<C>> ErasedPainter for Adapter<C, P> {
             height: input.height,
             focused: input.focused,
             hovered: input.hovered,
-            display: &mut display,
-        })?;
-        display.validate()?;
-        Ok(display)
+            display,
+            origin: input.origin,
+            clip_depth: 0,
+            clip_error: false,
+        };
+        self.painter.paint(&mut context)?;
+        if context.clip_error || context.clip_depth != 0 {
+            return Err(pixui_error!(
+                "painter clips must balance without popping renderer clips"
+            ));
+        }
+        Ok(())
     }
 }
 
@@ -130,14 +141,15 @@ impl PainterRegistry {
         address: ComponentAddress,
         components: &ComponentRegistry,
         input: PaintInput<'_>,
-    ) -> PixuiResult<DisplayList> {
+        display: &mut DisplayListBuilder,
+    ) -> PixuiResult<()> {
         let descriptor = components.resolve(address)?;
         self.require(address, descriptor)?;
         self.entries[address.index]
             .as_ref()
             .expect("painter checked")
             .1
-            .paint(input)
+            .paint(input, display)
     }
 }
 
@@ -165,15 +177,29 @@ mod tests {
             height: 36.0,
             focused: false,
             hovered: false,
+            origin: Point::default(),
         };
-        let error = adapter.paint(input(&(), &state)).err().unwrap();
+        let error = adapter
+            .paint(input(&(), &state), &mut DisplayListBuilder::default())
+            .err()
+            .unwrap();
         assert!(error.to_string().contains("props type mismatch"));
         let props = ButtonProps {
             label: "Button".into(),
         };
         let wrong_state = GenericComponentState::new(());
-        let error = adapter.paint(input(&props, &wrong_state)).err().unwrap();
+        let error = adapter
+            .paint(
+                input(&props, &wrong_state),
+                &mut DisplayListBuilder::default(),
+            )
+            .err()
+            .unwrap();
         assert!(error.to_string().contains("state type mismatch"));
-        assert!(adapter.paint(input(&props, &state)).is_ok());
+        assert!(
+            adapter
+                .paint(input(&props, &state), &mut DisplayListBuilder::default())
+                .is_ok()
+        );
     }
 }

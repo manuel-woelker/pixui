@@ -50,6 +50,8 @@ Pointer movement, activation, scrolling, focus traversal, and focused activation
 are semantic events. Raw platform key transitions are not exposed.
 
 The worker rejects stale discrete input and discards superseded pointer motion.
+Visual animation redraws retain compatible presented revisions and existing
+bindings while geometry is unchanged; content changes end that compatibility.
 It rejects activation while content, viewport, or scrolling changes make old
 geometry stale. Focus and hover changes within a batch can still use the same
 geometry until a new revision is published. Closing an instance invalidates its
@@ -71,3 +73,7 @@ worker. All thread-boundary values are owned and `Send`.
 
 See [the architecture](../../../../docs/Architecture.md) and
 [the todo GUI](../../../../examples/todo/src/gui_ui.rs) for the complete flow.
+
+Image commands share immutable RGB snapshots through an indexed resource table.
+Painters can request a future visual redraw without invalidating focus or hover.
+See [dynamic images](Images.md) for drawing and scheduling contracts.

@@ -25,6 +25,10 @@ pub enum UiCommand {
         instance: UiInstanceId,
         settings: PresentationSettings,
     },
+    /// Repaint without changing content or positional interaction identity.
+    Redraw {
+        instance: UiInstanceId,
+    },
     Close {
         instance: UiInstanceId,
     },
@@ -35,6 +39,7 @@ impl UiCommand {
         match self {
             Self::Input { instance, .. }
             | Self::Present { instance, .. }
+            | Self::Redraw { instance }
             | Self::Close { instance } => *instance,
         }
     }
@@ -46,6 +51,7 @@ impl UiCommand {
             && matches!(
                 (self, earlier),
                 (Self::Present { .. }, Self::Present { .. })
+                    | (Self::Redraw { .. }, Self::Redraw { .. })
                     | (
                         Self::Input {
                             input: UiInput::PointerMoved(_),

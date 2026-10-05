@@ -3,8 +3,10 @@
 use crate::{
     live_model::component::Component,
     ui::{
-        display_list::{Color, DisplayList, DrawCommand, FontId},
+        display_list::{Color, DrawCommand, FontId},
+        display_list_builder::DisplayListBuilder,
         geometry::{Point, Rect},
+        image::Image,
         presentation::PresentationSettings,
         text,
     },
@@ -19,7 +21,10 @@ pub struct PaintContext<'a, C: Component> {
     pub settings: &'a PresentationSettings,
     pub focused: bool,
     pub hovered: bool,
-    pub(crate) display: &'a mut DisplayList,
+    pub(crate) display: &'a mut DisplayListBuilder,
+    pub(crate) origin: Point,
+    pub(crate) clip_depth: usize,
+    pub(crate) clip_error: bool,
 }
 
 impl<C: Component> PaintContext<'_, C> {
@@ -32,7 +37,63 @@ impl<C: Component> PaintContext<'_, C> {
         }
     }
     pub fn emit(&mut self, command: DrawCommand) {
-        self.display.commands.push(command);
+        let rect = |mut rect: Rect| {
+            rect.x += self.origin.x;
+            rect.y += self.origin.y;
+            rect
+        };
+        let command = match command {
+            DrawCommand::FillRect {
+                rect: bounds,
+                color,
+            } => DrawCommand::FillRect {
+                rect: rect(bounds),
+                color,
+            },
+            DrawCommand::StrokeRect {
+                rect: bounds,
+                color,
+                width,
+            } => DrawCommand::StrokeRect {
+                rect: rect(bounds),
+                color,
+                width,
+            },
+            DrawCommand::DrawText {
+                mut origin,
+                text,
+                font,
+                size,
+                color,
+            } => {
+                origin.x += self.origin.x;
+                origin.y += self.origin.y;
+                DrawCommand::DrawText {
+                    origin,
+                    text,
+                    font,
+                    size,
+                    color,
+                }
+            }
+            DrawCommand::DrawImage { image, destination } => DrawCommand::DrawImage {
+                image,
+                destination: rect(destination),
+            },
+            DrawCommand::PushClip { rect: bounds } => {
+                self.clip_depth += 1;
+                DrawCommand::PushClip { rect: rect(bounds) }
+            }
+            DrawCommand::PopClip => {
+                if self.clip_depth == 0 {
+                    self.clip_error = true;
+                    return;
+                }
+                self.clip_depth -= 1;
+                DrawCommand::PopClip
+            }
+        };
+        self.display.emit(command);
     }
     pub fn fill_rect(&mut self, rect: Rect, color: Color) {
         self.emit(DrawCommand::FillRect { rect, color });
@@ -48,6 +109,15 @@ impl<C: Component> PaintContext<'_, C> {
             size,
             color,
         });
+    }
+    /// Registers the snapshot once in the shared image table and draws locally.
+    pub fn image(&mut self, image: &Image, destination: Rect) {
+        let image = self.display.image_index(image);
+        self.emit(DrawCommand::DrawImage { image, destination });
+    }
+    /// Schedules a future worker render; does not mutate component state.
+    pub fn request_redraw_after(&mut self, delay: std::time::Duration) {
+        self.display.request_redraw_after(delay);
     }
     pub fn line_height(&self, size: f32) -> f32 {
         text::line_height(size)
