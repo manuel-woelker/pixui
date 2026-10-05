@@ -109,8 +109,14 @@ pub fn frame(phase: f32, cyan: Color, orange: Color) -> PixuiResult<Image> {
         for tail in (0..10).rev() {
             let (cx, cy) = position(angle - tail as f32 * 0.14);
             let radius = 3.0 - tail as f32 * 0.22;
-            for y in 0..HEIGHT {
-                for x in 0..WIDTH {
+            // Only pixels inside this small box can belong to the dot. Scanning
+            // the full image for every tail segment dominated frame generation.
+            let left = (cx - radius).ceil().max(0.0) as u32;
+            let right = (cx + radius).floor().min((WIDTH - 1) as f32) as u32;
+            let top = (cy - radius).ceil().max(0.0) as u32;
+            let bottom = (cy + radius).floor().min((HEIGHT - 1) as f32) as u32;
+            for y in top..=bottom {
+                for x in left..=right {
                     let dx = x as f32 - cx;
                     let dy = y as f32 - cy;
                     let covered = tail < 4 || (x + y) % 2 == 0;
@@ -129,6 +135,47 @@ pub fn frame(phase: f32, cyan: Color, orange: Color) -> PixuiResult<Image> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn bounded_dot_scans_preserve_pixels_throughout_the_orbit() {
+        let cyan = Color(10, 180, 230);
+        let orange = Color(240, 130, 35);
+        for step in 0..120 {
+            let phase = step as f32 * TAU / 120.0;
+            let mut expected = vec![TRANSPARENT; (WIDTH * HEIGHT) as usize];
+            let position = |angle: f32| (48.0 + 30.0 * angle.cos(), 16.0 + 10.0 * angle.sin());
+            for dot in 0..40 {
+                let (x, y) = position(dot as f32 * TAU / 40.0);
+                expected[y.round() as usize * WIDTH as usize + x.round() as usize] =
+                    Color(100, 110, 125);
+            }
+            for (angle, color) in [(phase, cyan), (phase + PI, orange)] {
+                for tail in (0..10).rev() {
+                    let (cx, cy) = position(angle - tail as f32 * 0.14);
+                    let radius = 3.0 - tail as f32 * 0.22;
+                    for y in 0..HEIGHT {
+                        for x in 0..WIDTH {
+                            let dx = x as f32 - cx;
+                            let dy = y as f32 - cy;
+                            if (tail < 4 || (x + y) % 2 == 0)
+                                && dx * dx + dy * dy <= radius * radius
+                            {
+                                expected[(y * WIDTH + x) as usize] = color;
+                            }
+                        }
+                    }
+                }
+                let (cx, cy) = position(angle);
+                expected[cy.round() as usize * WIDTH as usize + cx.round() as usize] =
+                    Color(255, 255, 220);
+            }
+            assert_eq!(
+                frame(phase, cyan, orange).unwrap().pixels(),
+                expected,
+                "phase {phase}"
+            );
+        }
+    }
+
     #[test]
     fn master_timestamp_controls_comet_drawing_and_frozen_time_stops_requests() {
         use pixui_engine::{
