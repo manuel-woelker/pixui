@@ -63,9 +63,11 @@ Dropping the last owner releases the payload. `downgrade` provides a standard
 weak reference for observing lifetime without retaining the payload.
 
 `ResourceIdentity<T>` is only a lookup token; it owns nothing. An allocation
-address can be reused after its resource dies. Every cache keyed by identities
-must retain the corresponding resource for as long as the key is stored. The
-resource-table builder and font cache enforce this relationship.
+address can be reused after the allocation is freed. Keep the corresponding
+Resource or Weak alongside a cached key. A Weak reserves the allocation address
+without retaining its payload; check upgrade before reuse and prune expired
+entries. Resource-table builders and worker font caches retain owning resources;
+GUI texture caches use weak references and bounded residency.
 
 This infrastructure supplies ownership and indexing, not pixel formats,
 rasterization, cache budgets, upload protocols, or renderer-specific handles.

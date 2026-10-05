@@ -22,7 +22,7 @@
         <mxCell id="8" value="winit event loop&lt;br&gt;&lt;br&gt;Native events → owned UiCommand&lt;br&gt;Nonblocking admission and bounded retry&lt;br&gt;Adjacent motion / resize coalescing" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#538752;fontSize=14;spacing=10;" parent="4" vertex="1">
           <mxGeometry x="25" y="85" width="300" height="165" as="geometry" />
         </mxCell>
-        <mxCell id="9" value="Native Windows&lt;br&gt;&lt;br&gt;One UiInstanceId per window&lt;br&gt;Latest retained RenderOutput + redraw delay&lt;br&gt;softbuffer graphics surfaces&lt;br&gt;CPU drawing + prepared glyph coverage" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#538752;fontSize=15;spacing=10;" parent="4" vertex="1">
+        <mxCell id="9" value="Native Windows&lt;br&gt;&lt;br&gt;One UiInstanceId per window&lt;br&gt;Latest retained RenderOutput + redraw delay&lt;br&gt;Pluggable window renderers&lt;br&gt;Software / femtovg + wgpu&lt;br&gt;Cached images + worker glyph atlases" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#538752;fontSize=15;spacing=10;" parent="4" vertex="1">
           <mxGeometry x="25" y="475" width="300" height="185" as="geometry" />
         </mxCell>
         <mxCell id="5" value="Application worker (sole state owner)" style="swimlane;html=1;startSize=40;fillColor=#FCE8D5;strokeColor=#B87537;fontSize=18;fontStyle=1;" parent="1" vertex="1">

@@ -10,3 +10,8 @@ pixui-engine = { path = "../engine" }
 crossbeam-channel = "0.5.17"
 winit = "0.30.13"
 softbuffer = "0.4.8"
+femtovg = { version = "=0.27.0", default-features = false, features = ["wgpu"] }
+wgpu = "=30.0.1"
+pollster = "0.4"
+rgb = "0.8"
+imgref = "1.12"

@@ -59,7 +59,9 @@ impl<T: fmt::Debug> fmt::Debug for Resource<T> {
 }
 
 /// Lookup token only. It does not retain ownership: an address can be reused
-/// after its resource dies. Keep an owning Resource alongside every cached key.
+/// after its allocation is freed. Keep an owning Resource or its Weak alongside
+/// every cached key. A Weak reserves the allocation address; check upgrade before
+/// reuse and evict dead entries without extending snapshot payload lifetime.
 pub struct ResourceIdentity<T> {
     address: usize,
     marker: std::marker::PhantomData<fn() -> T>,

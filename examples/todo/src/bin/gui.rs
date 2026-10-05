@@ -10,9 +10,29 @@ use pixui_engine::{
         presentation::{PresentationSettings, Theme},
     },
 };
-use pixui_gui::host::{self, WindowSpec};
+use pixui_gui::{
+    host::{self, WindowSpec},
+    renderer::factory::RendererSelection,
+};
 
 fn main() -> PixuiResult<()> {
+    let mut selection = RendererSelection::Auto;
+    let mut freeze_animation = false;
+    let mut args = std::env::args().skip(1);
+    while let Some(arg) = args.next() {
+        if arg == "--renderer" {
+            selection = args
+                .next()
+                .ok_or_else(|| {
+                    pixui_base::pixui_error!("--renderer requires auto, software, or femtovg")
+                })?
+                .parse()?;
+        } else if arg == "--freeze-animation" {
+            freeze_animation = true;
+        } else if arg != "--custom-painter" {
+            return Err(pixui_base::pixui_error!("unknown argument `{arg}`"));
+        }
+    }
     let application = Application::new();
     application.add_slice(todo::create_slice()?)?;
     let actions = todo::actions::TodoActions::bind(&application)?;
@@ -44,6 +64,7 @@ fn main() -> PixuiResult<()> {
     ] {
         let settings = PresentationSettings {
             theme,
+            timestamp_us: freeze_animation.then_some(0),
             locale: locale.into(),
             viewport: Size { width, height },
             ..Default::default()
@@ -56,5 +77,5 @@ fn main() -> PixuiResult<()> {
             settings,
         });
     }
-    host::run(application, windows)
+    host::run_with_renderer(application, windows, selection)
 }

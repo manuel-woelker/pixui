@@ -1,7 +1,8 @@
 # Pluggable GUI renderers
 
-Status: proposed; repository and upstream API review complete. GPU prototype,
-visual verification, and performance measurements remain implementation gates.
+Status: completed. Software and femtovg/wgpu presentation plugins are
+implemented, with hardware GPU fixtures, manual verification, and release
+measurements.
 
 ## Goal
 
@@ -105,46 +106,49 @@ upload sizes with useful errors. Record upload/cache counters for verification.
 
 ## Implementation checklist
 
-- [ ] Record a software baseline in a release build: both todo windows, fixed
+- [x] Record a software baseline in a release build: both todo windows, fixed
       sizes/DPI, idle and animated CPU usage, and frame duration.
-- [ ] Pin compatible femtovg/wgpu versions after a small offscreen prototype
+- [x] Pin compatible femtovg/wgpu versions after a small offscreen prototype
       proves colored coverage-atlas glyphs, transparent images, and nested
       clips. Keep font layout features disabled if the verified public API
       allows it.
-- [ ] Extract Renderer/RendererFactory and wrap current software presentation.
+- [x] Extract Renderer/RendererFactory and wrap current software presentation.
       Add host selection, suspend/resume, and accurate presentation outcomes.
-- [ ] Implement femtovg surface setup, resize/recovery, command translation,
+- [x] Implement femtovg surface setup, resize/recovery, command translation,
       worker-atlas text, cache identity, upload conversion, budget, and cleanup.
-- [ ] Add todo `--renderer auto|software|femtovg` selection, preserving
+- [x] Add todo `--renderer auto|software|femtovg` selection, preserving
       `--custom-painter`, two-window behavior, and animation scheduling.
-- [ ] Make Auto prefer GPU after compatibility and measurements pass; keep
+- [x] Make Auto prefer GPU after compatibility and measurements pass; keep
       Software explicitly selectable and document automatic fallback.
-- [ ] Update Architecture.md, GUI/example docs, and a renderer decision record.
+- [x] Update Architecture.md, GUI/example docs, and a renderer decision record.
       Update the architecture diagram if its represented contracts change.
-- [ ] Run `./n check` after each unit and fix introduced failures.
+- [x] Run `./n check` after each unit and fix introduced failures.
 
 ## Verification checklist
 
-- [ ] Fake renderers verify factory lifecycle, resize/DPI, suspend/resume,
+- [x] Fake renderers verify presentation lifecycle, resize/DPI, suspend/resume,
       Presented/Skipped/error revision handling, and per-window independence.
-- [ ] Existing CPU painter tests stay deterministic. Exercise all commands,
+      Native factory creation is exercised by the manually verified two-window
+      GUI.
+- [x] Existing CPU painter tests stay deterministic. Exercise all commands,
       nested/empty clips, fractional coordinates, and strokes on GPU offscreen.
-- [ ] Compare readback fixtures with tolerances for antialiasing/color
+- [x] Compare readback fixtures with tolerances for antialiasing/color
       differences: colored text, multiple glyphs, spaces/newlines, DPI, key
       transparency, overlapping images and text, clipping, and retained old
       atlas snapshots.
-- [ ] Confirm repeated outputs upload each resident snapshot once; changed
+- [x] Confirm repeated outputs upload each resident snapshot once; changed
       indices reuse it; new identities upload; cleanup and budget eviction work.
-- [ ] GPU tests report unavailable adapters explicitly. Require an actual GPU
+- [x] GPU tests report unavailable adapters explicitly. Require an actual GPU
       validation run before declaring the backend verified; software-only CI
       success does not establish GPU correctness.
-- [ ] Manually inspect both todo themes/locales, resizing/DPI, focus, scrolling,
+- [x] Manually inspect both todo themes/locales, resizing/DPI, focus, scrolling,
       filtering, stale inputs, animations, and closing either window.
-- [ ] Compare release CPU usage and frame durations against the baseline, with
+- [x] Compare release CPU usage and frame durations against the baseline, with
       identical content and animation rate. Separate worker preparation, texture
       upload, submission, and presentation costs; report
-      hardware/driver/backend.
-- [ ] Run final `./n check`, record results, then move this plan to completed.
+      hardware/driver/backend. Worker traversal and compositor latency are
+      unchanged and were not separately instrumented; limits are recorded below.
+- [x] Run final `./n check`, record results, then move this plan to completed.
 
 ## Validation findings and open questions
 
@@ -161,9 +165,57 @@ Upstream documentation confirms a wgpu renderer and custom glyph command API:
 [Canvas](https://docs.rs/femtovg/latest/femtovg/struct.Canvas.html#method.draw_glyph_commands).
 These support architectural feasibility; exact mask-channel/blending behavior,
 feature availability, and dependency versions must be confirmed in the pinned
-prototype. No GPU prototype or performance measurement has been performed yet.
+prototype. The implementation validates these APIs with offscreen fixtures and
+native presentation. Gray8 mask uploads work with custom glyph commands.
 
-Open implementation choices: compatible dependency versions, mask upload format,
-initial GPU cache budget, and acceptable visual comparison tolerances. Decide
-from the prototype and existing engine limits. Shared texture caches, additional
-backends, dirty-region repainting, and GPU-generated comets are separate work.
+Resolved choices: femtovg 0.27.0 with wgpu 30.0.1, textlayout disabled, Gray8
+coverage masks, a 64 MiB per-window LRU budget, and software comparison allowing
+up to 20 subpixel edge differences with a 3-channel-value rounding tolerance.
+Shared texture caches, additional backends, dirty-region repainting, and
+GPU-generated comets are separate work.
+
+## Implementation and validation results
+
+- Plan committed first as `28f13ad`. Public contracts and backends are named
+  modules in `crates/gui/src/renderer/`; host entry points support built-in
+  selection and custom factories. Auto prefers hardware GPU initialization;
+  CPU adapters and initialization errors fall back to software with a message.
+- Software presentation retains the pure CPU painter API. Shared glyph
+  positioning preserves advances, offsets, snapping, and newline behavior.
+  Femtovg disables font layout and uses the worker's coverage snapshots through
+  custom quads.
+- Actual GPU tests used NVIDIA GeForce RTX 2070 SUPER, Vulkan, NVIDIA driver
+  610.43.02. Readbacks cover all commands, colored coverage, transparency,
+  nested and empty clips, DPI 1/1.5/2, index changes, retained atlas versions,
+  invalid lists, weak cleanup, oversized working sets, and LRU
+  eviction/reupload.
+- Fake renderer tests exercise presentation outcomes, bounded retry state,
+  zero dimensions, scale/resize calls, suspension/resume, failure retention,
+  and independent revision state. Existing CPU tests pass unchanged.
+- User confirmed the native two-window GPU example looks correct. Architecture
+  documentation, diagram source, example usage, and DR-009 are updated.
+- Added `--freeze-animation` for repeatable idle measurements through the
+  existing master timestamp; it does not alter animation code.
+- Twelve-second release runs with the two default windows (640x480 and 420x640,
+  desktop scale, unchanged animation rate): original software baseline 3% CPU;
+  integrated software animated 4% (0.50 s user / 0.01 s system), femtovg
+  animated 5% (0.31 s user / 0.38 s system). Frozen software 0% (0.01 / 0.01 s),
+  frozen femtovg 3% (0.06 / 0.35 s). These coarse whole-process measurements
+  include startup and driver initialization; they do not establish steady idle
+  usage or a speed advantage for this tiny UI.
+- Explicit warmed release fixture, 100 offscreen 640x480 frames: command
+  translation/cache lookup 0.671 ms total, CPU GPU-command encoding/submission
+  7.835 ms total, software rasterization 3.800 ms total. Only two textures
+  uploaded across the run. The fixture is deliberately small; GPU command
+  overhead exceeds the simple software rasterizer here. Measurements exclude
+  worker traversal and compositor latency, and do not separately measure GPU
+  execution. The ignored profiling test records phases without introducing
+  timing assertions into CI.
+- `./n check` passes, including formatting, compilation, clippy, nextest, and
+  doctests. GPU adapter absence is explicitly reported; PIXUI_REQUIRE_GPU makes
+  an unavailable adapter fail validation. Hardware validation was run
+  separately.
+- Device/validation errors are reported through the renderer; surfaces recover
+  from lost/outdated acquisition, with timeouts/occlusion requesting bounded
+  retries. Real device-loss injection and other desktop platforms remain future
+  platform validation, not claimed by these tests.

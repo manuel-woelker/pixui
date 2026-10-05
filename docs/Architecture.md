@@ -161,9 +161,9 @@ window or headless target:
 
 Multiple instances of the same definition share application collections but
 retain independent UI state. The initial native host maps one instance to one
-window. Native winit windows and softbuffer surfaces belong to the process main
-thread. `ApplicationHandle` still contains only a cheaply clonable command
-sender.
+window. Native winit windows and renderer-owned graphics surfaces belong to the
+process main thread. `ApplicationHandle` still contains only a cheaply clonable
+command sender.
 
 `register_ui` and `create_ui` transfer definitions and settings to the worker;
 creation returns the instance ID and its output receiver. Registration rejects
@@ -254,7 +254,8 @@ Runtime code constructs an `Image` from dimensions, RGB pixels, and an optional
 transparent color. Replacement creates a new snapshot, leaving old output
 unchanged. Painters insert images directly into the shared builder with local
 rectangles; commands carry table indices. This avoids copying unchanged source
-pixels while retaining full-frame CPU drawing costs.
+pixels. The software backend retains full-frame CPU drawing costs; the
+femtovg backend uploads snapshots once per cache residency and draws on the GPU.
 
 A painter can request a redraw delay. The native host uses one deadline per
 window and the existing bounded retry queue. Each deadline is consumed until a
@@ -327,7 +328,7 @@ Run it with `./t cargo run -p pixui-example-todo --bin gui`.
 | `pixui-reflect` | Runtime type descriptors, construction, dynamic objects, and sequence access. |
 | `pixui-reflect-macros` | Reflection attributes, action adapters, and generated slice facades. |
 | `pixui-engine` | Application state, worker dispatch, live-model traversal, UI instances, layout, and display-list generation. |
-| `pixui-gui` | Native event loop, windows, input submission, and CPU display-list painting. |
+| `pixui-gui` | Native event loop, windows, input submission, and pluggable display-list execution. |
 | `pixui-example-todo` | Text and two-window native examples of a todo slice, collection, and typed actions. |
 
 The engine uses base storage and reflection metadata. Generated code connects
@@ -353,3 +354,20 @@ The todo example stores its shared visibility flag in a singleton `settings`
 collection. Actions mutate it on the worker and invalidate both windows;
 presentation settings remain per-window. Filtering hides rows without removing
 stored todos. The native GUI is now the example's default executable.
+
+## GUI renderer plugins
+
+The native host creates a `Renderer` per window through a `RendererFactory`.
+SoftwareRenderer wraps the deterministic CPU painter and softbuffer.
+FemtovgRenderer uses wgpu, sharing its device/queue across compatible windows
+while retaining per-window surfaces and bounded texture caches. Auto prefers GPU
+and reports initialization fallback; explicit backend selection is available.
+Only successful presentation advances input revisions. Skipped presentation
+retries on a bounded schedule; suspend/resume manages native surfaces.
+
+Both backends render worker-generated glyph atlases and existing DrawText
+commands. Femtovg performs no font layout or glyph rasterization. Texture caches
+use weak snapshot identities and a 64 MiB LRU budget per window. GPU resources
+stay off the worker queue. See
+[renderer documentation](../crates/gui/src/renderer/README.md) and
+[DR-009](<decisions/DR-009 Plug GUI renderers into a shared display list contract.md>).

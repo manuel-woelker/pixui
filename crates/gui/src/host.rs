@@ -2,7 +2,12 @@
 //! The application worker owns UI state; this host retains only complete outputs,
 //! native resources, and a finite nonblocking event retry queue.
 
-use super::{painter, pending_input::PendingInput, redraw_schedule::RedrawSchedule};
+use super::{pending_input::PendingInput, redraw_schedule::RedrawSchedule};
+use crate::renderer::{
+    contract::RendererFactory,
+    factory::{BuiltinRendererFactory, RendererSelection},
+    presentation::Presentation,
+};
 use crossbeam_channel::TryRecvError;
 use pixui_base::{PixuiResult, pixui_error};
 use pixui_engine::{
@@ -16,10 +21,8 @@ use pixui_engine::{
         presentation::PresentationSettings,
     },
 };
-use softbuffer::{Context, Surface};
 use std::{
     collections::{HashMap, HashSet},
-    num::NonZeroU32,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -42,33 +45,16 @@ pub struct WindowSpec {
 
 struct NativeWindow {
     window: Arc<Window>,
-    surface: Option<Surface<Arc<Window>, Arc<Window>>>,
+    presentation: Presentation,
     instance: UiInstanceId,
     outputs: OutputReceiver,
     settings: PresentationSettings,
     output: Option<RenderOutput>,
-    presented: Option<Presented>,
     pointer: Point,
     redraw: RedrawSchedule,
 }
 
-/// Input is tagged with the revision actually painted, rather than a newer
-/// output that was received but is still waiting for a native redraw.
-struct Presented {
-    revision: pixui_engine::ui::display_list::RenderRevision,
-}
-
 impl NativeWindow {
-    fn surface(&mut self) -> PixuiResult<()> {
-        let context = Context::new(self.window.clone())
-            .map_err(|e| pixui_error!("create graphics context: {e}"))?;
-        self.surface = Some(
-            Surface::new(&context, self.window.clone())
-                .map_err(|e| pixui_error!("create window surface: {e}"))?,
-        );
-        Ok(())
-    }
-
     fn presentation(&mut self) -> UiCommand {
         let size = self.window.inner_size();
         self.settings.scale_factor = self.window.scale_factor() as f32;
@@ -83,9 +69,9 @@ impl NativeWindow {
     }
 
     fn input(&self, input: UiInput) -> Option<UiCommand> {
-        self.presented.as_ref().map(|presented| UiCommand::Input {
+        self.presentation.revision.map(|revision| UiCommand::Input {
             instance: self.instance,
-            revision: presented.revision,
+            revision,
             input,
         })
     }
@@ -95,34 +81,13 @@ impl NativeWindow {
             return Ok(());
         };
         let size = self.window.inner_size();
-        let (Some(width), Some(height)) =
-            (NonZeroU32::new(size.width), NonZeroU32::new(size.height))
-        else {
-            return Ok(());
-        };
-        let Some(surface) = &mut self.surface else {
-            return Ok(());
-        };
-        let pixels = painter::paint(
+        self.presentation.draw(
             &output.display_list,
+            output.revision,
             size.width,
             size.height,
             self.settings.scale_factor,
-        )?;
-        surface
-            .resize(width, height)
-            .map_err(|e| pixui_error!("resize surface: {e}"))?;
-        let mut buffer = surface
-            .buffer_mut()
-            .map_err(|e| pixui_error!("acquire surface buffer: {e}"))?;
-        buffer.copy_from_slice(&pixels);
-        buffer
-            .present()
-            .map_err(|e| pixui_error!("present surface: {e}"))?;
-        self.presented = Some(Presented {
-            revision: output.revision,
-        });
-        Ok(())
+        )
     }
 }
 
@@ -132,6 +97,7 @@ struct Host {
     windows: HashMap<WindowId, NativeWindow>,
     pending: PendingInput,
     error: Option<String>,
+    factory: Box<dyn RendererFactory>,
 }
 
 impl Host {
@@ -161,24 +127,24 @@ impl ApplicationHandler for Host {
                         .create_window(attributes)
                         .map_err(|e| pixui_error!("create native window: {e}"))?,
                 );
+                let renderer = self.factory.create(window.clone())?;
                 let mut native = NativeWindow {
                     window,
-                    surface: None,
+                    presentation: Presentation::new(renderer),
                     instance: specification.instance,
                     outputs: specification.outputs,
                     settings: specification.settings,
                     output: None,
-                    presented: None,
                     pointer: Point::default(),
                     redraw: RedrawSchedule::default(),
                 };
-                native.surface()?;
                 self.pending.push(native.presentation())?;
                 self.windows.insert(native.window.id(), native);
             }
             for native in self.windows.values_mut() {
-                if native.surface.is_none() {
-                    native.surface()?;
+                if !native.presentation.active {
+                    native.presentation.resume()?;
+                    native.window.request_redraw();
                     self.pending.push(native.presentation())?;
                 }
             }
@@ -191,8 +157,7 @@ impl ApplicationHandler for Host {
 
     fn suspended(&mut self, _: &ActiveEventLoop) {
         for native in self.windows.values_mut() {
-            native.surface = None;
-            native.presented = None;
+            native.presentation.suspend();
             native.redraw.cancel();
         }
     }
@@ -299,7 +264,16 @@ impl ApplicationHandler for Host {
         }
         let now = Instant::now();
         for native in self.windows.values_mut() {
-            if native.surface.is_some()
+            if native.presentation.active
+                && native
+                    .presentation
+                    .retry
+                    .is_some_and(|deadline| deadline <= now)
+            {
+                native.presentation.retry = None;
+                native.window.request_redraw();
+            }
+            if native.presentation.active
                 && native.redraw.take_due(now)
                 && let Err(error) = self.pending.push(UiCommand::Redraw {
                     instance: native.instance,
@@ -335,6 +309,29 @@ impl ApplicationHandler for Host {
 /// the same backend but require platform validation. Render errors are available
 /// via `Application::uis`; the GUI retains the last successful output.
 pub fn run(application: ApplicationHandle, specifications: Vec<WindowSpec>) -> PixuiResult<()> {
+    run_with_renderer(application, specifications, RendererSelection::Auto)
+}
+
+/// Selects a built-in renderer; explicit GPU selection never silently falls back.
+pub fn run_with_renderer(
+    application: ApplicationHandle,
+    specifications: Vec<WindowSpec>,
+    selection: RendererSelection,
+) -> PixuiResult<()> {
+    run_with_factory(
+        application,
+        specifications,
+        Box::new(BuiltinRendererFactory::new(selection)),
+    )
+}
+
+/// Runs a custom presentation factory on the GUI thread. Each window receives
+/// its own renderer; application state and painters remain backend-independent.
+pub fn run_with_factory(
+    application: ApplicationHandle,
+    specifications: Vec<WindowSpec>,
+    factory: Box<dyn RendererFactory>,
+) -> PixuiResult<()> {
     let mut instances = HashSet::new();
     for specification in &specifications {
         specification.settings.validate()?;
@@ -351,6 +348,7 @@ pub fn run(application: ApplicationHandle, specifications: Vec<WindowSpec>) -> P
         windows: HashMap::new(),
         pending: PendingInput::default(),
         error: None,
+        factory,
     };
     event_loop
         .run_app(&mut host)

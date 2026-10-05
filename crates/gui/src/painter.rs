@@ -4,7 +4,7 @@ use pixui_base::{PixuiResult, pixui_error};
 use pixui_engine::ui::{
     display_list::{Color, DisplayList, DrawCommand},
     geometry::{Point, Rect},
-    text::resource::{FontResource, GlyphInfo},
+    text::resource::FontResource,
 };
 
 struct Canvas {
@@ -17,31 +17,20 @@ struct Canvas {
 
 impl Canvas {
     fn text(&mut self, font: &FontResource, origin: Point, text: &str, color: Color) {
-        let mut pen = origin;
-        for character in text.chars() {
-            if character == '\n' {
-                pen.x = origin.x;
-                pen.y += font.metrics().line_height;
-                continue;
-            }
-            let glyph = font.glyph(character).expect("validated text resource");
-            self.glyph(font, glyph, pen, color);
-            pen.x += glyph.advance;
+        for (destination, source) in
+            crate::renderer::glyphs::positioned(font, origin, text, self.scale)
+        {
+            self.glyph(font, destination, source, color);
         }
     }
 
-    fn glyph(&mut self, font: &FontResource, glyph: &GlyphInfo, pen: Point, color: Color) {
-        let Some(source) = glyph.atlas_rect else {
-            return;
-        };
-        // Snap the bitmap origin, never round advances cumulatively. During DPI
-        // transitions an old atlas is safely resampled until a fresh frame arrives.
-        let destination = Rect {
-            x: ((pen.x + glyph.offset.x) * self.scale).round() / self.scale,
-            y: ((pen.y + glyph.offset.y) * self.scale).round() / self.scale,
-            width: source.width as f32 / font.scale(),
-            height: source.height as f32 / font.scale(),
-        };
+    fn glyph(
+        &mut self,
+        font: &FontResource,
+        destination: Rect,
+        source: pixui_engine::ui::text::resource::PixelRect,
+        color: Color,
+    ) {
         let visible = destination.intersect(*self.clips.last().expect("viewport clip"));
         if visible.width <= 0.0 || visible.height <= 0.0 {
             return;

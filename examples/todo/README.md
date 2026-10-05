@@ -61,9 +61,9 @@ independent activation bindings. State initializes through `Default`. Separately
 registered painters draw in local coordinates within fixed 36-pixel rows. The
 application worker prepares components, paints, translates, clips, and emits
 owned `RenderOutput`s containing `DisplayList`s. The GUI thread owns winit
-windows and softbuffer surfaces and paints the commands. Events identify the
-displayed revision and return through the application queue. Stale clicks are
-rejected rather than targeting an item at a changed position.
+windows and renderer-owned surfaces and executes the commands. Events identify
+the displayed revision and return through the application queue. Stale clicks
+are rejected rather than targeting an item at a changed position.
 
 Todo row bindings currently resolve an
 arena key by borrowed-value identity, with a linear search per row. Carrying
@@ -109,3 +109,22 @@ unchanged glyphs again. A new todo with additional Latin characters extends the
 snapshot while older outputs remain usable. Different DPI scales have separate
 font resources. See [text drawing](../../crates/engine/src/ui/Text.md) for
 limits and font licensing.
+
+### Renderer selection
+
+Auto uses femtovg with wgpu and reports a software fallback if initialization
+fails. Both renderers use the same worker image resources and glyph atlases.
+Choose explicitly for comparisons:
+
+```sh
+./t cargo run --release -p pixui-example-todo -- --renderer femtovg
+./t cargo run --release -p pixui-example-todo -- --renderer software
+```
+
+`--renderer auto` is the default and combines with `--custom-painter`.
+Renderer resources stay on the GUI thread, independently of component painters.
+GPU texture caches reuse immutable snapshots and release expired/evicted
+versions. See [renderer plugins](../../crates/gui/src/renderer/README.md).
+
+Use `--freeze-animation` to fix the shared paint timestamp at zero and stop
+animation redraws, useful for idle CPU comparisons and inspecting still frames.
