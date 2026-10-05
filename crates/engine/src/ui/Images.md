@@ -74,8 +74,38 @@ still activate those bindings, preventing animation from racing clicks. Content,
 presentation, interaction, or geometry changes require a current revision again.
 Visual redraws are for appearance, not changing application content or targets.
 
-The todo example's `OrbitingComets` state stores its start time through
-`Default`. Its read-only painter calculates elapsed phase, draws a fresh 96 by
-32 RGB image, and requests another frame after 33 ms. Shrinking, dithered tails
-expose either window's background without alpha. Retained output redraws reuse
-the snapshot; queue delays skip ahead in time rather than slowing the orbit.
+## Master timestamp
+
+`PaintContext::timestamp_us` is a `u64` count of microseconds on the
+application's rendering timeline. The default monotonic clock starts with the
+application; the renderer samples it once before preparation and shares the
+value with every painter in that render. Different instances use the same clock
+epoch, but each render samples independently. The clock saturates at `u64::MAX`
+instead of wrapping.
+
+Set `PresentationSettings::timestamp_us` to `Some(value)` to freeze or seek time
+for that instance. `None` resumes the application clock. Overrides may move
+backwards or start at zero, so painters must not assume time always advances.
+This controls drawing time, not queued actions or application state. Change
+settings with the existing `UiCommand::Present` API.
+
+```rust
+use pixui_engine::ui::presentation::PresentationSettings;
+let frozen = PresentationSettings {
+    timestamp_us: Some(1_000_000), // Exactly one second.
+    ..Default::default()
+};
+```
+
+Use the supplied timestamp rather than calling `Instant::now()` or `elapsed()`
+inside painters. This allows synchronized components and deterministic
+snapshots. When converting to phase, reduce in sufficient precision before
+converting to `f32`, avoiding large elapsed values losing small animation steps.
+
+The todo example's `OrbitingComets` painter derives phase from the master
+timestamp and emits a fresh 96 by 32 image. Its state remains a named `Default`
+unit type; there is no independent clock per node. Automatic time requests
+another frame after 33 ms; an explicit timestamp stops those requests until
+settings change. Shrinking, dithered tails expose either window's background
+without alpha. Retained output redraws reuse the snapshot; queue delays skip
+ahead in time rather than slowing the orbit.

@@ -16,6 +16,10 @@ pub struct PresentationSettings {
     pub locale: String,
     pub viewport: Size,
     pub scale_factor: f32,
+    /// Explicit rendering timeline in microseconds. None samples the application
+    /// clock once per render; Some freezes or seeks time for this instance.
+    /// Overrides may move backwards; painters must not assume monotonic input.
+    pub timestamp_us: Option<u64>,
 }
 
 impl Default for PresentationSettings {
@@ -28,6 +32,7 @@ impl Default for PresentationSettings {
                 height: 600.0,
             },
             scale_factor: 1.0,
+            timestamp_us: None,
         }
     }
 }

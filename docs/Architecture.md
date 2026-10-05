@@ -246,8 +246,12 @@ still reject stale input. This avoids animation starving actions between worker
 publication and native presentation.
 
 The todo GUI includes an `OrbitingComets` custom component. Its painter
-generates a fresh small transparent image each frame, using elapsed time rather
-than a paint counter. Both themed windows retain independent start state.
+generates a fresh small transparent image each frame, using the master
+`PaintContext::timestamp_us` rather than a paint counter or a node-local clock.
+The application clock supplies a `u64` microsecond timeline sampled once per
+render and shared by every painter. Instances share its epoch; an optional
+`PresentationSettings::timestamp_us` override freezes or seeks an instance
+for controlled drawing and tests. `None` resumes automatic time.
 
 See the [image guide](../crates/engine/src/ui/Images.md) and
 [DR-006](<decisions/DR-006 Share immutable images in indexed display lists.md>).

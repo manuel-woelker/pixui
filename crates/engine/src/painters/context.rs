@@ -21,6 +21,9 @@ pub struct PaintContext<'a, C: Component> {
     pub settings: &'a PresentationSettings,
     pub focused: bool,
     pub hovered: bool,
+    /// Master timeline time in microseconds, identical for every painter in this
+    /// render. Use this instead of reading the system clock; overrides can seek.
+    pub timestamp_us: u64,
     pub(crate) display: &'a mut DisplayListBuilder,
     pub(crate) origin: Point,
     pub(crate) clip_depth: usize,

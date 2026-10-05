@@ -16,7 +16,7 @@ use pixui_engine::{
 };
 use std::{
     f32::consts::{PI, TAU},
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 const WIDTH: u32 = 96;
@@ -29,16 +29,8 @@ pub struct CometProps {
     pub orange: Color,
     pub speed: f32,
 }
-pub struct CometState {
-    started: Instant,
-}
-impl Default for CometState {
-    fn default() -> Self {
-        Self {
-            started: Instant::now(),
-        }
-    }
-}
+#[derive(Default)]
+pub struct CometState;
 impl Component for OrbitingComets {
     type Props = CometProps;
     type State = CometState;
@@ -68,7 +60,10 @@ pub fn props(
 
 impl Painter<OrbitingComets> for CometPainter {
     fn paint(&self, context: &mut PaintContext<'_, OrbitingComets>) -> PixuiResult<()> {
-        let phase = context.state.started.elapsed().as_secs_f32() * TAU / 4.0 * context.props.speed;
+        // Reduce in f64 before converting to the pixel generator's phase, keeping
+        // long-running timelines from losing their orbit in f32 precision.
+        let seconds = context.timestamp_us as f64 / 1_000_000.0 * f64::from(context.props.speed);
+        let phase = (seconds.rem_euclid(4.0) * f64::from(TAU) / 4.0) as f32;
         let image = frame(phase, context.props.cyan, context.props.orange)?;
         let scale = (context.width / WIDTH as f32)
             .min(context.height / HEIGHT as f32)
@@ -88,7 +83,9 @@ impl Painter<OrbitingComets> for CometPainter {
                 height,
             },
         );
-        context.request_redraw_after(Duration::from_millis(33));
+        if context.settings.timestamp_us.is_none() {
+            context.request_redraw_after(Duration::from_millis(33));
+        }
         Ok(())
     }
 }
@@ -132,6 +129,41 @@ pub fn frame(phase: f32, cyan: Color, orange: Color) -> PixuiResult<Image> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn master_timestamp_controls_comet_drawing_and_frozen_time_stops_requests() {
+        use pixui_engine::{
+            application::app::Application,
+            live_model::{
+                part::{ComponentPart, LivePart},
+                state::LiveState,
+            },
+            ui::renderer,
+        };
+        let mut app = Application::default();
+        let id = app.register_component::<OrbitingComets>("comets").unwrap();
+        app.register_painter::<OrbitingComets>(CometPainter)
+            .unwrap();
+        let root = LivePart::Component(ComponentPart::typed(id, props));
+        let mut state = LiveState::new();
+        let mut draw = |timestamp_us| {
+            let settings = PresentationSettings {
+                timestamp_us,
+                ..Default::default()
+            };
+            let (display, _, _, delay) =
+                renderer::render(&root, &mut state, &app, &settings, 0.0, None, None).unwrap();
+            (display.images[0].clone(), delay)
+        };
+        let (initial, delay) = draw(Some(0));
+        assert_eq!(delay, None);
+        assert_eq!(initial.pixels(), draw(Some(0)).0.pixels());
+        assert_ne!(initial.pixels(), draw(Some(1_000_000)).0.pixels());
+        assert_eq!(initial.pixels(), draw(Some(4_000_000)).0.pixels());
+        assert_eq!(initial.pixels(), draw(Some(0)).0.pixels());
+        assert!(draw(Some(u64::MAX)).0.pixels().contains(&TRANSPARENT));
+        assert_eq!(draw(None).1, Some(Duration::from_millis(33)));
+    }
+
     #[test]
     fn frames_are_deterministic_transparent_and_periodic() {
         let cyan = Color(10, 180, 230);

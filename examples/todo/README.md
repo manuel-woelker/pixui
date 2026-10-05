@@ -109,10 +109,13 @@ custom painter manually generates a fresh 96 by 32 RGB snapshot on each worker
 render: cyan and orange comets orbit with shrinking, dithered tails. Reserved
 magenta pixels are transparent, revealing the row background in both themes.
 
-State initializes with a start time through `Default`. Painting derives phase
-from elapsed time and requests another render after 33 ms. The GUI schedules at
-most one outstanding request per window; animation keeps focus and hover and
-permits clicks on compatible presented frames. Pixels are immutable and shared
-through each display list's indexed image table. New frames release old versions
-when outputs are dropped. The ordinary GUI command and `--custom-painter` both
-include this component; no extra binary or image asset is needed.
+State initializes through `Default`. Painting derives phase from the shared
+`PaintContext::timestamp_us` timeline and requests another render after 33 ms.
+An explicit `PresentationSettings::timestamp_us` freezes or seeks the animation
+and stops its redraw requests; `None` resumes the application clock. The GUI
+schedules at most one outstanding request per window; animation keeps focus and
+hover and permits clicks on compatible presented frames. Pixels are immutable
+and shared through each display list's indexed image table. New frames release
+old versions when outputs are dropped. The ordinary GUI command and
+`--custom-painter` both include this component; no extra binary or image asset
+is needed.

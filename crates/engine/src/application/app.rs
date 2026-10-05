@@ -25,6 +25,7 @@ pub struct Application {
     pub(crate) components: ComponentRegistry,
     pub(crate) painters: PainterRegistry,
     pub(crate) uis: crate::ui::registry::UiRegistry,
+    pub(crate) render_clock: crate::ui::render_clock::RenderClock,
     slices: Vec<ApplicationSlice>,
     slice_names: HashMap<String, usize>,
     slice_ids: HashMap<SliceId, usize>,

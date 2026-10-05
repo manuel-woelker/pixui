@@ -74,6 +74,9 @@ pub fn render(
     hover: Option<usize>,
 ) -> PixuiResult<(DisplayList, LayoutState, f32, Option<Duration>)> {
     settings.validate()?;
+    let timestamp_us = settings
+        .timestamp_us
+        .unwrap_or_else(|| application.render_clock.timestamp_us());
     application
         .components()
         .validate(template, application.painters())?;
@@ -145,6 +148,7 @@ pub fn render(
             application.components(),
             PaintInput {
                 props: component.props.as_ref(),
+                timestamp_us,
                 state,
                 settings,
                 width,

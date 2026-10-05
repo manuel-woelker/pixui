@@ -24,6 +24,7 @@ pub(crate) struct PaintInput<'a> {
     pub focused: bool,
     pub hovered: bool,
     pub origin: Point,
+    pub timestamp_us: u64,
 }
 
 trait ErasedPainter: Send {
@@ -60,6 +61,7 @@ impl<C: Component, P: Painter<C>> ErasedPainter for Adapter<C, P> {
             hovered: input.hovered,
             display,
             origin: input.origin,
+            timestamp_us: input.timestamp_us,
             clip_depth: 0,
             clip_error: false,
         };
@@ -178,6 +180,7 @@ mod tests {
             focused: false,
             hovered: false,
             origin: Point::default(),
+            timestamp_us: 0,
         };
         let error = adapter
             .paint(input(&(), &state), &mut DisplayListBuilder::default())

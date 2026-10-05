@@ -9,5 +9,6 @@ pub mod instance;
 pub mod mailbox;
 pub mod presentation;
 pub mod registry;
+pub(crate) mod render_clock;
 pub mod renderer;
 pub mod text;

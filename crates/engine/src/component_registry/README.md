@@ -57,7 +57,9 @@ callbacks. No application or component borrows leave the worker.
 
 Implement `Painter<C>` with `paint(&self, &mut PaintContext<'_, C>)`. The
 painter needs `Send + 'static`, but not `Sync`. The context exposes immutable
-props/state, settings, focus/hover, and logical pixel width/height. Helpers
+props/state, settings, focus/hover, logical pixel width/height, and a shared
+`u64` microsecond `timestamp_us`. The application clock is sampled once per
+render; settings can override time for deterministic drawing or seeking. Helpers
 append fill, stroke, text, and clip commands. `with_clip` balances its own clip
 on ordinary errors. Directly emitted clips must also balance within the
 component.
