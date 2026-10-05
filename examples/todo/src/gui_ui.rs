@@ -2,7 +2,7 @@
 
 use crate::{
     orbiting_comets::{self, OrbitingComets},
-    todo::TodoItem,
+    todo::{TodoItem, TodoSettings},
 };
 use pixui_base::{PixuiResult, pixui_error};
 use pixui_engine::{
@@ -10,10 +10,14 @@ use pixui_engine::{
     component_registry::component_id::ComponentId,
     components::{button::ButtonProps, checkbox::CheckboxProps, label::LabelProps},
     expression::{context::ExpressionContext, expression::Expression},
-    live_model::part::{ComponentPart, CompositePart, ForLoopPart, LivePart},
+    live_model::{
+        match_part::{MatchCandidate, MatchPart, MatchPattern},
+        part::{ComponentPart, CompositePart, ForLoopPart, LivePart},
+    },
     painters::standard::StandardComponents,
     ui::{activation::ActionBinding, definition::UiDefinition, presentation::PresentationSettings},
 };
+use pixui_reflect::Reflect;
 
 pub fn definition(
     application: &ApplicationHandle,
@@ -21,6 +25,31 @@ pub fn definition(
     comets: ComponentId<OrbitingComets>,
 ) -> PixuiResult<UiDefinition> {
     let todos = application.collection_key("todo", "todos")?;
+    let settings = application.collection_key("todo", "settings")?;
+    // Validate the example's singleton before registering a template that loops it.
+    application.inspect(|app| {
+        todo_settings(&ExpressionContext::new(app))?;
+        Ok(())
+    })?;
+    let hide_completed = TodoSettings::type_descriptor().field_index("hide_completed")?;
+    let completed = TodoItem::type_descriptor().field_index("completed")?;
+    let row = LivePart::Component(
+        ComponentPart::typed(components.checkbox, todo_row).with_activation(mark_action),
+    );
+    let all = LivePart::ForLoop(ForLoopPart {
+        expression: Expression::from_collection(todos),
+        body: Box::new(row.clone()),
+    });
+    let incomplete = LivePart::ForLoop(ForLoopPart {
+        expression: Expression::from_collection(todos),
+        body: Box::new(LivePart::Match(MatchPart::new(
+            Expression::field(completed),
+            vec![MatchCandidate {
+                pattern: MatchPattern::value(false),
+                part: row,
+            }],
+        )?)),
+    });
     Ok(UiDefinition::new(
         "todos",
         LivePart::Composite(CompositePart {
@@ -31,18 +60,82 @@ pub fn definition(
                 ),
                 LivePart::Component(ComponentPart::typed(comets, orbiting_comets::props)),
                 LivePart::ForLoop(ForLoopPart {
-                    expression: Expression::from_collection(todos),
-                    body: Box::new(LivePart::Component(
-                        ComponentPart::typed(components.checkbox, todo_row)
-                            .with_activation(mark_action),
-                    )),
+                    expression: Expression::from_collection(settings),
+                    body: Box::new(LivePart::Composite(CompositePart {
+                        parts: vec![
+                            LivePart::Component(
+                                ComponentPart::typed(components.checkbox, visibility_control)
+                                    .with_activation(visibility_action),
+                            ),
+                            LivePart::Match(MatchPart::new(
+                                Expression::field(hide_completed),
+                                vec![
+                                    MatchCandidate {
+                                        pattern: MatchPattern::value(false),
+                                        part: all,
+                                    },
+                                    MatchCandidate {
+                                        pattern: MatchPattern::value(true),
+                                        part: incomplete,
+                                    },
+                                ],
+                            )?),
+                        ],
+                    })),
                 }),
             ],
         }),
     ))
 }
 
-fn heading(_: &ExpressionContext<'_>, settings: &PresentationSettings) -> PixuiResult<LabelProps> {
+/// Checks the singleton on every settings-dependent render, so accidental
+/// corruption fails without silently rendering duplicate controls or no list.
+fn todo_settings(context: &ExpressionContext<'_>) -> PixuiResult<bool> {
+    let settings = context
+        .application()?
+        .slice_named("todo")?
+        .collection("settings")?
+        .arena::<TodoSettings>()
+        .ok_or_else(|| pixui_error!("wrong todo settings collection type"))?;
+    if settings.len() != 1 {
+        return Err(pixui_error!("todo settings must contain exactly one entry"));
+    }
+    Ok(settings
+        .iter()
+        .next()
+        .expect("one settings entry")
+        .1
+        .hide_completed)
+}
+fn visibility_control(
+    context: &ExpressionContext<'_>,
+    settings: &PresentationSettings,
+) -> PixuiResult<CheckboxProps> {
+    Ok(CheckboxProps {
+        checked: todo_settings(context)?,
+        label: if settings.locale == "de" {
+            "Erledigte ausblenden"
+        } else {
+            "Hide completed"
+        }
+        .into(),
+    })
+}
+fn visibility_action(
+    _: &ExpressionContext<'_>,
+    _: &PresentationSettings,
+) -> PixuiResult<ActionBinding> {
+    Ok(Box::new(|app| {
+        let slice = app.slice_named("todo")?;
+        app.action_call(slice.id(), "toggle_hide_completed", vec![])
+    }))
+}
+
+fn heading(
+    context: &ExpressionContext<'_>,
+    settings: &PresentationSettings,
+) -> PixuiResult<LabelProps> {
+    todo_settings(context)?;
     Ok(LabelProps {
         text: if settings.locale == "de" {
             "Aufgaben"
@@ -144,6 +237,136 @@ mod tests {
     };
     use std::time::Duration;
 
+    #[pixui_engine::application::action::action]
+    fn clear_settings(settings: &mut pixui_base::Arena<TodoSettings>) {
+        settings.clear();
+    }
+
+    #[test]
+    fn invalid_settings_keep_last_good_render_and_geometry() {
+        let app = Application::new();
+        let mut slice = create_slice().unwrap();
+        slice
+            .register_action(clear_settings_action::descriptor())
+            .unwrap();
+        let slice = app.add_slice(slice).unwrap();
+        let components = app.register_standard_components().unwrap();
+        app.register_standard_painters().unwrap();
+        let comets = crate::orbiting_comets::register(&app).unwrap();
+        let definition = app
+            .register_ui(definition(&app, components, comets).unwrap())
+            .unwrap();
+        let (instance, outputs) = app
+            .create_ui(definition, PresentationSettings::default())
+            .unwrap();
+        let initial = outputs.recv_timeout(Duration::from_secs(2)).unwrap();
+        let bounds = app
+            .inspect(move |app| {
+                let bounds = app
+                    .uis()
+                    .instance(instance)?
+                    .layout()
+                    .component_bounds
+                    .clone();
+                Ok(bounds)
+            })
+            .unwrap();
+        let call = app
+            .action(slice, "clear_settings")
+            .unwrap()
+            .call(vec![])
+            .unwrap();
+        app.dispatch(call).unwrap().wait().unwrap();
+        app.ui_command(UiCommand::Redraw { instance }).unwrap();
+        app.inspect(move |app| {
+            let ui = app.uis().instance(instance)?;
+            assert_eq!(ui.revision(), initial.revision);
+            assert_eq!(ui.layout().component_bounds, bounds);
+            assert!(ui.last_error().unwrap().contains("exactly one"));
+            Ok(())
+        })
+        .unwrap();
+        assert!(outputs.try_recv().is_err());
+    }
+
+    #[test]
+    fn visibility_is_shared_hides_rows_without_gaps_and_rejects_stale_clicks() {
+        let app = Application::new();
+        app.add_slice(create_slice().unwrap()).unwrap();
+        let actions = TodoActions::bind(&app).unwrap();
+        let first = actions.add_todo("Duplicate").unwrap();
+        let second = actions.add_todo("Duplicate").unwrap();
+        let reference = app.object_ref(actions.slice_id(), "todos", first).unwrap();
+        actions.mark_done(reference).unwrap();
+        let components = app.register_standard_components().unwrap();
+        app.register_standard_painters().unwrap();
+        let comets = crate::orbiting_comets::register(&app).unwrap();
+        let definition = app
+            .register_ui(definition(&app, components, comets).unwrap())
+            .unwrap();
+        let (one, outputs) = app
+            .create_ui(definition, PresentationSettings::default())
+            .unwrap();
+        let (two, other) = app
+            .create_ui(definition, PresentationSettings::default())
+            .unwrap();
+        let initial = outputs.recv_timeout(Duration::from_secs(2)).unwrap();
+        other.recv_timeout(Duration::from_secs(2)).unwrap();
+        actions.toggle_hide_completed().unwrap();
+        let filtered = outputs.recv_timeout(Duration::from_secs(2)).unwrap();
+        other.recv_timeout(Duration::from_secs(2)).unwrap();
+        let point = app
+            .inspect(move |app| {
+                let a = app.uis().instance(one)?.layout();
+                let b = app.uis().instance(two)?.layout();
+                assert_eq!(a.hit_regions.len(), 3);
+                assert_eq!(a.component_bounds.len(), 5);
+                assert_eq!(a.component_bounds, b.component_bounds);
+                let rect = a.hit_regions[2].bounds;
+                Ok(Point {
+                    x: rect.x + 1.0,
+                    y: rect.y + 1.0,
+                })
+            })
+            .unwrap();
+        assert!(
+            app.ui_command(UiCommand::Input {
+                instance: one,
+                revision: initial.revision,
+                input: UiInput::Activate(point)
+            })
+            .is_err()
+        );
+        app.ui_command(UiCommand::Input {
+            instance: one,
+            revision: filtered.revision,
+            input: UiInput::Activate(point),
+        })
+        .unwrap();
+        outputs.recv_timeout(Duration::from_secs(2)).unwrap();
+        other.recv_timeout(Duration::from_secs(2)).unwrap();
+        app.inspect(move |app| {
+            assert_eq!(app.uis().instance(one)?.layout().hit_regions.len(), 2);
+            let todos = app
+                .slice_named("todo")?
+                .collection("todos")?
+                .arena::<TodoItem>()
+                .unwrap();
+            assert_eq!(todos.len(), 2);
+            assert!(todos.get(second).unwrap().completed);
+            Ok(())
+        })
+        .unwrap();
+        actions.toggle_hide_completed().unwrap();
+        outputs.recv_timeout(Duration::from_secs(2)).unwrap();
+        other.recv_timeout(Duration::from_secs(2)).unwrap();
+        app.inspect(move |app| {
+            assert_eq!(app.uis().instance(one)?.layout().hit_regions.len(), 4);
+            Ok(())
+        })
+        .unwrap();
+    }
+
     #[test]
     fn animation_replaces_snapshots_without_invalidating_presented_actions() {
         let app = Application::new();
@@ -157,7 +380,19 @@ mod tests {
         let (instance, outputs) = app
             .create_ui(definition, PresentationSettings::default())
             .unwrap();
-        let initial = outputs.recv_timeout(Duration::from_secs(2)).unwrap();
+        let initial = outputs
+            .recv_timeout(Duration::from_secs(2))
+            .unwrap_or_else(|error| {
+                panic!(
+                    "{error}: {:?}",
+                    app.inspect(move |app| Ok(app
+                        .uis()
+                        .instance(instance)?
+                        .last_error()
+                        .map(str::to_owned)))
+                        .unwrap()
+                )
+            });
         assert_eq!(initial.redraw_after, Some(Duration::from_millis(33)));
         assert_eq!(initial.display_list.images.len(), 1);
         let pixels = initial.display_list.images[0].pixels().to_vec();
@@ -298,7 +533,7 @@ mod tests {
                     .hit_regions
                     .len()))
                     .unwrap(),
-                2
+                3
             );
         }
         assert_ne!(displays[0], displays[1]);
@@ -360,7 +595,7 @@ mod tests {
         let (count, row) = application
             .inspect(move |app| {
                 let instance = app.uis().instance(light)?;
-                let rect = instance.layout().hit_regions[1].bounds;
+                let rect = instance.layout().hit_regions[2].bounds;
                 Ok((
                     instance.layout().hit_regions.len(),
                     Point {
@@ -370,7 +605,7 @@ mod tests {
                 ))
             })
             .unwrap();
-        assert_eq!(count, 3);
+        assert_eq!(count, 4);
         application
             .ui_command(UiCommand::Input {
                 instance: light,

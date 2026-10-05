@@ -3,7 +3,7 @@ name = "pixui-example-todo"
 version.workspace = true
 edition.workspace = true
 publish = false
-default-run = "pixui-example-todo"
+default-run = "gui"
 
 [dependencies]
 pixui-base = { path = "../../crates/base" }

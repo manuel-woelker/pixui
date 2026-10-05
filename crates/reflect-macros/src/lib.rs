@@ -35,6 +35,10 @@ pub fn slice_actions(attribute: TokenStream, input: TokenStream) -> TokenStream 
 }
 
 /// Discovers named struct fields and methods in ordinary inherent impl blocks.
+///
+/// Scalar fields (primitives and String) expose borrowed DynamicObject reads.
+/// Vec fields expose reflected sequences. Other fields retain Any access;
+/// hand-written descriptors can opt in through Field::reflected.
 #[proc_macro_attribute]
 pub fn reflect(attribute: TokenStream, input: TokenStream) -> TokenStream {
     let send = if attribute.is_empty() {
@@ -83,6 +87,12 @@ fn expand(module: &mut ItemMod, send: bool) -> syn::Result<()> {
                             && let Some(syn::GenericArgument::Type(element)) = arguments.args.first() {
                                 return quote!(#(#attrs)* ::pixui_reflect::Field::sequence::<Self, #element>(stringify!(#name), |receiver| &receiver.#name));
                             }
+                if let Type::Path(path) = ty
+                    && path.path.segments.last().is_some_and(|segment| matches!(segment.ident.to_string().as_str(),
+                        "bool" | "char" | "String" | "u8" | "u16" | "u32" | "u64" | "u128" | "usize" |
+                        "i8" | "i16" | "i32" | "i64" | "i128" | "isize" | "f32" | "f64")) {
+                    return quote!(#(#attrs)* ::pixui_reflect::Field::reflected::<Self, #ty>(stringify!(#name), |receiver| &receiver.#name));
+                }
                 quote!(#(#attrs)* ::pixui_reflect::Field::typed::<Self, #ty>(stringify!(#name), |receiver| &receiver.#name))
             }).collect::<Vec<_>>(),
             Fields::Unit => Vec::new(),

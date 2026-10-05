@@ -21,6 +21,7 @@ pub enum LivePart {
     Composite(CompositePart),
     Component(ComponentPart),
     ForLoop(ForLoopPart),
+    Match(super::match_part::MatchPart),
 }
 
 #[derive(Clone)]

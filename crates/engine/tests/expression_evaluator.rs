@@ -175,15 +175,14 @@ fn field_expressions_read_the_current_value_and_validate_context() {
     );
     let application = Application::default();
     assert!(evaluate(&ExpressionContext::new(&application), &expression).is_err());
-    assert!(
-        evaluate(
-            &ExpressionContext::from_value(&root),
-            &Expression::field(
-                fields::Root::type_descriptor()
-                    .field_index("scalar")
-                    .unwrap()
-            ),
-        )
-        .is_err()
-    );
+    let scalar = evaluate(
+        &ExpressionContext::from_value(&root),
+        &Expression::field(
+            fields::Root::type_descriptor()
+                .field_index("scalar")
+                .unwrap(),
+        ),
+    )
+    .unwrap();
+    assert_eq!(scalar.downcast_ref::<i32>(), Some(&7));
 }

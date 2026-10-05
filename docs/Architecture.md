@@ -334,3 +334,22 @@ The engine uses base storage and reflection metadata. Generated code connects
 ordinary application definitions to those runtime APIs. Keep domain objects
 cohesive; collections provide addressable storage without requiring every nested
 field to become an independently stored object.
+
+## Conditional live parts
+
+`MatchPart` evaluates an expression once and selects the first typed equality
+candidate, with an optional final wildcard. Only that subtree is prepared,
+painted, and assigned hit regions. No matching candidate renders nothing.
+Selection preserves the surrounding loop value and application context.
+
+`MatchState` retains one active child. Changing or losing selection drops the
+previous subtree; returning initializes fresh component state through `Default`.
+Candidate identity is positional, like current composites and loops.
+See [DR-008](<decisions/DR-008 Retain only the active match subtree.md>) for the
+lifecycle rationale. All
+candidate templates are validated at registration, including inactive branches.
+
+The todo example stores its shared visibility flag in a singleton `settings`
+collection. Actions mutate it on the worker and invalidate both windows;
+presentation settings remain per-window. Filtering hides rows without removing
+stored todos. The native GUI is now the example's default executable.

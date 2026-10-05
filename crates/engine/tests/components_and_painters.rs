@@ -567,3 +567,41 @@ fn shared_builder_guards_renderer_clips_even_when_painter_tries_to_rebalance() {
         assert!(error.to_string().contains("painter clips"));
     }
 }
+
+#[test]
+fn inactive_match_branches_require_valid_components_and_painters() {
+    use pixui_engine::live_model::match_part::{MatchCandidate, MatchPart, MatchPattern};
+    let mut registry = ComponentRegistry::default();
+    let a = registry.register::<A>("a").unwrap();
+    let mut foreign = ComponentRegistry::default();
+    let b = foreign.register::<B>("b").unwrap();
+    let make = |component| {
+        LivePart::Match(
+            MatchPart::new(
+                Expression::field(pixui_reflect::FieldIndex(0)),
+                vec![MatchCandidate {
+                    pattern: MatchPattern::value(false),
+                    part: component,
+                }],
+            )
+            .unwrap(),
+        )
+    };
+    let painters = PainterRegistry::default();
+    assert!(
+        registry
+            .validate(
+                &make(LivePart::Component(ComponentPart::typed(a, props))),
+                &painters
+            )
+            .is_err()
+    );
+    assert!(
+        registry
+            .validate(
+                &make(LivePart::Component(ComponentPart::typed(b, props))),
+                &painters
+            )
+            .is_err()
+    );
+}

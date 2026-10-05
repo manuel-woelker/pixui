@@ -102,6 +102,7 @@ pub fn render(
             }
             PartState::Composite(state) => pending.extend(state.parts.iter().rev()),
             PartState::ForLoop(state) => pending.extend(state.items.iter().rev()),
+            PartState::Match(state) if state.selected.is_some() => pending.push(&state.part),
             _ => {}
         }
     }

@@ -1,7 +1,7 @@
 use crate::expression::{context::ExpressionContext, evaluator::evaluate};
 use crate::live_model::{
     part::LivePart,
-    state::{ComponentState, CompositeState, ForLoopState, PartState},
+    state::{ComponentState, CompositeState, ForLoopState, MatchState, PartState},
 };
 use pixui_base::PixuiResult;
 use pixui_reflect::DynamicObject;
@@ -33,7 +33,10 @@ pub trait Visitor {
 /// visit, before descent. Loop item counts are reconciled after resolving the
 /// sequence. Errors stop traversal without rollback; unvisited entries can remain
 /// Unknown. Reordering items does not preserve their identity: keyed reconciliation
-/// is not implemented. Loop nesting remains recursive, while composites use a stack.
+/// is not implemented. Loop nesting remains recursive, while composites and matches use a stack.
+/// Match visitors see the previous selection; selection is refreshed once after
+/// visiting, before descending with the unchanged context. Only the active arm
+/// retains state. Switching or losing selection drops its previous subtree.
 pub fn walk<V: Visitor>(
     root: &mut LivePart,
     root_state: &mut PartState,
@@ -54,6 +57,17 @@ pub fn walk<V: Visitor>(
                 stack.extend(composite.parts.iter_mut().zip(state.parts.iter_mut()).rev());
             }
             (LivePart::Component(_), PartState::Component(_)) => {}
+            (LivePart::Match(match_part), PartState::Match(state)) => {
+                let selected = match_part.select(&evaluate(context, &match_part.expression)?)?;
+                if selected != state.selected {
+                    *state.part = PartState::Unknown;
+                    state.selected = selected;
+                }
+                if let Some(index) = selected {
+                    stack.push((&mut match_part.candidates[index].part, &mut state.part));
+                }
+            }
+
             (LivePart::ForLoop(for_loop), PartState::ForLoop(state)) => {
                 let sequence = evaluate(context, &for_loop.expression)?;
                 state
@@ -107,6 +121,12 @@ fn reconcile(
                 .parts
                 .resize_with(composite.parts.len(), || PartState::Unknown);
         }
+        LivePart::Match(part) => {
+            part.validate()?;
+            if !matches!(state, PartState::Match(_)) {
+                *state = PartState::Match(MatchState::default());
+            }
+        }
         LivePart::ForLoop(_) => {
             if !matches!(state, PartState::ForLoop(_)) {
                 *state = PartState::ForLoop(ForLoopState::default());
@@ -143,6 +163,7 @@ mod tests {
                 }
                 LivePart::Component(_) => self.output.push_str("Component\n"),
                 LivePart::ForLoop(_) => self.output.push_str("ForLoop\n"),
+                LivePart::Match(_) => self.output.push_str("Match\n"),
             }
             Ok(())
         }
@@ -255,6 +276,7 @@ mod tests {
                 LivePart::Composite(_) => "Composite",
                 LivePart::Component(_) => "Component",
                 LivePart::ForLoop(_) => "ForLoop",
+                LivePart::Match(_) => "Match",
             };
             writeln!(self.output, "{kind}: {context}").unwrap();
             Ok(())

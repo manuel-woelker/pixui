@@ -260,6 +260,11 @@ fn vector_fields_can_be_read_as_reflected_sequences() {
     assert_eq!(object.read_object_named("items").unwrap().len().unwrap(), 2);
     assert!(object.read_object(pixui_reflect::FieldIndex(99)).is_err());
     let item = DynamicObject::from_reflect(model::Item { value: 0 });
-    assert!(item.read_object_named("value").is_err());
+    assert_eq!(
+        item.read_object_named("value")
+            .unwrap()
+            .downcast_ref::<i32>(),
+        item.read_named("value").unwrap().downcast_ref::<i32>()
+    );
     assert!(item.read_object_named("missing").is_err());
 }

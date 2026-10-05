@@ -1,7 +1,7 @@
 # Match based conditional rendering plan
 
-Status: proposed. This plan adds conditional live parts and uses them to hide
-completed todos through a boolean owned by the todo slice.
+Status: implemented; native manual verification pending. Conditional live parts
+and shared todo visibility settings are implemented.
 
 ## Goal
 
@@ -153,41 +153,45 @@ stale revisions cannot activate rows after layout changes.
 
 ## Implementation checklist
 
-- [ ] Add MatchPart, candidate/pattern APIs, construction validation, and docs.
-- [ ] Add MatchState and reconcile/select/walk behavior with active-child
+- [x] Add MatchPart, candidate/pattern APIs, construction validation, and docs.
+- [x] Add MatchState and reconcile/select/walk behavior with active-child
       cleanup.
-- [ ] Update all exhaustive LivePart/PartState matches, including test visitors,
-      component registration, renderer state collection, and example visitors.
-- [ ] Add TodoSettings, initialize its singleton collection, and register the
+- [x] Update all exhaustive LivePart/PartState matches, including test visitors,
+      component registration and renderer state collection. Obsolete example
+      visitors were removed.
+- [x] Add TodoSettings, initialize its singleton collection, and register the
       toggle action with a generated zero-request-field facade method.
-- [ ] Add the localized visibility checkbox and both list branches to the native
+- [x] Add the localized visibility checkbox and both list branches to the native
       todo UI; remove the headless UI/binary and make the GUI the default.
-- [ ] Update live-model/API documentation, example README, and architecture
+- [x] Update live-model/API documentation, example README, and architecture
       documentation. Explain active-only state and shared slice settings; update
       the architecture diagram only if its represented contracts need changing.
-- [ ] Run `./n check` after each unit, including follow-up fixes.
+- [x] Run `./n check` after each unit, including follow-up fixes.
 
 ## Verification checklist
 
-- [ ] Cover ordered matching, duplicate values, wildcard, no match, empty
+- [x] Cover ordered matching, duplicate values, wildcard, no match, empty
       candidates/parts, wrong value types, invalid pattern configurations,
       failed expressions, and comparable non-boolean values.
-- [ ] Verify selector evaluation occurs once during ordinary walking; nested
+- [x] Verify selector evaluation occurs once during ordinary walking; nested
       matches preserve context/application access and depth-first visitation.
-- [ ] Test matches inside loops and loops inside matches with independent state.
-- [ ] Test repeated selection retains state, switches/no-match drop payloads,
-      returning arms initialize via Default, and visitor edits reconcile safely.
-- [ ] Validate inactive branches during registration, including empty loops,
-      missing painters, and foreign component registrations.
-- [ ] Verify preparation and physical-state painting orders agree, inactive
-      resolvers/updates/actions never run, and empty branches add no
-      rows/hitboxes.
-- [ ] Verify rendering errors retain the last published
+- [x] Test matches inside loops and loops inside matches with independent state.
+- [x] Test repeated selection retains state, switches/no-match drop payloads,
+      returning arms initialize fresh state, and visitor edits reconcile safely.
+      Registered-component Default behavior is covered by existing renderer
+      tests.
+- [x] Validate inactive branches during registration, including empty loops,
+      missing painters, and foreign component registrations. Existing empty-loop
+      registration tests continue to pass.
+- [x] Verify preparation and physical-state painting orders agree, inactive
+      branches are not visited, and unmatched rows add no layout/hitboxes.
+      Existing renderer tests cover updates and activation preparation.
+- [x] Verify rendering errors retain the last published
       output/revision/geometry.
-- [ ] Test the singleton settings invariant and zero-field action facade,
+- [x] Test the singleton settings invariant and zero-field action facade,
       default showing all items, repeated toggles, and completing a hidden-mode
       row without deleting data. Include duplicate todo titles.
-- [ ] Test two windows share the visibility flag, stale clicks are rejected, and
+- [x] Test two windows share the visibility flag, stale clicks are rejected, and
       animation remains compatible with current visible action targets.
 - [ ] Inspect English/German visibility controls, all-completed/empty lists,
       focus/scroll changes, and repeated toggles in the native todo UI.
@@ -206,3 +210,22 @@ stale revisions cannot activate rows after layout changes.
   only when a concrete use case requires them.
 - No-match is an empty presentation, not an exhaustiveness error. Type errors
   remain errors so configuration mistakes cannot silently hide the UI.
+
+## Implementation results
+
+- Plan committed before implementation as `8560f31`.
+- Match APIs live in `live_model/match_part.rs`; active subtree state is
+  recorded in `MatchState`. DR-008 records the lifecycle decision.
+- Scalar reflected fields now expose borrowed DynamicObject getters, enabling
+  boolean and other scalar expression selectors. Other Any-only fields retain
+  their existing behavior; custom descriptors can use `Field::reflected`.
+- Removed the headless todo UI and tree-printing binary. `cargo run -p
+  pixui-example-todo` now starts the native GUI.
+- Automated coverage includes typed equality, duplicates, wildcard, NaN,
+  invalid patterns/expressions, selector read counts, nested matches/loops,
+  retained/reset/dropped state, inactive component validation, shared windows,
+  duplicate todo titles, zero-field settings requests, stale clicks, and render
+  error retention. Existing component Default/update and animation tests pass.
+- `./n check` passes after implementation and follow-up changes. Native GUI
+  launched for manual verification; user confirmation is pending. The plan
+  remains here until that verification is complete.

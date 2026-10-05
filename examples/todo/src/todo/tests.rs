@@ -263,3 +263,43 @@ fn handlers_are_ordinary_functions_with_direct_mutable_arguments() {
     mark_done(todo);
     assert!(todo.completed);
 }
+
+#[test]
+fn visibility_toggle_requires_a_single_settings_entry_and_has_no_request_fields() {
+    let mut app = create_application().unwrap();
+    let slice = app.slices()[0].id();
+    assert!(
+        app.slice(slice)
+            .unwrap()
+            .action_named("toggle_hide_completed")
+            .unwrap()
+            .arguments()
+            .fields()
+            .is_empty()
+    );
+    for expected in [true, false, true] {
+        let call = app
+            .action_call(slice, "toggle_hide_completed", vec![])
+            .unwrap();
+        app.dispatch(call).unwrap();
+        assert_eq!(
+            app.collection_mut::<TodoSettings>(slice, "settings")
+                .unwrap()
+                .iter()
+                .next()
+                .unwrap()
+                .1
+                .hide_completed,
+            expected
+        );
+    }
+    let settings = app
+        .collection_mut::<TodoSettings>(slice, "settings")
+        .unwrap();
+    settings.insert(TodoSettings {
+        hide_completed: false,
+    });
+    assert!(toggle_hide_completed(settings).is_err());
+    settings.clear();
+    assert!(toggle_hide_completed(settings).is_err());
+}

@@ -18,6 +18,9 @@ macro_rules! scalars {
 scalars!(
     String,
     bool,
+    char,
+    u128,
+    i128,
     u8,
     u16,
     u32,

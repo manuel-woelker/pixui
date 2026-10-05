@@ -32,6 +32,16 @@ pub enum PartState {
     Component(ComponentState),
     Composite(CompositeState),
     ForLoop(ForLoopState),
+    Match(MatchState),
+}
+
+/// Only the selected candidate's subtree is retained. New selections begin
+/// Unknown; switching or losing selection drops the old subtree. In the match
+/// node visitor, selected reflects the previous walk; selection follows visit.
+#[derive(Default)]
+pub struct MatchState {
+    pub selected: Option<usize>,
+    pub part: Box<PartState>,
 }
 
 /// Owned component payload, initialized once and retained across walks.

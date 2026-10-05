@@ -33,7 +33,8 @@ impl Field {
         }
     }
 
-    /// Registers a getter with concrete field type metadata.
+    /// Registers a getter with concrete field type metadata, for Any reads only.
+    /// Use reflected to enable DynamicObject reads for values implementing Reflect.
     pub fn typed<T: Any, V: Any>(name: &'static str, get: fn(&T) -> &V) -> Self {
         Self {
             name,
@@ -46,6 +47,18 @@ impl Field {
                 Ok(get(receiver))
             }),
         }
+    }
+
+    /// Exposes a reflected scalar or struct through both Any and object reads.
+    pub fn reflected<T: Any, V: Reflect>(name: &'static str, get: fn(&T) -> &V) -> Self {
+        let mut field = Self::typed(name, get);
+        field.get_object = Some(Box::new(move |receiver| {
+            let receiver = receiver.downcast_ref::<T>().ok_or_else(|| {
+                pixui_error!("field `{name}` requires receiver `{}`", type_name::<T>())
+            })?;
+            Ok(DynamicObject::from_ref(get(receiver)))
+        }));
+        field
     }
 
     /// Concrete value type, available for automatic and typed registrations.

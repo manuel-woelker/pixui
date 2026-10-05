@@ -22,31 +22,11 @@ contains `TodoItem`; multiple collections of that type are allowed.
 
 The generated `TodoActions` facade binds to the named slice and caches its
 action handles. Request construction is local; facade methods dispatch and wait
-for typed results. The main thread and a second caller thread use cloned
-facades. Application state stays on its worker without `Rc` or `RefCell`.
-Dropping all handles closes the queue and drains accepted commands.
+for typed results. Facades can be cloned across caller threads. Application
+state stays on its worker without `Rc` or `RefCell`. Dropping all handles closes
+the queue and drains accepted commands.
 
-## Component tree
-
-`ui.rs` defines a `LivePart` template: a composite containing a heading and a
-todo loop. A collection expression selects the slice's reflected todos arena.
-The loop body is a composite with checkbox and label components. `TodoUi`
-retains the same template and `LiveState` across renders.
-
-Construction resolves a `CollectionKey` for todos by name once. Each render
-moves the owned template and UI state to an `inspect` callback on the
-application worker. The walker evaluates the collection expression and borrows
-live `TodoItem` values as loop contexts. The visitor refreshes checkbox and
-label state and prints the physical tree with one row subtree per todo. New
-entries initialize on demand; existing presentation state is retained. UI state
-and output text return to the caller; application borrows do not escape and no
-snapshot collection is created. Component payloads are owned and sendable. A
-worker communication failure discards the transferred UI state.
-
-The binary prints the tree before and after inserting a second todo. This is a
-textual component UI demonstration; it does not create a graphical window. State
-is matched by position, so the example appends items rather than reordering
-them.
+## Native GUI
 
 Run from the repository root:
 
@@ -54,17 +34,8 @@ Run from the repository root:
 ./t cargo run -p pixui-example-todo
 ```
 
-See the engine's
-[action documentation](../../crates/engine/src/application/Actions.md) for
-lifecycle details and current limitations.
-
-## Native GUI
-
-Run the graphical example on a desktop session:
-
-```sh
-./t cargo run -p pixui-example-todo --bin gui
-```
+The native GUI is the default binary; the previous headless tree-printing UI
+has been removed. Engine walker tests cover traversal independently.
 
 The GUI opens two windows from one `UiDefinition`: English/light at 640 by 480
 and German/dark at 420 by 640. Each window has its own worker-side `UiInstance`
@@ -76,6 +47,15 @@ task done. Both windows update. Tab moves focus; Enter or Space activates the
 focused control. The mouse wheel scrolls overflowing content. Resize windows to
 see independent clipping, and close either window without closing the other.
 
+Click **Hide completed** / **Erledigte ausblenden** to filter completed rows in
+both windows. A singleton `TodoSettings` entry in the slice's `settings`
+collection owns the flag. The zero-argument `toggle_hide_completed` facade
+method dispatches an action that receives the settings arena by name.
+A `MatchPart` chooses the complete list or a loop that matches each todo's
+`completed` field. Hidden rows have no layout space or hit target; todos remain
+stored. Switching the list branch drops its component state and recreates it
+on return. Completing a visible item in filtered mode hides it immediately.
+
 `gui_ui.rs` supplies typed label, button, and checkbox props resolvers and
 independent activation bindings. State initializes through `Default`. Separately
 registered painters draw in local coordinates within fixed 36-pixel rows. The
@@ -85,9 +65,7 @@ windows and softbuffer surfaces and paints the commands. Events identify the
 displayed revision and return through the application queue. Stale clicks are
 rejected rather than targeting an item at a changed position.
 
-The initial font uses fixed bitmap cells with Latin extensions. Translation of
-example labels is explicit; general localization, complex text shaping, and
-editable text controls are future work. Todo row bindings currently resolve an
+Todo row bindings currently resolve an
 arena key by borrowed-value identity, with a linear search per row. Carrying
 stable keys through loop contexts would remove that lookup and help implement
 keyed component-state reconciliation.

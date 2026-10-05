@@ -110,13 +110,17 @@ impl ComponentRegistry {
             .ok_or_else(|| pixui_error!("invalid component registration index"))
     }
 
-    /// Validates the entire template, including bodies of currently empty loops.
+    /// Validates the entire template, including empty loop bodies and inactive match arms.
     pub fn validate(&self, template: &LivePart, painters: &PainterRegistry) -> PixuiResult<()> {
         let mut pending = vec![template];
         while let Some(part) = pending.pop() {
             match part {
                 LivePart::Composite(composite) => pending.extend(&composite.parts),
                 LivePart::ForLoop(part) => pending.push(&part.body),
+                LivePart::Match(part) => {
+                    part.validate()?;
+                    pending.extend(part.candidates.iter().map(|candidate| &candidate.part));
+                }
                 LivePart::Component(part) => {
                     if let Some(address) = part.component_address() {
                         let descriptor = self.resolve(address)?;
