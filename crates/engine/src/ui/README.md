@@ -74,10 +74,24 @@ GUI input is an owned `UiCommand` with instance ID and presented revision.
 `try_ui_command` returns a pending reply immediately or retains the command in
 its full/disconnected error. Native callbacks must retry full-queue input
 without blocking; `ui_command` is a blocking convenience for setup and tests.
-Pointer movement, activation, scrolling, focus traversal, and focused activation
-are semantic events. Raw platform key transitions are not exposed.
+`UiInput` carries logical pointer coordinates, mouse button presses/releases,
+wheel deltas with their original line/pixel units, all keyboard transitions
+(including repeat, text, physical identity and location), modifiers, native
+window focus and IME events. Named keys and physical codes use the documented
+winit names; native unidentified key codes remain opaque strings. No winit types
+or native window resources enter the engine.
 
-The worker rejects stale discrete input and discards superseded pointer motion.
+The application's default input policy activates on left-button release,
+traverses focus with Tab (backwards with Shift+Tab), activates focus with Enter
+or Space, and converts each vertical wheel line to forty logical pixels. Key
+releases, repeats and synthetic keyboard transitions do not activate or toggle
+shortcuts. Other buttons/keys, text, IME and native focus transitions are
+forwarded but currently have no default behavior. There is no component event
+propagation, pointer capture or text editing yet.
+
+The worker rejects geometry-dependent stale input and discards superseded
+pointer motion. Unhandled raw events and F11 do not need compatible geometry;
+leaving a window clears hover even while geometry is stale.
 Visual animation redraws retain compatible presented revisions and existing
 bindings while geometry is unchanged; content changes end that compatibility.
 It rejects activation while content, viewport, or scrolling changes make old
@@ -108,3 +122,26 @@ See [dynamic images](Images.md) for drawing and scheduling contracts.
 
 Images, fonts, and glyph atlases use
 [shared typed resource handles and tables](Resources.md).
+
+## Performance diagnostics
+
+F11 toggles a worker-owned overlay independently for the source instance. The
+worker adds the box and prepared monospace text to the normal display list;
+native hosts only present it and report `UiCommand::FramePresented` with the
+successful painting revision, renderer timings and observation timestamp.
+
+While visible, the worker wakes every 250 ms and rebuilds diagnostics from a
+cached, unadorned application output. Component preparation and painting are
+skipped for these refreshes. Hidden windows pause them, and disabling
+diagnostics removes their deadline. Output `revision` advances while
+`paint_revision` stays unchanged; consumers must preserve painter redraw
+deadlines and animation acknowledgements for these diagnostic-only outputs. FPS
+counts distinct successfully presented painting passes, so diagnostic refreshes
+and repeated presentations do not inflate it. Headless clients can toggle
+diagnostics and optionally supply presentation feedback without a native host.
+
+See
+[the renderer diagnostics guide](../../../gui/src/renderer/README.md#performance-overlay)
+for timing and memory interpretation, and
+[DR-011](<../../../../docs/decisions/DR-011 Interpret native input and render diagnostics on the application worker.md>)
+for the ownership decision.

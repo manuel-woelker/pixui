@@ -46,6 +46,10 @@ pub struct UiInstance {
     pub(crate) error: Option<String>,
     pub(crate) animation_request: Option<u64>,
     pub(crate) visible: bool,
+    pub(crate) overlay: super::performance_overlay::PerformanceOverlay,
+    /// Unadorned last successful render, reused for diagnostic-only refreshes.
+    pub(crate) last_render: Option<super::display_list::RenderOutput>,
+    pub(crate) diagnostics_dirty: bool,
 }
 
 impl UiInstance {

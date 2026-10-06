@@ -1,9 +1,8 @@
-//! Per-window diagnostics, appended after application commands with no hit regions.
+//! Worker-owned per-window diagnostics with no hit regions.
 //! The font is prepared once per DPI scale; diagnostic refreshes do not count as
 //! application frames. Timings are the latest completed frames, not averages.
-use crate::renderer::contract::RendererTimings;
-use pixui_base::PixuiResult;
-use pixui_engine::ui::{
+use super::performance::RendererTimings;
+use super::{
     display_list::{Color, DisplayList, DrawCommand, RenderRevision},
     geometry::{Point, Rect, Size},
     performance::{FrameMemory, WorkerTimings},
@@ -13,6 +12,7 @@ use pixui_engine::ui::{
         service::TextService,
     },
 };
+use pixui_base::PixuiResult;
 use std::{
     collections::{BTreeSet, VecDeque},
     time::{Duration, Instant},
@@ -38,13 +38,12 @@ impl PerformanceOverlay {
         timings: Option<RendererTimings>,
         now: Instant,
     ) {
-        if self.revision != Some(revision) {
+        if self.revision.is_none_or(|previous| revision > previous) {
             self.frames.push_back(now);
             self.revision = Some(revision);
             self.timings = timings;
         }
         self.prune(now);
-        self.refresh = self.visible.then_some(now + Duration::from_millis(250));
     }
     fn prune(&mut self, now: Instant) {
         while self
@@ -57,7 +56,7 @@ impl PerformanceOverlay {
     }
     pub fn append(
         &mut self,
-        source: &DisplayList,
+        mut display: DisplayList,
         worker: WorkerTimings,
         scale: f32,
         viewport: Size,
@@ -74,10 +73,10 @@ impl PerformanceOverlay {
             let font = TextService::default().prepare(&config, &characters)?;
             self.font = Some((scale, font));
         }
-        let memory = FrameMemory::measure(source);
+        let memory = FrameMemory::measure(&display);
         let mut text = format!(
             "Performance (F11)\n{:<20} {:>9} fps\n",
-            "FPS (worker outputs):",
+            "FPS (painted frames):",
             self.frames.len()
         );
         for (label, duration) in [
@@ -115,7 +114,6 @@ impl PerformanceOverlay {
         text.push_str("CPU times; frame memory estimates");
         let font = &self.font.as_ref().unwrap().1;
         let height = text.lines().count() as f32 * font.metrics().line_height + 20.0;
-        let mut display = source.clone();
         let mut fonts: Vec<_> = display.fonts.iter().cloned().collect();
         let index = FontIndex::from_raw(fonts.len());
         fonts.push(font.clone());
@@ -151,6 +149,7 @@ impl PerformanceOverlay {
             DrawCommand::PopClip,
         ]);
         display.validate()?;
+        self.refresh = self.visible.then_some(now + Duration::from_millis(250));
         Ok(display)
     }
 }
@@ -167,6 +166,8 @@ mod tests {
         assert_eq!(overlay.frames.len(), 1);
         overlay.presented(RenderRevision(2), None, now);
         assert_eq!(overlay.frames.len(), 2);
+        overlay.presented(RenderRevision(1), None, now);
+        assert_eq!(overlay.frames.len(), 2);
         overlay.prune(now + Duration::from_secs(1));
         assert!(overlay.frames.is_empty());
         overlay.toggle();
@@ -179,7 +180,7 @@ mod tests {
         let mut overlay = PerformanceOverlay::default();
         let display = overlay
             .append(
-                &source,
+                source.clone(),
                 WorkerTimings::default(),
                 1.0,
                 Size {
@@ -196,7 +197,7 @@ mod tests {
         assert!(
             overlay
                 .append(
-                    &source,
+                    source.clone(),
                     WorkerTimings::default(),
                     1.0,
                     Size {
@@ -213,7 +214,7 @@ mod tests {
         assert!(
             overlay
                 .append(
-                    &source,
+                    source.clone(),
                     WorkerTimings::default(),
                     2.0,
                     Size {

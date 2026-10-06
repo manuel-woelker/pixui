@@ -318,15 +318,35 @@ replies. Adjacent pointer-motion or presentation updates can be coalesced;
 discrete commands keep their order. Overflow or worker disconnection reports a
 host error rather than silently losing an activation.
 
-Input identifies its instance and the revision actually painted by the GUI. The
-worker performs hit testing against its corresponding geometry and builds an
-owned action call from the target binding. Revision matching rejects stale
-discrete events; visual-only redraws permit older revisions in the same
-compatible geometry sequence. Superseded pointer motion is discarded. Pending
-content, settings, or scroll changes also invalidate old geometry. Hover or
-focus painting does not invalidate geometry within a command batch. Item
-bindings capture checked opaque references, so a deleted item cannot silently
-resolve to a replacement arena slot.
+The host forwards low-level `UiInput`: mouse buttons and wheel units, keyboard
+presses/releases/repeats with logical and physical keys, modifiers, text, IME
+and native focus events. The application worker interprets activation,
+Tab/Shift+Tab navigation, scrolling and F11. Other raw inputs currently have no
+default effect; component event propagation and text editing are not
+implemented.
+
+Geometry-dependent input identifies its instance and the revision actually
+painted by the GUI. The worker performs hit testing against its corresponding
+geometry and builds an owned action call from the target binding. Revision
+matching rejects stale geometry-dependent events; visual-only redraws permit
+older revisions in the same compatible geometry sequence. Superseded pointer
+motion is discarded. Pending content, settings, or scroll changes also
+invalidate old geometry. Hover or focus painting does not invalidate geometry
+within a command batch. Item bindings capture checked opaque references, so a
+deleted item cannot silently resolve to a replacement arena slot.
+
+The worker also renders the per-window F11 performance overlay, including its
+monospace atlas, into the complete display list. The host reports successful
+presentation timestamps and renderer timings through `FramePresented`, and adds
+no diagnostic drawing. A worker timer refreshes visible diagnostics every 250 ms
+from a cached application display list without component preparation or
+painting. Hidden windows skip these refreshes. Diagnostic-only outputs advance
+the output revision while retaining `paint_revision`; repeated presentations do
+not increase application FPS or restart painter deadlines. Cached application
+commands add worker memory, while image and font payloads remain shared.
+See
+[DR-011](<decisions/DR-011 Interpret native input and render diagnostics on the application worker.md>)
+for the ownership rationale.
 
 A rendering failure publishes no partial output. The previous successful
 output and geometry remain; details are inspectable through

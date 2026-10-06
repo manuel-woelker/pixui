@@ -18,7 +18,7 @@ use pixui_engine::{
         definition::UiDefinition,
         display_list::{DrawCommand, RenderOutput},
         geometry::{Point, Size},
-        input::{UiCommand, UiInput},
+        input::{ButtonState, KeyboardEvent, MouseButton, UiCommand, UiInput, WheelDelta},
         instance::UiInstanceId,
         mailbox::OutputReceiver,
         presentation::{PresentationSettings, Theme},
@@ -198,7 +198,12 @@ fn click(app: &ApplicationHandle, output: &RenderOutput) -> PixuiResult<()> {
     app.ui_command(UiCommand::Input {
         instance: id,
         revision: output.revision,
-        input: UiInput::Activate(point),
+        input: UiInput::MouseButton {
+            button: MouseButton::Left,
+            state: ButtonState::Released,
+            position: point,
+            modifiers: Default::default(),
+        },
     })
 }
 
@@ -278,7 +283,12 @@ fn current_click_invokes_action_but_stale_deleted_and_closed_targets_fail() {
         app.ui_command(UiCommand::Input {
             instance: id,
             revision: marked.revision,
-            input: UiInput::Activate(Point { x: 20.0, y: 20.0 })
+            input: UiInput::MouseButton {
+                button: MouseButton::Left,
+                state: ButtonState::Released,
+                position: Point { x: 20.0, y: 20.0 },
+                modifiers: Default::default()
+            }
         })
         .is_err()
     );
@@ -444,21 +454,27 @@ fn scrolling_focus_and_boundary_hit_tests_use_instance_layout() {
     app.ui_command(UiCommand::Input {
         instance: id,
         revision: initial.revision,
-        input: UiInput::FocusNext,
+        input: UiInput::Keyboard(KeyboardEvent::named("Tab")),
     })
     .unwrap();
     let focused = output(&receiver);
     app.ui_command(UiCommand::Input {
         instance: id,
         revision: focused.revision,
-        input: UiInput::ActivateFocused,
+        input: UiInput::Keyboard(KeyboardEvent::named("Enter")),
     })
     .unwrap();
     let marked = output(&receiver);
     app.ui_command(UiCommand::Input {
         instance: id,
         revision: marked.revision,
-        input: UiInput::Scroll(10000.0),
+        input: UiInput::MouseWheel {
+            delta: WheelDelta::Pixels {
+                x: 0.0,
+                y: -(10000.0),
+            },
+            modifiers: Default::default(),
+        },
     })
     .unwrap();
     output(&receiver);
@@ -524,7 +540,7 @@ fn visual_redraws_preserve_targets_and_do_not_starve_presented_clicks() {
     app.ui_command(UiCommand::Input {
         instance: id,
         revision: initial.revision,
-        input: UiInput::FocusNext,
+        input: UiInput::Keyboard(KeyboardEvent::named("Tab")),
     })
     .unwrap();
     let focused = output(&receiver);
@@ -539,7 +555,7 @@ fn visual_redraws_preserve_targets_and_do_not_starve_presented_clicks() {
     app.ui_command(UiCommand::Input {
         instance: id,
         revision: focused.revision,
-        input: UiInput::ActivateFocused,
+        input: UiInput::Keyboard(KeyboardEvent::named("Enter")),
     })
     .unwrap();
     let marked = output(&receiver);
@@ -687,4 +703,161 @@ fn showing_unchanged_windows_accepts_hover_from_the_retained_presented_frame() {
         .unwrap();
         output(&outputs);
     }
+}
+
+#[test]
+fn raw_mouse_transitions_and_keyboard_navigation_are_interpreted_on_worker() {
+    use pixui_engine::ui::input::{ButtonState, KeyboardEvent, Modifiers, MouseButton};
+    let (app, actions, definition) = setup(128);
+    actions.add("one").unwrap();
+    actions.add("two").unwrap();
+    let (id, receiver) = app
+        .create_ui(definition, PresentationSettings::default())
+        .unwrap();
+    let initial = output(&receiver);
+    for (button, state) in [
+        (MouseButton::Left, ButtonState::Pressed),
+        (MouseButton::Right, ButtonState::Released),
+    ] {
+        app.ui_command(UiCommand::Input {
+            instance: id,
+            revision: initial.revision,
+            input: UiInput::MouseButton {
+                button,
+                state,
+                position: Point { x: 20.0, y: 20.0 },
+                modifiers: Modifiers::default(),
+            },
+        })
+        .unwrap();
+    }
+    app.inspect(move |app| {
+        assert_eq!(app.uis().definition(definition)?.state().focus, None);
+        Ok(())
+    })
+    .unwrap();
+    assert!(receiver.try_recv().is_err());
+    // Shift+Tab wraps backwards from no focus, then ordinary Tab wraps forward.
+    let mut tab = KeyboardEvent::named("Tab");
+    tab.modifiers.shift = true;
+    app.ui_command(UiCommand::Input {
+        instance: id,
+        revision: initial.revision,
+        input: UiInput::Keyboard(tab),
+    })
+    .unwrap();
+    let backwards = output(&receiver);
+    app.inspect(move |app| {
+        assert_eq!(app.uis().definition(definition)?.state().focus, Some(1));
+        Ok(())
+    })
+    .unwrap();
+    app.ui_command(UiCommand::Input {
+        instance: id,
+        revision: backwards.revision,
+        input: UiInput::Keyboard(KeyboardEvent::named("Tab")),
+    })
+    .unwrap();
+    let forwards = output(&receiver);
+    app.inspect(move |app| {
+        assert_eq!(app.uis().definition(definition)?.state().focus, Some(0));
+        Ok(())
+    })
+    .unwrap();
+    // Neither release nor repeat executes the focused action.
+    for (state, repeat) in [(ButtonState::Released, false), (ButtonState::Pressed, true)] {
+        app.ui_command(UiCommand::Input {
+            instance: id,
+            revision: forwards.revision,
+            input: UiInput::Keyboard(KeyboardEvent {
+                state,
+                repeat,
+                ..KeyboardEvent::named("Enter")
+            }),
+        })
+        .unwrap();
+    }
+    app.inspect(move |app| {
+        assert!(
+            !app.slice_named("test")?
+                .collection("items")?
+                .arena::<Item>()
+                .unwrap()
+                .iter()
+                .next()
+                .unwrap()
+                .1
+                .done
+        );
+        Ok(())
+    })
+    .unwrap();
+    assert!(receiver.try_recv().is_err());
+    app.ui_command(UiCommand::Input {
+        instance: id,
+        revision: forwards.revision,
+        input: UiInput::Keyboard(KeyboardEvent::named("Space")),
+    })
+    .unwrap();
+    output(&receiver);
+    app.inspect(move |app| {
+        assert!(
+            app.slice_named("test")?
+                .collection("items")?
+                .arena::<Item>()
+                .unwrap()
+                .iter()
+                .next()
+                .unwrap()
+                .1
+                .done
+        );
+        Ok(())
+    })
+    .unwrap();
+}
+
+#[test]
+fn empty_focus_navigation_and_unhandled_raw_input_need_no_activation_target() {
+    use pixui_engine::ui::input::{Key, KeyboardEvent, Modifiers};
+    let (app, _, definition) = setup(128);
+    let (id, receiver) = app
+        .create_ui(definition, PresentationSettings::default())
+        .unwrap();
+    let initial = output(&receiver);
+    for input in [
+        UiInput::Keyboard(KeyboardEvent::named("Tab")),
+        UiInput::Keyboard(KeyboardEvent {
+            key: Key::Character("λ".into()),
+            text: Some("λ".into()),
+            ..KeyboardEvent::named("unused")
+        }),
+        UiInput::ModifiersChanged(Modifiers {
+            control: true,
+            ..Default::default()
+        }),
+        UiInput::ImeEnabled,
+        UiInput::ImePreedit {
+            text: "日本".into(),
+            cursor: Some((0, 6)),
+        },
+        UiInput::ImeCommit("日本語".into()),
+        UiInput::ImeDisabled,
+        UiInput::Focused(false),
+        UiInput::PointerEntered,
+        UiInput::PointerLeft,
+    ] {
+        app.ui_command(UiCommand::Input {
+            instance: id,
+            revision: initial.revision,
+            input,
+        })
+        .unwrap();
+    }
+    app.inspect(move |app| {
+        assert_eq!(app.uis().definition(definition)?.state().focus, None);
+        Ok(())
+    })
+    .unwrap();
+    assert!(receiver.try_recv().is_err());
 }

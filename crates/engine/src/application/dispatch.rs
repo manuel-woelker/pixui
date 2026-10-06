@@ -77,10 +77,25 @@ impl<T> ApplicationReply<T> {
 /// This prevents replies retained by the bounded queue from leaving callers stuck.
 pub(super) fn run(receiver: CommandReceiver) {
     let mut application = Some(Application::default());
-    while let Ok(command) = receiver.recv() {
+    loop {
+        let command = match application.as_ref().and_then(Application::next_ui_refresh) {
+            Some(deadline) => {
+                receiver.recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
+            }
+            None => receiver
+                .recv()
+                .map_err(|_| crossbeam_channel::RecvTimeoutError::Disconnected),
+        };
+        let command = match command {
+            Ok(command) => Some(command),
+            Err(crossbeam_channel::RecvTimeoutError::Timeout) => None,
+            Err(crossbeam_channel::RecvTimeoutError::Disconnected) => break,
+        };
         if let Some(state) = application.as_mut() {
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                command.run(state);
+                if let Some(command) = command {
+                    command.run(state);
+                }
                 // Bounded batches avoid rendering once per queued action while
                 // ensuring a busy producer cannot indefinitely starve painting.
                 for _ in 0..31 {

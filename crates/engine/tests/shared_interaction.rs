@@ -16,7 +16,7 @@ use pixui_engine::{
         definition::UiDefinition,
         display_list::{Color, DrawCommand, RenderOutput},
         geometry::{Point, Size},
-        input::{UiCommand, UiInput},
+        input::{KeyboardEvent, UiCommand, UiInput, WheelDelta},
         mailbox::OutputReceiver,
         presentation::{PresentationSettings, Theme},
     },
@@ -148,7 +148,7 @@ fn every_component_can_hover_and_focus_is_shared_but_other_definitions_are_isola
     app.ui_command(UiCommand::Input {
         instance: first,
         revision: hovered.revision,
-        input: UiInput::FocusNext,
+        input: UiInput::Keyboard(KeyboardEvent::named("Tab")),
     })
     .unwrap();
     let focused = output(&a);
@@ -201,7 +201,7 @@ fn every_component_can_hover_and_focus_is_shared_but_other_definitions_are_isola
     app.ui_command(UiCommand::Input {
         instance: second,
         revision: restored.revision,
-        input: UiInput::ActivateFocused,
+        input: UiInput::Keyboard(KeyboardEvent::named("Enter")),
     })
     .unwrap();
 }
@@ -237,7 +237,10 @@ fn shared_scroll_is_clamped_per_viewport_without_render_order_changing_it() {
     app.ui_command(UiCommand::Input {
         instance: first,
         revision: initial.revision,
-        input: UiInput::Scroll(50.0),
+        input: UiInput::MouseWheel {
+            delta: WheelDelta::Pixels { x: 0.0, y: -(50.0) },
+            modifiers: Default::default(),
+        },
     })
     .unwrap();
     output(&a);

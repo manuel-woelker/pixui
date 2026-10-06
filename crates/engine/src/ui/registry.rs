@@ -4,6 +4,7 @@ use super::{
     definition::{UiDefinition, UiDefinitionId},
     display_list::{RenderOutput, RenderRevision},
     input::{UiCommand, UiInput},
+    input_handler::{InputIntent, interpret},
     instance::{LayoutState, UiInstance, UiInstanceId},
     mailbox::{OutputReceiver, mailbox},
     presentation::PresentationSettings,
@@ -17,6 +18,7 @@ use pixui_base::{PixuiResult, pixui_error};
 use std::{
     collections::HashMap,
     sync::atomic::{AtomicU64, Ordering},
+    time::Instant,
 };
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
@@ -85,6 +87,9 @@ impl UiRegistry {
                 error: None,
                 animation_request: None,
                 visible: true,
+                overlay: Default::default(),
+                last_render: None,
+                diagnostics_dirty: false,
             },
         );
         Ok((id, receiver))
@@ -147,10 +152,24 @@ impl UiRegistry {
             UiCommand::Redraw { .. }
                 | UiCommand::AnimationFrame { .. }
                 | UiCommand::Visibility { .. }
+                | UiCommand::FramePresented { .. }
         ) {
             instance.redraw_only = false;
         }
         match command {
+            UiCommand::FramePresented {
+                paint_revision,
+                timings,
+                timestamp,
+                ..
+            } => {
+                if paint_revision.0 == 0 || paint_revision > instance.revision {
+                    return Err(pixui_error!("invalid presented paint revision"));
+                }
+                instance
+                    .overlay
+                    .presented(paint_revision, timings, timestamp);
+            }
             UiCommand::Visibility { visible, .. } => {
                 if instance.visible != visible {
                     instance.visible = visible;
@@ -202,16 +221,27 @@ impl UiRegistry {
         input: UiInput,
         application: &Application,
     ) -> PixuiResult<Option<ActionCall>> {
+        let intent = interpret(input)?;
         let instance = self
             .instances
-            .get(&id)
+            .get_mut(&id)
             .ok_or_else(|| pixui_error!("unknown UI instance"))?;
-        if revision < instance.compatible_revision
-            || revision > instance.revision
-            || revision.0 == 0
-            || instance.geometry_stale
+        // Diagnostics and unhandled raw events do not depend on displayed geometry.
+        if matches!(intent, InputIntent::ToggleDiagnostics) {
+            instance.overlay.toggle();
+            instance.diagnostics_dirty = true;
+            return Ok(None);
+        }
+        if matches!(intent, InputIntent::Ignore) {
+            return Ok(None);
+        }
+        if !matches!(intent, InputIntent::ClearHover)
+            && (revision < instance.compatible_revision
+                || revision > instance.revision
+                || revision.0 == 0
+                || instance.geometry_stale)
         {
-            if matches!(input, UiInput::PointerMoved(_)) {
+            if matches!(intent, InputIntent::Hover(_)) {
                 return Ok(None);
             }
             return Err(pixui_error!("stale UI input revision"));
@@ -225,11 +255,9 @@ impl UiRegistry {
         let before = state.clone();
         let mut geometry_changed = false;
         let mut action = None;
-        match input {
-            UiInput::PointerMoved(point) => {
-                if !point.x.is_finite() || !point.y.is_finite() {
-                    return Err(pixui_error!("invalid pointer coordinates"));
-                }
+        match intent {
+            InputIntent::ClearHover => state.hover = None,
+            InputIntent::Hover(point) => {
                 let viewport = super::geometry::Rect {
                     x: 0.0,
                     y: 0.0,
@@ -242,10 +270,7 @@ impl UiRegistry {
                     .iter()
                     .rposition(|bounds| bounds.intersect(viewport).contains(point));
             }
-            UiInput::Activate(point) => {
-                if !point.x.is_finite() || !point.y.is_finite() {
-                    return Err(pixui_error!("invalid pointer coordinates"));
-                }
+            InputIntent::Activate(point) => {
                 let region = instance
                     .layout
                     .hit_regions
@@ -257,7 +282,7 @@ impl UiRegistry {
                     .map(|region| (region.activate)(application))
                     .transpose()?;
             }
-            UiInput::ActivateFocused => {
+            InputIntent::ActivateFocused => {
                 let region = instance
                     .layout
                     .hit_regions
@@ -267,23 +292,30 @@ impl UiRegistry {
                     .map(|region| (region.activate)(application))
                     .transpose()?;
             }
-            UiInput::FocusNext => {
+            InputIntent::FocusNext { backwards } => {
                 let regions = &instance.layout.hit_regions;
-                let next = regions
+                let current = regions
                     .iter()
-                    .position(|region| Some(region.component_index) == state.focus)
-                    .map_or(0, |index| (index + 1) % regions.len());
-                state.focus = regions.get(next).map(|region| region.component_index);
+                    .position(|region| Some(region.component_index) == state.focus);
+                let next = if regions.is_empty() {
+                    None
+                } else {
+                    Some(match (current, backwards) {
+                        (Some(0) | None, true) => regions.len() - 1,
+                        (Some(index), true) => index - 1,
+                        (Some(index), false) => (index + 1) % regions.len(),
+                        (None, false) => 0,
+                    })
+                };
+                state.focus = next.map(|index| regions[index].component_index);
             }
-            UiInput::Scroll(delta) => {
-                if !delta.is_finite() {
-                    return Err(pixui_error!("invalid scroll delta"));
-                }
+            InputIntent::Scroll(delta) => {
                 let maximum =
                     (instance.layout.content_height - instance.settings.viewport.height).max(0.0);
                 state.scroll = (state.scroll + delta).clamp(0.0, maximum);
                 geometry_changed = state.scroll != before.scroll;
             }
+            InputIntent::ToggleDiagnostics | InputIntent::Ignore => unreachable!(),
         }
         if *state != before {
             for peer in self
@@ -303,14 +335,44 @@ impl UiRegistry {
         Ok(action)
     }
 
+    /// Earliest diagnostic refresh across visible windows. The worker can sleep
+    /// until this deadline without requiring host-side overlay timers.
+    pub(crate) fn next_refresh(&self) -> Option<Instant> {
+        self.instances
+            .values()
+            .filter(|instance| instance.visible && instance.outputs.connected())
+            .filter_map(|instance| instance.overlay.refresh)
+            .min()
+    }
+
     /// Publishes only complete successful renders, preserving the last good
     /// revision and geometry on failure. Errors remain inspectable on the worker.
     /// Dropped consumers release their instance on the next rendering pass.
     pub fn render_dirty(&mut self, application: &Application) {
         self.instances
             .retain(|_, instance| instance.outputs.connected());
+        let now = Instant::now();
         for (id, instance) in &mut self.instances {
-            if !instance.dirty || !instance.visible {
+            if !instance.visible {
+                continue;
+            }
+            if !instance.dirty {
+                let refresh_due = instance.diagnostics_dirty
+                    || instance
+                        .overlay
+                        .refresh
+                        .is_some_and(|deadline| deadline <= now);
+                if refresh_due && let Some(output) = &instance.last_render {
+                    let mut output = output.clone();
+                    let Some(revision) = instance.revision.0.checked_add(1) else {
+                        instance.error = Some("render revision exhausted".into());
+                        instance.overlay.refresh = None;
+                        instance.diagnostics_dirty = false;
+                        continue;
+                    };
+                    output.revision = RenderRevision(revision);
+                    publish(instance, output, now);
+                }
                 continue;
             }
             instance.dirty = false;
@@ -337,6 +399,21 @@ impl UiRegistry {
                     timings,
                     animating,
                 }) => {
+                    let mut output = RenderOutput {
+                        instance_id: *id,
+                        revision: RenderRevision(revision),
+                        paint_revision: RenderRevision(revision),
+                        display_list,
+                        redraw_after,
+                        timings,
+                        animating,
+                        animation_request: instance.animation_request,
+                    };
+                    let cached = output.clone();
+                    if let Err(error) = decorate(instance, &mut output, now) {
+                        instance.error = Some(format!("{error:?}"));
+                        continue;
+                    }
                     // Visual-only redraws retain their existing action targets.
                     // Older presented revisions remain usable while geometry and
                     // content identity are unchanged, avoiding animated click races.
@@ -357,21 +434,40 @@ impl UiRegistry {
                     }
                     instance.redraw_only = false;
                     instance.layout = layout;
-                    instance.revision = RenderRevision(revision);
                     instance.geometry_stale = false;
                     instance.error = None;
-                    instance.outputs.publish(RenderOutput {
-                        instance_id: *id,
-                        revision: instance.revision,
-                        display_list,
-                        redraw_after,
-                        timings,
-                        animating,
-                        animation_request: instance.animation_request,
-                    });
+                    instance.last_render = Some(cached);
+                    instance.revision = output.revision;
+                    instance.outputs.publish(output);
                 }
                 Err(error) => instance.error = Some(format!("{error:?}")),
             }
         }
     }
+}
+
+/// Diagnostic drawing is applied only to a complete output. Failure preserves
+/// the previously published frame; cached application commands stay unmodified.
+fn publish(instance: &mut UiInstance, mut output: RenderOutput, now: Instant) {
+    if let Err(error) = decorate(instance, &mut output, now) {
+        instance.error = Some(format!("{error:?}"));
+        return;
+    }
+    instance.revision = output.revision;
+    instance.outputs.publish(output);
+}
+
+fn decorate(instance: &mut UiInstance, output: &mut RenderOutput, now: Instant) -> PixuiResult<()> {
+    instance.diagnostics_dirty = false;
+    instance.overlay.refresh = None;
+    if instance.overlay.visible {
+        output.display_list = instance.overlay.append(
+            std::mem::take(&mut output.display_list),
+            output.timings,
+            instance.settings.scale_factor,
+            instance.settings.viewport,
+            now,
+        )?;
+    }
+    Ok(())
 }

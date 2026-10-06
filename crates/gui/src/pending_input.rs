@@ -120,7 +120,12 @@ mod tests {
             .push(UiCommand::Input {
                 instance: id,
                 revision: RenderRevision(1),
-                input: UiInput::Activate(Point::default()),
+                input: UiInput::MouseButton {
+                    button: pixui_engine::ui::input::MouseButton::Left,
+                    state: pixui_engine::ui::input::ButtonState::Released,
+                    position: Point::default(),
+                    modifiers: Default::default(),
+                },
             })
             .unwrap();
         queue.push(motion(3.0)).unwrap();
@@ -133,7 +138,7 @@ mod tests {
         assert!(matches!(
             queue.commands.get(1),
             Some(UiCommand::Input {
-                input: UiInput::Activate(_),
+                input: UiInput::MouseButton { .. },
                 ..
             })
         ));

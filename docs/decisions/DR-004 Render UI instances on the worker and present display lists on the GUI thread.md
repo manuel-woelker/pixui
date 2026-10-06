@@ -1,7 +1,9 @@
 # DR-004: Render UI instances on the worker and present display lists on the GUI thread
 
 - Status: Superseded for interaction ownership by
-  [DR-010](<DR-010 Share interaction state across windows of a UI definition.md>)
+  [DR-010](<DR-010 Share interaction state across windows of a UI definition.md>),
+  and for input translation by
+  [DR-011](<DR-011 Interpret native input and render diagnostics on the application worker.md>)
 - Date: 2026-10-06
 
 ## Decision

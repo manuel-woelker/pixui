@@ -13,15 +13,7 @@ pub enum RenderOutcome {
     Skipped,
 }
 
-/// Last successful frame's CPU timings; submission is not GPU execution time.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct RendererTimings {
-    pub acquisition: std::time::Duration,
-    /// Resource conversion, texture allocation and upload recording.
-    pub resources: std::time::Duration,
-    pub drawing: std::time::Duration,
-    pub submission: std::time::Duration,
-}
+pub use pixui_engine::ui::performance::RendererTimings;
 
 /// Executes immutable display lists and owns one window's presentation resources.
 /// Renderers need not be Send. Coordinates are logical pixels; dimensions are

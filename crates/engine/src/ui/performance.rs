@@ -10,6 +10,17 @@ pub struct WorkerTimings {
     pub text: Duration,
 }
 
+/// Last successful native frame's CPU timings; submission is not GPU execution.
+/// Hosts report these to the application, which renders performance diagnostics.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct RendererTimings {
+    pub acquisition: Duration,
+    /// Resource conversion, texture allocation and upload recording.
+    pub resources: Duration,
+    pub drawing: Duration,
+    pub submission: Duration,
+}
+
 /// Referenced payload estimates, deduplicated by snapshot identity within a frame.
 /// Excludes allocator overhead, parsed faces, worker caches and GPU textures.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

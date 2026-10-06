@@ -2,7 +2,7 @@
 //! The application worker owns UI state; this host retains only complete outputs,
 //! native resources, and a finite nonblocking event retry queue.
 
-use super::{pending_input::PendingInput, redraw_schedule::RedrawSchedule};
+use super::{native_input, pending_input::PendingInput, redraw_schedule::RedrawSchedule};
 use crate::renderer::{
     contract::RendererFactory,
     factory::{BuiltinRendererFactory, RendererSelection},
@@ -15,7 +15,7 @@ use pixui_engine::{
     ui::{
         display_list::RenderOutput,
         geometry::{Point, Size},
-        input::{UiCommand, UiInput},
+        input::{Modifiers, UiCommand, UiInput, WheelDelta},
         instance::UiInstanceId,
         mailbox::OutputReceiver,
         presentation::PresentationSettings,
@@ -32,9 +32,8 @@ use std::{
 use winit::{
     application::ApplicationHandler,
     dpi::LogicalSize,
-    event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent},
+    event::{Ime, MouseScrollDelta, WindowEvent},
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
-    keyboard::{Key, NamedKey},
     window::{Window, WindowId},
 };
 
@@ -55,7 +54,7 @@ struct NativeWindow {
     output: Option<RenderOutput>,
     pointer: Point,
     redraw: RedrawSchedule,
-    overlay: crate::performance_overlay::PerformanceOverlay,
+    modifiers: Modifiers,
     occluded: bool,
     worker_visible: bool,
     drawing_activity: Option<crate::drawing_activity::DrawingActivity>,
@@ -75,12 +74,12 @@ impl NativeWindow {
         }
     }
 
-    fn input(&self, input: UiInput) -> Option<UiCommand> {
-        self.presentation.revision.map(|revision| UiCommand::Input {
+    fn input(&self, input: UiInput) -> UiCommand {
+        UiCommand::Input {
             instance: self.instance,
-            revision,
+            revision: self.presentation.revision.unwrap_or_default(),
             input,
-        })
+        }
     }
 
     fn request_redraw(&mut self) {
@@ -117,7 +116,6 @@ impl NativeWindow {
         self.worker_visible = visible;
         if !visible {
             self.redraw.cancel();
-            self.overlay.refresh = None;
         } else {
             self.request_redraw();
         }
@@ -135,22 +133,8 @@ impl NativeWindow {
             return Ok(false);
         }
         let size = self.window.inner_size();
-        let overlay_display = if self.overlay.visible {
-            Some(self.overlay.append(
-                &output.display_list,
-                output.timings,
-                self.settings.scale_factor,
-                Size {
-                    width: size.width as f32 / self.settings.scale_factor,
-                    height: size.height as f32 / self.settings.scale_factor,
-                },
-                Instant::now(),
-            )?)
-        } else {
-            None
-        };
         self.presentation.draw(
-            overlay_display.as_ref().unwrap_or(&output.display_list),
+            &output.display_list,
             output.revision,
             size.width,
             size.height,
@@ -162,11 +146,6 @@ impl NativeWindow {
             && size.height > 0
             && self.presentation.active
         {
-            self.overlay.presented(
-                output.revision,
-                self.presentation.renderer.timings(),
-                Instant::now(),
-            );
             return Ok(true);
         }
         Ok(false)
@@ -230,7 +209,7 @@ impl ApplicationHandler for Host {
                     output: None,
                     pointer: Point::default(),
                     redraw: RedrawSchedule::default(),
-                    overlay: Default::default(),
+                    modifiers: Modifiers::default(),
                     occluded: false,
                     worker_visible: true,
                     drawing_activity: self.wayland.then(Default::default),
@@ -363,6 +342,18 @@ impl ApplicationHandler for Host {
                                 .unwrap_or(60_000);
                             let interval = Duration::from_secs_f64(1000.0 / f64::from(millihertz));
                             native.redraw.presented(Instant::now(), interval);
+                            if let Some(output) = &native.output {
+                                let feedback = UiCommand::FramePresented {
+                                    instance: native.instance,
+                                    paint_revision: output.paint_revision,
+                                    timings: native.presentation.renderer.timings(),
+                                    timestamp: Instant::now(),
+                                };
+                                if let Err(error) = self.pending.push(feedback) {
+                                    self.fail(event_loop, error);
+                                    return;
+                                }
+                            }
                         }
                         Ok(false) => {}
                         Err(error) => {
@@ -378,41 +369,51 @@ impl ApplicationHandler for Host {
                     x: position.x as f32 / native.settings.scale_factor,
                     y: position.y as f32 / native.settings.scale_factor,
                 };
-                native.input(UiInput::PointerMoved(native.pointer))
+                Some(native.input(UiInput::PointerMoved(native.pointer)))
             }
-            WindowEvent::CursorLeft { .. } => {
-                native.input(UiInput::PointerMoved(Point { x: -1.0, y: -1.0 }))
+            WindowEvent::CursorEntered { .. } => Some(native.input(UiInput::PointerEntered)),
+            WindowEvent::CursorLeft { .. } => Some(native.input(UiInput::PointerLeft)),
+            WindowEvent::MouseInput { button, state, .. } => {
+                Some(native.input(UiInput::MouseButton {
+                    button: native_input::mouse_button(button),
+                    state: native_input::button_state(state),
+                    position: native.pointer,
+                    modifiers: native.modifiers,
+                }))
             }
-            WindowEvent::MouseInput {
-                button: MouseButton::Left,
-                state: ElementState::Released,
-                ..
-            } => native.input(UiInput::Activate(native.pointer)),
             WindowEvent::MouseWheel { delta, .. } => {
-                let distance = match delta {
-                    MouseScrollDelta::LineDelta(_, y) => -y * 40.0,
-                    MouseScrollDelta::PixelDelta(position) => {
-                        -position.y as f32 / native.settings.scale_factor
-                    }
+                let delta = match delta {
+                    MouseScrollDelta::LineDelta(x, y) => WheelDelta::Lines { x, y },
+                    MouseScrollDelta::PixelDelta(position) => WheelDelta::Pixels {
+                        x: position.x as f32 / native.settings.scale_factor,
+                        y: position.y as f32 / native.settings.scale_factor,
+                    },
                 };
-                native.input(UiInput::Scroll(distance))
+                Some(native.input(UiInput::MouseWheel {
+                    delta,
+                    modifiers: native.modifiers,
+                }))
             }
-            WindowEvent::KeyboardInput { event, .. }
-                if event.state == ElementState::Pressed && !event.repeat =>
-            {
-                match event.logical_key {
-                    Key::Named(NamedKey::F11) => {
-                        native.overlay.toggle();
-                        native.request_redraw();
-                        None
-                    }
-                    Key::Named(NamedKey::Tab) => native.input(UiInput::FocusNext),
-                    Key::Named(NamedKey::Enter | NamedKey::Space) => {
-                        native.input(UiInput::ActivateFocused)
-                    }
-                    _ => None,
-                }
+            WindowEvent::KeyboardInput {
+                event,
+                is_synthetic,
+                ..
+            } => Some(native.input(UiInput::Keyboard(native_input::keyboard(
+                event,
+                native.modifiers,
+                is_synthetic,
+            )))),
+            WindowEvent::ModifiersChanged(modifiers) => {
+                native.modifiers = native_input::modifiers(modifiers.state());
+                Some(native.input(UiInput::ModifiersChanged(native.modifiers)))
             }
+            WindowEvent::Focused(focused) => Some(native.input(UiInput::Focused(focused))),
+            WindowEvent::Ime(ime) => Some(native.input(match ime {
+                Ime::Enabled => UiInput::ImeEnabled,
+                Ime::Preedit(text, cursor) => UiInput::ImePreedit { text, cursor },
+                Ime::Commit(text) => UiInput::ImeCommit(text),
+                Ime::Disabled => UiInput::ImeDisabled,
+            })),
             _ => None,
         };
         if !close
@@ -473,12 +474,20 @@ impl ApplicationHandler for Host {
                         .as_ref()
                         .is_none_or(|previous| output.revision > previous.revision)
                     {
-                        native.redraw.received(
-                            Instant::now(),
-                            output.redraw_after,
-                            output.animating,
-                            output.animation_request,
-                        );
+                        // Overlay-only outputs must not restart painter deadlines
+                        // or acknowledge an animation request that is still pending.
+                        if native
+                            .output
+                            .as_ref()
+                            .is_none_or(|previous| previous.paint_revision != output.paint_revision)
+                        {
+                            native.redraw.received(
+                                Instant::now(),
+                                output.redraw_after,
+                                output.animating,
+                                output.animation_request,
+                            );
+                        }
                         native.output = Some(output);
                         if native.drawable() {
                             native.request_redraw();
@@ -494,15 +503,6 @@ impl ApplicationHandler for Host {
         }
         let now = Instant::now();
         for native in self.windows.values_mut() {
-            if native.drawable()
-                && native
-                    .overlay
-                    .refresh
-                    .is_some_and(|deadline| deadline <= now)
-            {
-                native.overlay.refresh = None;
-                native.request_redraw();
-            }
             if native.drawable()
                 && native
                     .presentation
@@ -540,13 +540,7 @@ impl ApplicationHandler for Host {
                 .windows
                 .values()
                 .filter(|native| native.drawable())
-                .flat_map(|native| {
-                    [
-                        native.redraw.deadline(),
-                        native.presentation.retry,
-                        native.overlay.refresh,
-                    ]
-                })
+                .flat_map(|native| [native.redraw.deadline(), native.presentation.retry])
                 .flatten()
                 .chain(retry)
                 .chain(Some(self.visibility_check))

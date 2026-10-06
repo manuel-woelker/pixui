@@ -92,14 +92,21 @@ anchored to the bottom-right corner with an eight logical pixel margin. It is
 drawn last, has no hit regions, and works with both built-in renderers. Its font
 atlas uses embedded Geist Mono, is prepared once per DPI scale and reused.
 Numeric values use fixed-width columns with three decimal places for timings.
-While visible, it refreshes at 4 Hz without scheduling worker renders; hiding it
-stops those diagnostic redraws.
+F11 is interpreted on the application worker, which creates the overlay commands
+and font atlas. The host draws the complete output without adding commands.
+While visible, a worker timer refreshes diagnostics at 4 Hz from cached
+application commands, skipping component preparation and painting. Hiding the
+window or disabling the overlay stops diagnostic refreshes.
 
-FPS counts distinct worker output revisions successfully presented during the
-last second. Diagnostic refreshes, failed submissions, and skipped presentations
-do not increase it. An idle application therefore shows zero FPS. Timings show
-the latest presented application frame, so they can differ in age from the FPS
-window. The overlay shows these CPU stages:
+The host reports successful presentation timestamps and renderer CPU timings
+through `UiCommand::FramePresented`. FPS counts distinct `paint_revision` values
+successfully presented during the last second. Diagnostic refreshes, failed
+submissions, and skipped presentations do not increase it. An idle application
+therefore shows zero FPS. Worker timings describe the application painting pass
+referenced by the output; renderer timings describe the latest reported
+application frame. The host cannot report a submission before it happens, so
+those renderer timings appear in a subsequent worker output and can differ in
+age from the FPS window. The overlay shows these CPU stages:
 
 - **Prepare:** component validation, expression evaluation, state updates,
   props preparation and fixed-row geometry.

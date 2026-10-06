@@ -1,7 +1,7 @@
 mod drawing_activity;
 pub mod host;
+mod native_input;
 pub mod painter;
 mod pending_input;
-mod performance_overlay;
 mod redraw_schedule;
 pub mod renderer;

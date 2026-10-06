@@ -333,14 +333,24 @@ mod tests {
             app.ui_command(UiCommand::Input {
                 instance: one,
                 revision: initial.revision,
-                input: UiInput::Activate(point)
+                input: UiInput::MouseButton {
+                    button: pixui_engine::ui::input::MouseButton::Left,
+                    state: pixui_engine::ui::input::ButtonState::Released,
+                    position: point,
+                    modifiers: Default::default()
+                }
             })
             .is_err()
         );
         app.ui_command(UiCommand::Input {
             instance: one,
             revision: filtered.revision,
-            input: UiInput::Activate(point),
+            input: UiInput::MouseButton {
+                button: pixui_engine::ui::input::MouseButton::Left,
+                state: pixui_engine::ui::input::ButtonState::Released,
+                position: point,
+                modifiers: Default::default(),
+            },
         })
         .unwrap();
         outputs.recv_timeout(Duration::from_secs(2)).unwrap();
@@ -430,7 +440,12 @@ mod tests {
         app.ui_command(UiCommand::Input {
             instance,
             revision: initial.revision,
-            input: UiInput::Activate(point),
+            input: UiInput::MouseButton {
+                button: pixui_engine::ui::input::MouseButton::Left,
+                state: pixui_engine::ui::input::ButtonState::Released,
+                position: point,
+                modifiers: Default::default(),
+            },
         })
         .unwrap();
         let added = outputs.recv_timeout(Duration::from_secs(2)).unwrap();
@@ -440,7 +455,12 @@ mod tests {
             app.ui_command(UiCommand::Input {
                 instance,
                 revision: initial.revision,
-                input: UiInput::Activate(point)
+                input: UiInput::MouseButton {
+                    button: pixui_engine::ui::input::MouseButton::Left,
+                    state: pixui_engine::ui::input::ButtonState::Released,
+                    position: point,
+                    modifiers: Default::default()
+                }
             })
             .is_err()
         );
@@ -517,7 +537,7 @@ mod tests {
             app.ui_command(UiCommand::Input {
                 instance,
                 revision: unhovered.revision,
-                input: UiInput::FocusNext,
+                input: UiInput::Keyboard(pixui_engine::ui::input::KeyboardEvent::named("Tab")),
             })
             .unwrap();
             let focused = outputs.recv_timeout(Duration::from_secs(2)).unwrap();
@@ -531,7 +551,12 @@ mod tests {
             app.ui_command(UiCommand::Input {
                 instance,
                 revision: focused.revision,
-                input: UiInput::Activate(point),
+                input: UiInput::MouseButton {
+                    button: pixui_engine::ui::input::MouseButton::Left,
+                    state: pixui_engine::ui::input::ButtonState::Released,
+                    position: point,
+                    modifiers: Default::default(),
+                },
             })
             .unwrap();
             let updated = outputs.recv_timeout(Duration::from_secs(2)).unwrap();
@@ -598,7 +623,12 @@ mod tests {
             .ui_command(UiCommand::Input {
                 instance: light,
                 revision: light_output.revision,
-                input: UiInput::Activate(point),
+                input: UiInput::MouseButton {
+                    button: pixui_engine::ui::input::MouseButton::Left,
+                    state: pixui_engine::ui::input::ButtonState::Released,
+                    position: point,
+                    modifiers: Default::default(),
+                },
             })
             .unwrap();
         let light_output = light_outputs.recv_timeout(Duration::from_secs(2)).unwrap();
@@ -621,7 +651,12 @@ mod tests {
             .ui_command(UiCommand::Input {
                 instance: light,
                 revision: light_output.revision,
-                input: UiInput::Activate(row),
+                input: UiInput::MouseButton {
+                    button: pixui_engine::ui::input::MouseButton::Left,
+                    state: pixui_engine::ui::input::ButtonState::Released,
+                    position: row,
+                    modifiers: Default::default(),
+                },
             })
             .unwrap();
         light_outputs.recv_timeout(Duration::from_secs(2)).unwrap();

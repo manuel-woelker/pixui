@@ -223,6 +223,10 @@ impl Application {
         Ok(())
     }
 
+    pub(super) fn next_ui_refresh(&self) -> Option<std::time::Instant> {
+        self.uis.next_refresh()
+    }
+
     pub(crate) fn render_dirty(&mut self) {
         let mut uis = std::mem::take(&mut self.uis);
         uis.render_dirty(self);

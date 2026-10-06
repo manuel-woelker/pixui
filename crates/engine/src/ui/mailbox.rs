@@ -124,6 +124,7 @@ mod tests {
         RenderOutput {
             instance_id: UiInstanceId(1),
             revision: RenderRevision(revision),
+            paint_revision: RenderRevision(revision),
             display_list: Default::default(),
             redraw_after: None,
             timings: Default::default(),

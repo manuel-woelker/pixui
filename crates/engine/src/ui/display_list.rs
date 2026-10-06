@@ -122,6 +122,9 @@ pub struct RenderRevision(pub u64);
 pub struct RenderOutput {
     pub instance_id: UiInstanceId,
     pub revision: RenderRevision,
+    /// Revision of the component painting pass. Diagnostic refreshes advance
+    /// `revision` while retaining this value and all application geometry.
+    pub paint_revision: RenderRevision,
     pub display_list: DisplayList,
     /// Optional scheduling request; no timer is started by headless consumers.
     pub redraw_after: Option<std::time::Duration>,
