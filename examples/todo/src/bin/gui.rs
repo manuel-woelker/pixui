@@ -34,7 +34,7 @@ fn main() -> PixuiResult<()> {
         }
     }
     let application = Application::new();
-    application.add_slice(todo::create_slice()?)?;
+    todo::create_slice(&application)?;
     let actions = todo::actions::TodoActions::bind(&application)?;
     actions.add_todo("Create a todo application")?;
     actions.add_todo("Try dark mode / Dunkelmodus ausprobieren")?;

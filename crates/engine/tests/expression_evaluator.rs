@@ -13,22 +13,21 @@ mod model {
 
 #[test]
 fn evaluates_as_a_shared_sequence_borrowing_live_items_and_skipping_holes() {
-    let mut slice = ApplicationSlice::new("data");
-    slice
-        .add_collection(Collection::new_reflected::<String>("labels"))
+    let mut app = Application::default();
+    let id = app.add_slice(ApplicationSlice::new("data")).unwrap();
+    let labels = app
+        .add_collection(id, Collection::new_reflected::<String>("labels"))
         .unwrap();
-    slice
-        .add_collection(Collection::new_reflected::<model::Item>("items"))
+    let items = app
+        .add_collection(id, Collection::new_reflected::<model::Item>("items"))
         .unwrap();
-    let arena = slice.collection_mut::<model::Item>("items").unwrap();
+    let arena = app.resolve_collection_mut::<model::Item>(items).unwrap();
     let removed = arena.insert(model::Item { value: 1 });
     let key = arena.insert(model::Item { value: 42 });
     arena.remove(removed);
-    let mut app = Application::default();
-    let id = app.add_slice(slice).unwrap();
     let mut sequence: DynamicObject<'_> = {
         let context = ExpressionContext::new(&app);
-        evaluate(&context, &Expression::collection(id, 1)).unwrap()
+        evaluate(&context, &Expression::collection(items)).unwrap()
     };
     assert_eq!(sequence.len().unwrap(), 1);
     assert!(sequence.descriptor().is_sequence());
@@ -47,9 +46,7 @@ fn evaluates_as_a_shared_sequence_borrowing_live_items_and_skipping_holes() {
     );
     assert!(std::ptr::eq(
         item.downcast_ref::<model::Item>().unwrap(),
-        app.slice(id)
-            .unwrap()
-            .collection("items")
+        app.collection(id, "items")
             .unwrap()
             .arena::<model::Item>()
             .unwrap()
@@ -65,7 +62,7 @@ fn evaluates_as_a_shared_sequence_borrowing_live_items_and_skipping_holes() {
     assert!(sequence.into_owned::<Vec<model::Item>>().is_err());
     let empty = evaluate(
         &ExpressionContext::new(&app),
-        &Expression::collection(id, 0),
+        &Expression::collection(labels),
     )
     .unwrap();
     assert!(empty.is_empty().unwrap());
@@ -73,48 +70,39 @@ fn evaluates_as_a_shared_sequence_borrowing_live_items_and_skipping_holes() {
 }
 
 #[test]
-fn rejects_invalid_addresses_and_non_reflected_collections() {
+fn rejects_foreign_addresses_and_non_reflected_collections() {
     let mut app = Application::default();
-    let empty = app.add_slice(ApplicationSlice::new("empty")).unwrap();
-    let mut slice = ApplicationSlice::new("values");
-    slice
-        .add_collection(Collection::new::<i32>("plain"))
+    let plain = app
+        .register_collection(Collection::new::<i32>("plain"))
         .unwrap();
-    let id = app.add_slice(slice).unwrap();
-    let foreign = ApplicationSlice::new("foreign").id();
-    for (slice, index) in [(empty, 0), (id, 0), (id, 1), (id, usize::MAX), (foreign, 0)] {
+    let foreign = Application::default()
+        .register_collection(Collection::new_reflected::<i32>("foreign"))
+        .unwrap();
+    for index in [plain, foreign] {
         assert!(
             evaluate(
                 &ExpressionContext::new(&app),
-                &Expression::collection(slice, index)
+                &Expression::collection(index)
             )
             .is_err()
         );
     }
-    app.remove_slice(id).unwrap();
-    assert!(
-        evaluate(
-            &ExpressionContext::new(&app),
-            &Expression::collection(id, 0)
-        )
-        .is_err()
-    );
 }
 
 #[test]
-fn addresses_survive_slice_reordering_and_collection_append() {
+fn addresses_survive_slice_removal_reordering_and_collection_append() {
     let mut app = Application::default();
-    let mut first = ApplicationSlice::new("first");
-    first
-        .add_collection(Collection::new_reflected::<i32>("original"))
+    let first = app.add_slice(ApplicationSlice::new("first")).unwrap();
+    let index = app
+        .add_collection(first, Collection::new_reflected::<i32>("original"))
         .unwrap();
-    first.collection_mut::<i32>("original").unwrap().insert(42);
-    let first = app.add_slice(first).unwrap();
+    app.resolve_collection_mut::<i32>(index).unwrap().insert(42);
     let second = app.add_slice(ApplicationSlice::new("second")).unwrap();
-    let expression = Expression::collection(first, 0);
+    let expression = Expression::collection(index);
     app.add_collection(first, Collection::new::<i32>("appended"))
         .unwrap();
     app.swap_slices(first, second).unwrap();
+    app.remove_slice(first).unwrap();
     let collection = evaluate(&ExpressionContext::new(&app), &expression).unwrap();
     assert_eq!(
         *collection.get(0).unwrap().downcast_ref::<i32>().unwrap(),
@@ -125,17 +113,14 @@ fn addresses_survive_slice_reordering_and_collection_append() {
 #[test]
 fn worker_inspection_returns_an_owned_snapshot_of_the_sequence() {
     let handle = Application::new();
-    let mut slice = ApplicationSlice::new("data");
-    slice
-        .add_collection(Collection::new_reflected::<i32>("numbers"))
-        .unwrap();
-    slice.collection_mut::<i32>("numbers").unwrap().insert(7);
-    let id = handle.add_slice(slice).unwrap();
+    let mut numbers = Collection::new_reflected::<i32>("numbers");
+    numbers.arena_mut::<i32>().unwrap().insert(7);
+    let index = handle.register_collection(numbers).unwrap();
     let values = handle
         .inspect(move |state| {
             let sequence = evaluate(
                 &ExpressionContext::new(state),
-                &Expression::collection(id, 0),
+                &Expression::collection(index),
             )?;
             (0..sequence.len()?)
                 .map(|index| Ok(*sequence.get(index)?.downcast_ref::<i32>().unwrap()))

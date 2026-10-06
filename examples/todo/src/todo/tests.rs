@@ -10,7 +10,17 @@ use pixui_engine::application::app::Application;
 
 fn create_application() -> PixuiResult<Application> {
     let mut application = Application::default();
-    application.add_slice(create_slice()?)?;
+    let slice = application.add_slice(ApplicationSlice::new("todo"))?;
+    application.add_collection(slice, Collection::new_reflected::<TodoItem>("todos"))?;
+    let mut settings = Collection::new_reflected::<TodoSettings>("settings");
+    settings
+        .arena_mut::<TodoSettings>()
+        .unwrap()
+        .insert(TodoSettings {
+            hide_completed: false,
+        });
+    application.add_collection(slice, settings)?;
+    TodoActions::register_in(&mut application, slice)?;
     Ok(application)
 }
 
@@ -81,42 +91,38 @@ fn discovers_constructs_and_dispatches_owned_requests() {
 #[test]
 fn registration_requires_named_collection_with_correct_type() {
     let descriptor = add_todo_action::descriptor();
-    let mut slice = ApplicationSlice::new("missing");
-    assert!(slice.register_action(descriptor).is_err());
-    assert!(slice.actions().is_empty());
-    slice
-        .add_collection(Collection::new::<TodoItem>("other"))
+    let mut app = Application::default();
+    let missing = app.add_slice(ApplicationSlice::new("missing")).unwrap();
+    assert!(app.register_action(missing, descriptor).is_err());
+    app.add_collection(missing, Collection::new::<TodoItem>("other"))
         .unwrap();
-    assert!(slice.register_action(descriptor).is_err());
-    slice
-        .add_collection(Collection::new::<String>("todos"))
+    assert!(app.register_action(missing, descriptor).is_err());
+    app.add_collection(missing, Collection::new::<String>("todos"))
         .unwrap();
-    assert!(slice.register_action(descriptor).is_err());
-    assert!(slice.actions().is_empty());
-
-    let mut slice = ApplicationSlice::new("valid");
-    slice
-        .add_collection(Collection::new::<TodoItem>("todos"))
+    assert!(app.register_action(missing, descriptor).is_err());
+    assert!(app.slice(missing).unwrap().actions().is_empty());
+    let valid = app.add_slice(ApplicationSlice::new("valid")).unwrap();
+    app.add_collection(valid, Collection::new::<TodoItem>("todos"))
         .unwrap();
-    slice
-        .add_collection(Collection::new::<TodoItem>("archived"))
+    app.add_collection(valid, Collection::new::<TodoItem>("archived"))
         .unwrap();
     assert!(
-        slice
-            .add_collection(Collection::new::<TodoItem>("todos"))
+        app.add_collection(valid, Collection::new::<TodoItem>("todos"))
             .is_err()
     );
     assert!(
-        slice
-            .add_collection(Collection::new::<TodoItem>(""))
+        app.add_collection(valid, Collection::new::<TodoItem>(""))
             .is_err()
     );
-    assert_eq!(slice.collections().len(), 2);
-    assert_eq!(slice.register_action(descriptor).unwrap(), ActionIndex(0));
-    assert!(slice.register_action(descriptor).is_err());
-    assert_eq!(slice.actions().len(), 1);
-    assert!(slice.action_named("unknown").is_err());
-    assert!(slice.action(ActionIndex(99)).is_err());
+    assert_eq!(app.slice(valid).unwrap().collections().len(), 2);
+    assert_eq!(
+        app.register_action(valid, descriptor).unwrap(),
+        ActionIndex(0)
+    );
+    assert!(app.register_action(valid, descriptor).is_err());
+    assert_eq!(app.slice(valid).unwrap().actions().len(), 1);
+    assert!(app.slice(valid).unwrap().action_named("unknown").is_err());
+    assert!(app.slice(valid).unwrap().action(ActionIndex(99)).is_err());
 }
 
 #[test]
@@ -129,9 +135,7 @@ fn parameter_name_disambiguates_collections_with_same_item_type() {
     add(&mut application, slice, "task");
     assert_eq!(
         application
-            .slice(slice)
-            .unwrap()
-            .collection("todos")
+            .collection(slice, "todos")
             .unwrap()
             .arena::<TodoItem>()
             .unwrap()
@@ -140,9 +144,7 @@ fn parameter_name_disambiguates_collections_with_same_item_type() {
     );
     assert!(
         application
-            .slice(slice)
-            .unwrap()
-            .collection("archived")
+            .collection(slice, "archived")
             .unwrap()
             .arena::<TodoItem>()
             .unwrap()
@@ -195,9 +197,7 @@ fn invalid_requests_and_titles_do_not_mutate_the_collection() {
     assert!(application.dispatch(call).is_err());
     assert!(
         application
-            .slice(slice)
-            .unwrap()
-            .collection("todos")
+            .collection(slice, "todos")
             .unwrap()
             .arena::<TodoItem>()
             .unwrap()
@@ -206,7 +206,7 @@ fn invalid_requests_and_titles_do_not_mutate_the_collection() {
 }
 
 #[test]
-fn stale_foreign_and_removed_slice_references_are_rejected() {
+fn stale_foreign_references_and_removed_slice_calls_are_rejected() {
     let mut application = create_application().unwrap();
     let slice = application.slices()[0].id();
     let key = add(&mut application, slice, "task");
@@ -231,7 +231,10 @@ fn stale_foreign_and_removed_slice_references_are_rejected() {
         .unwrap();
     application.remove_slice(slice).unwrap();
     assert!(application.dispatch(call).is_err());
-    assert!(application.resolve_mut(reference).is_err());
+    assert_eq!(
+        application.resolve_mut(reference).unwrap().title,
+        "new task"
+    );
 }
 
 #[test]

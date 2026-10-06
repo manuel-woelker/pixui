@@ -5,7 +5,7 @@ use pixui_engine::application::{
 };
 
 #[test]
-fn slices_hold_collections_with_different_homogeneous_item_types() {
+fn application_holds_collections_with_different_homogeneous_item_types() {
     struct Record {
         value: i32,
     }
@@ -17,13 +17,15 @@ fn slices_hold_collections_with_different_homogeneous_item_types() {
     let mut labels = Collection::new::<String>(String::from("labels"));
     let label_key = labels.arena_mut::<String>().unwrap().insert("hello".into());
 
-    let mut slice = ApplicationSlice::new("main");
-    slice.add_collection(records).unwrap();
-    slice.add_collection(labels).unwrap();
     let mut application = Application::default();
+    let records = application.register_collection(records).unwrap();
+    let labels = application.register_collection(labels).unwrap();
+    let mut slice = ApplicationSlice::new("main");
+    slice.bind_collection("records", records).unwrap();
+    slice.bind_collection("labels", labels).unwrap();
     application.add_slice(slice).unwrap();
 
-    let collections = application.slices()[0].collections();
+    let collections = application.collections();
     assert_eq!(application.slices()[0].name(), "main");
     assert_eq!(collections[0].name(), "records");
     assert_eq!(

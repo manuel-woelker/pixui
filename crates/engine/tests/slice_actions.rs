@@ -2,7 +2,8 @@ use pixui_base::{Arena, Key, PixuiResult, pixui_error};
 use pixui_engine::application::{
     action::{ActionDescriptor, slice_actions},
     app::Application,
-    application_slice::ApplicationSlice,
+    application_handle::ApplicationHandle,
+    application_slice::{ApplicationSlice, SliceId},
     collection::Collection,
 };
 
@@ -45,13 +46,15 @@ mod actions {
 
 use actions::NoteActions;
 
-fn slice(name: &str) -> ApplicationSlice {
-    let mut slice = ApplicationSlice::new(name.to_owned());
-    slice
-        .add_collection(Collection::new::<String>("notes"))
+fn slice(application: &ApplicationHandle, name: &str) -> SliceId {
+    let id = application
+        .add_slice(ApplicationSlice::new(name.to_owned()))
         .unwrap();
-    NoteActions::register(&mut slice).unwrap();
-    slice
+    application
+        .add_collection(id, Collection::new::<String>("notes"))
+        .unwrap();
+    NoteActions::register(application, id).unwrap();
+    id
 }
 
 #[test]
@@ -63,7 +66,7 @@ fn typed_facade_converts_strings_resolves_references_and_propagates_errors() {
         }
     }
     let application = Application::new();
-    let id = application.add_slice(slice("notes")).unwrap();
+    let id = slice(&application, "notes");
     let actions = NoteActions::bind(&application).unwrap();
     assert_eq!(actions.slice_id(), id);
     let first: Key<String> = actions.add("borrowed string").unwrap();
@@ -77,11 +80,7 @@ fn typed_facade_converts_strings_resolves_references_and_propagates_errors() {
     assert_eq!(actions.answer().unwrap(), 42);
     application
         .inspect(move |state| {
-            let notes = state
-                .slice(id)?
-                .collection("notes")?
-                .arena::<String>()
-                .unwrap();
+            let notes = state.collection(id, "notes")?.arena::<String>().unwrap();
             assert_eq!(notes.len(), 3);
             assert_eq!(notes.get(first).unwrap(), "renamed");
             assert_eq!(notes.get(second).unwrap(), "owned string");
@@ -93,7 +92,7 @@ fn typed_facade_converts_strings_resolves_references_and_propagates_errors() {
 #[test]
 fn cloned_facades_dispatch_from_multiple_threads() {
     let application = Application::new();
-    application.add_slice(slice("notes")).unwrap();
+    slice(&application, "notes");
     let actions = NoteActions::bind(&application).unwrap();
     let callers: Vec<_> = (0..8)
         .map(|index| {
@@ -108,11 +107,7 @@ fn cloned_facades_dispatch_from_multiple_threads() {
     let id = actions.slice_id();
     application
         .inspect(move |state| {
-            let notes = state
-                .slice(id)?
-                .collection("notes")?
-                .arena::<String>()
-                .unwrap();
+            let notes = state.collection(id, "notes")?.arena::<String>().unwrap();
             assert_eq!(notes.len(), keys.len());
             assert!(keys.iter().all(|key| notes.contains(*key)));
             Ok(())
@@ -124,11 +119,12 @@ fn cloned_facades_dispatch_from_multiple_threads() {
 fn binding_validates_missing_slices_actions_and_exact_descriptors() {
     let application = Application::new();
     assert!(NoteActions::bind(&application).is_err());
-    let mut missing = ApplicationSlice::new("notes");
-    missing
-        .add_collection(Collection::new::<String>("notes"))
+    let missing = application
+        .add_slice(ApplicationSlice::new("notes"))
         .unwrap();
-    application.add_slice(missing).unwrap();
+    application
+        .add_collection(missing, Collection::new::<String>("notes"))
+        .unwrap();
     assert!(NoteActions::bind(&application).is_err());
 
     let application = Application::new();
@@ -142,9 +138,10 @@ fn binding_validates_missing_slices_actions_and_exact_descriptors() {
             |_, _, _| Ok(Box::new(())),
         )
     });
-    let mut wrong = ApplicationSlice::new("notes");
-    wrong.register_action(impostor).unwrap();
-    application.add_slice(wrong).unwrap();
+    let wrong = application
+        .add_slice(ApplicationSlice::new("notes"))
+        .unwrap();
+    application.register_action(wrong, impostor).unwrap();
     assert!(!std::ptr::eq(original, impostor));
     assert!(NoteActions::bind(&application).is_err());
 }
@@ -152,7 +149,7 @@ fn binding_validates_missing_slices_actions_and_exact_descriptors() {
 #[test]
 fn explicit_binding_supports_other_names_and_rejects_foreign_identities() {
     let application = Application::new();
-    let id = application.add_slice(slice("archive")).unwrap();
+    let id = slice(&application, "archive");
     assert!(NoteActions::bind(&application).is_err());
     let actions = NoteActions::bind_to(&application, id).unwrap();
     actions.add("archived").unwrap();
@@ -163,40 +160,140 @@ fn explicit_binding_supports_other_names_and_rejects_foreign_identities() {
 
 #[test]
 fn registration_and_slice_name_validation_are_atomic() {
-    let mut missing = ApplicationSlice::new("notes");
-    // Put a valid action before one whose collection binding is missing.
-    assert!(
-        missing
-            .register_actions(&[
-                actions::answer_action::descriptor(),
-                actions::add_action::descriptor(),
-            ])
-            .is_err()
-    );
-    assert!(missing.actions().is_empty());
-    assert!(
-        missing
-            .register_actions(&[
-                actions::answer_action::descriptor(),
-                actions::answer_action::descriptor(),
-            ])
-            .is_err()
-    );
-    assert!(missing.actions().is_empty());
-
     let application = Application::new();
-    application.add_slice(slice("notes")).unwrap();
-    assert!(application.add_slice(slice("notes")).is_err());
-    assert!(application.add_slice(slice("")).is_err());
+    let missing = application
+        .add_slice(ApplicationSlice::new("missing"))
+        .unwrap();
+    assert!(
+        application
+            .register_actions(
+                missing,
+                &[
+                    actions::answer_action::descriptor(),
+                    actions::add_action::descriptor(),
+                ]
+            )
+            .is_err()
+    );
+    assert!(
+        application
+            .register_actions(
+                missing,
+                &[
+                    actions::answer_action::descriptor(),
+                    actions::answer_action::descriptor(),
+                ]
+            )
+            .is_err()
+    );
     application
-        .inspect(|state| {
-            assert_eq!(state.slices().len(), 1);
-            assert_eq!(state.slice_named("notes")?.name(), "notes");
+        .inspect(move |state| {
+            assert!(state.slice(missing)?.actions().is_empty());
             Ok(())
         })
         .unwrap();
-    let mut configured = slice("another");
-    let count = configured.actions().len();
-    assert!(NoteActions::register(&mut configured).is_err());
-    assert_eq!(configured.actions().len(), count);
+    let id = slice(&application, "notes");
+    assert!(
+        application
+            .add_slice(ApplicationSlice::new("notes"))
+            .is_err()
+    );
+    assert!(application.add_slice(ApplicationSlice::new("")).is_err());
+    assert!(NoteActions::register(&application, id).is_err());
+    application
+        .inspect(move |state| {
+            assert_eq!(state.slices().len(), 2);
+            assert_eq!(state.slice_named("notes")?.name(), "notes");
+            assert_eq!(state.slice(id)?.actions().len(), 4);
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn registration_rejects_mutable_aliases_and_checks_foreign_and_wrong_types_atomically() {
+    use pixui_engine::application::action::CollectionBinding;
+    let mut app = Application::default();
+    let id = app.add_slice(ApplicationSlice::new("aliases")).unwrap();
+    let index = app
+        .add_collection(id, Collection::new::<String>("notes"))
+        .unwrap();
+    app.bind_collection(id, "alias", index).unwrap();
+    let action = Box::leak(Box::new(ActionDescriptor::new::<
+        actions::answer_action::request::Request,
+    >(
+        "aliases",
+        "",
+        vec![
+            CollectionBinding::new::<String>("notes"),
+            CollectionBinding::new::<String>("alias"),
+        ],
+        |_, _, _| Ok(Box::new(())),
+    )));
+    assert!(
+        app.register_actions(id, &[actions::answer_action::descriptor(), action])
+            .is_err()
+    );
+    assert!(app.slice(id).unwrap().actions().is_empty());
+    let other = app.add_slice(ApplicationSlice::new("wrong_type")).unwrap();
+    app.add_collection(other, Collection::new::<i32>("notes"))
+        .unwrap();
+    assert!(actions::NoteActions::register_in(&mut app, other).is_err());
+    assert!(app.slice(other).unwrap().actions().is_empty());
+    let second = app
+        .add_collection(id, Collection::new::<String>("different"))
+        .unwrap();
+    assert_ne!(index, second);
+    let action = Box::leak(Box::new(ActionDescriptor::new::<
+        actions::answer_action::request::Request,
+    >(
+        "distinct",
+        "",
+        vec![
+            CollectionBinding::new::<String>("notes"),
+            CollectionBinding::new::<String>("different"),
+        ],
+        |_, _, _| Ok(Box::new(())),
+    )));
+    app.register_action(id, action).unwrap();
+}
+
+#[test]
+fn action_facades_in_different_slices_mutate_the_same_application_collection() {
+    let app = Application::new();
+    let shared = app
+        .register_collection(Collection::new::<String>("shared_notes"))
+        .unwrap();
+    let mut first = ApplicationSlice::new("notes");
+    first.bind_collection("notes", shared).unwrap();
+    let first = app.add_slice(first).unwrap();
+    let mut second = ApplicationSlice::new("archive");
+    second.bind_collection("notes", shared).unwrap();
+    let second = app.add_slice(second).unwrap();
+    NoteActions::register(&app, first).unwrap();
+    NoteActions::register(&app, second).unwrap();
+    let first_actions = NoteActions::bind_to(&app, first).unwrap();
+    let second_actions = NoteActions::bind_to(&app, second).unwrap();
+    let key = first_actions.add("shared item").unwrap();
+    let reference = app.object_ref_at(shared, key).unwrap();
+    second_actions
+        .rename(reference, "updated through archive")
+        .unwrap();
+    app.inspect(move |state| {
+        assert_eq!(
+            state
+                .collection(first, "notes")?
+                .arena::<String>()
+                .unwrap()
+                .get(key)
+                .unwrap(),
+            "updated through archive"
+        );
+        assert!(std::ptr::eq(
+            state.collection(first, "notes")?,
+            state.collection(second, "notes")?
+        ));
+        Ok(())
+    })
+    .unwrap();
 }

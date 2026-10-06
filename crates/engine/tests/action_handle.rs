@@ -1,7 +1,11 @@
 use crossbeam_channel::{Receiver, Sender, bounded};
 use pixui_base::{Arena, Key};
 use pixui_engine::application::{
-    action::action, app::Application, application_slice::ApplicationSlice, collection::Collection,
+    action::action,
+    app::Application,
+    application_handle::ApplicationHandle,
+    application_slice::{ApplicationSlice, SliceId},
+    collection::Collection,
 };
 
 #[action]
@@ -15,29 +19,32 @@ fn hold(started: Sender<()>, release: Receiver<()>) {
     release.recv().unwrap();
 }
 
-fn slice() -> ApplicationSlice {
-    let mut slice = ApplicationSlice::new("numbers");
-    slice
-        .add_collection(Collection::new::<i32>("numbers"))
+fn slice(application: &ApplicationHandle) -> SliceId {
+    let id = application
+        .add_slice(ApplicationSlice::new("numbers"))
         .unwrap();
-    slice.register_action(add_action::descriptor()).unwrap();
-    slice
+    application
+        .add_collection(id, Collection::new::<i32>("numbers"))
+        .unwrap();
+    application
+        .register_action(id, add_action::descriptor())
+        .unwrap();
+    id
 }
 
 #[test]
-fn handles_created_before_add_slice_survive_append_and_validate_target_at_dispatch() {
+fn handles_survive_action_append_and_validate_target_at_dispatch() {
     let application = Application::new();
-    let mut slice = slice();
-    let index = slice.action_index("add").unwrap();
-    let action = slice.action_handle(index).unwrap();
+    let id = slice(&application);
+    let action = application.action(id, "add").unwrap();
+    let index = action.index();
     let copy = action;
-    assert_eq!(action.slice_id(), slice.id());
-    assert_eq!(action.index(), index);
+    assert_eq!(action.slice_id(), id);
     assert!(std::ptr::eq(action.descriptor(), add_action::descriptor()));
-    let call = action.call(vec![Box::new(7i32)]).unwrap();
-    assert!(application.dispatch(call).unwrap().wait().is_err());
-    slice.register_action(hold_action::descriptor()).unwrap();
-    let id = application.add_slice(slice).unwrap();
+    application
+        .register_action(id, hold_action::descriptor())
+        .unwrap();
+    assert_eq!(application.action(id, "add").unwrap().index(), index);
     let call = copy.call(vec![Box::new(7i32)]).unwrap();
     let key = *application
         .dispatch(call)
@@ -50,8 +57,7 @@ fn handles_created_before_add_slice_survive_append_and_validate_target_at_dispat
         application
             .inspect(move |state| {
                 Ok(*state
-                    .slice(id)?
-                    .collection("numbers")?
+                    .collection(id, "numbers")?
                     .arena::<i32>()
                     .unwrap()
                     .get(key)
@@ -65,9 +71,10 @@ fn handles_created_before_add_slice_survive_append_and_validate_target_at_dispat
 #[test]
 fn requests_are_constructed_locally_from_another_thread_while_worker_is_busy() {
     let application = Application::with_capacity(1);
-    let mut slice = slice();
-    slice.register_action(hold_action::descriptor()).unwrap();
-    let id = application.add_slice(slice).unwrap();
+    let id = slice(&application);
+    application
+        .register_action(id, hold_action::descriptor())
+        .unwrap();
     let add = application.action(id, "add").unwrap();
     let hold = application.action(id, "hold").unwrap();
     let (started, ready) = bounded::<()>(1);
@@ -90,9 +97,7 @@ fn requests_are_constructed_locally_from_another_thread_while_worker_is_busy() {
 #[test]
 fn lookup_reports_missing_targets_and_cached_metadata_outlives_application() {
     let application = Application::new();
-    let slice = slice();
-    assert!(slice.action_handle_named("missing").is_err());
-    let id = application.add_slice(slice).unwrap();
+    let id = slice(&application);
     assert!(application.action(id, "missing").is_err());
     assert!(
         application

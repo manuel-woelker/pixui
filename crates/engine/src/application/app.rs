@@ -10,10 +10,11 @@ use crate::{
 };
 
 use super::{
-    action::{ActionCall, ActionResult},
+    action::{ActionCall, ActionDescriptor, ActionIndex, ActionResult},
     application_handle::ApplicationHandle,
     application_slice::{ApplicationSlice, SliceId},
     collection::Collection,
+    collection_index::CollectionIndex,
     collection_key::CollectionKey,
     object_ref::ObjectRef,
 };
@@ -29,6 +30,7 @@ pub struct Application {
     // data immutably. RefCell is worker-local; no shared application-state lock.
     pub(crate) text_service: std::cell::RefCell<crate::ui::text::service::TextService>,
     pub(crate) render_clock: crate::ui::render_clock::RenderClock,
+    collections: Vec<Collection>,
     slices: Vec<ApplicationSlice>,
     slice_names: HashMap<String, usize>,
     slice_ids: HashMap<SliceId, usize>,
@@ -95,6 +97,9 @@ impl Application {
                 slice.name()
             ));
         }
+        for index in slice.collections().values() {
+            self.resolve_collection(*index)?;
+        }
         let id = slice.id();
         self.slice_names
             .insert(slice.name().to_owned(), self.slices.len());
@@ -122,22 +127,51 @@ impl Application {
         self.slice_named(slice)?.collection_key(collection)
     }
 
-    /// Borrows an erased collection, checking its slice identity and index.
-    pub fn resolve_collection(&self, key: CollectionKey) -> PixuiResult<&Collection> {
-        let slice = self.slice(key.slice)?;
-        slice
-            .collections()
-            .get(key.collection_index)
-            .ok_or_else(|| {
-                pixui_error!(
-                    "invalid collection index {} in slice `{}`",
-                    key.collection_index,
-                    slice.name()
-                )
-            })
+    /// Registers storage without assigning it to a slice. Names are diagnostic
+    /// defaults, not globally unique identifiers. Collections live until shutdown.
+    pub fn register_collection(&mut self, collection: Collection) -> PixuiResult<CollectionIndex> {
+        if collection.name().is_empty() {
+            return Err(pixui_error!("empty collection name"));
+        }
+        let index = CollectionIndex {
+            position: self.collections.len(),
+            identity: collection.id,
+        };
+        self.collections.push(collection);
+        Ok(index)
     }
 
-    /// Removes a slice; existing calls and object references then fail at dispatch.
+    pub fn collections(&self) -> &[Collection] {
+        &self.collections
+    }
+
+    /// Direct lookup with identity validation; foreign indices never retarget.
+    pub fn resolve_collection(&self, index: CollectionIndex) -> PixuiResult<&Collection> {
+        self.collections
+            .get(index.position)
+            .filter(|collection| collection.id == index.identity)
+            .ok_or_else(|| pixui_error!("unknown or foreign collection index"))
+    }
+
+    pub fn resolve_collection_mut<T: Any>(
+        &mut self,
+        index: CollectionIndex,
+    ) -> PixuiResult<&mut Arena<T>> {
+        self.collections
+            .get_mut(index.position)
+            .filter(|collection| collection.id == index.identity)
+            .ok_or_else(|| pixui_error!("unknown or foreign collection index"))?
+            .arena_mut::<T>()
+            .ok_or_else(|| pixui_error!("wrong collection item type"))
+    }
+
+    /// Resolves a collection using a slice's local name.
+    pub fn collection(&self, slice: SliceId, name: &str) -> PixuiResult<&Collection> {
+        self.resolve_collection(self.slice(slice)?.collection_index(name)?)
+    }
+
+    /// Removes a slice's bindings and actions. Collections and item references
+    /// remain valid; calls targeting the removed slice fail at dispatch.
     pub fn remove_slice(&mut self, id: SliceId) -> PixuiResult<ApplicationSlice> {
         let index = self.slice_position(id)?;
         let slice = self.slices.remove(index);
@@ -171,13 +205,88 @@ impl Application {
         }
     }
 
-    /// Adds a collection while preserving slice identity and naming invariants.
+    /// Registers a new collection and binds its default name atomically.
     pub fn add_collection(
         &mut self,
         slice: SliceId,
-        collection: super::collection::Collection,
+        collection: Collection,
+    ) -> PixuiResult<CollectionIndex> {
+        let name = collection.name().to_owned();
+        if name.is_empty() || self.slice(slice)?.collections().contains_key(&name) {
+            return Err(pixui_error!(
+                "empty or duplicate collection binding `{name}`"
+            ));
+        }
+        let index = self.register_collection(collection)?;
+        self.slice_mut(slice)?.bind_collection(name, index)?;
+        Ok(index)
+    }
+
+    /// Adds an alias to existing storage. Existing bindings cannot be replaced.
+    pub fn bind_collection(
+        &mut self,
+        slice: SliceId,
+        name: impl Into<String>,
+        index: CollectionIndex,
     ) -> PixuiResult<()> {
-        self.slice_mut(slice)?.add_collection(collection)
+        self.resolve_collection(index)?;
+        self.slice_mut(slice)?.bind_collection(name, index)
+    }
+
+    pub fn register_action(
+        &mut self,
+        slice: SliceId,
+        action: &'static ActionDescriptor,
+    ) -> PixuiResult<ActionIndex> {
+        let index = ActionIndex(self.slice(slice)?.actions().len());
+        self.register_actions(slice, &[action])?;
+        Ok(index)
+    }
+
+    /// Validates the entire batch before adding any action. Injected collection
+    /// names must resolve to existing storage of the correct type. Multiple
+    /// mutable parameters may not bind aliases of the same collection.
+    pub fn register_actions(
+        &mut self,
+        slice: SliceId,
+        actions: &[&'static ActionDescriptor],
+    ) -> PixuiResult<()> {
+        let target = self.slice(slice)?;
+        for (position, action) in actions.iter().enumerate() {
+            if action.name().is_empty()
+                || target
+                    .actions()
+                    .iter()
+                    .chain(actions[..position].iter())
+                    .any(|other| other.name() == action.name())
+            {
+                return Err(pixui_error!(
+                    "empty or duplicate action name `{}`",
+                    action.name()
+                ));
+            }
+            let mut borrowed = std::collections::HashSet::new();
+            for binding in action.collections() {
+                let index = target.collection_index(binding.name)?;
+                let collection = self.resolve_collection(index)?;
+                if collection.item_type_id() != binding.item_type_id {
+                    return Err(pixui_error!(
+                        "collection `{}` must contain `{}`, got `{}`",
+                        binding.name,
+                        binding.item_type_name,
+                        collection.item_type_name()
+                    ));
+                }
+                if !borrowed.insert(index) {
+                    return Err(pixui_error!(
+                        "action `{}` binds the same mutable collection more than once",
+                        action.name()
+                    ));
+                }
+            }
+        }
+        self.slice_mut(slice)?.append_actions(actions);
+        Ok(())
     }
 
     pub fn slice(&self, id: SliceId) -> PixuiResult<&ApplicationSlice> {
@@ -240,27 +349,30 @@ impl Application {
         collection: &str,
         key: Key<T>,
     ) -> PixuiResult<ObjectRef<T>> {
-        let target = self.slice(slice)?;
-        target.check_type::<T>(collection)?;
-        let collection = target.collection(collection)?;
-        if !collection.arena::<T>().expect("type checked").contains(key) {
-            return Err(pixui_error!("unknown or stale item"));
-        }
-        Ok(ObjectRef {
-            slice,
-            collection: collection.id,
-            key,
-        })
+        let index = self.slice(slice)?.collection_index(collection)?;
+        self.object_ref_at(index, key)
     }
 
-    /// Resolves a handle, rechecking its slice, collection, type, and generation.
-    /// Handles may refer to any slice in this application, including another slice
-    /// than the action's target. They are addresses, not authorization tokens.
+    /// Creates an item address directly from its collection index.
+    pub fn object_ref_at<T: Any>(
+        &self,
+        collection: CollectionIndex,
+        key: Key<T>,
+    ) -> PixuiResult<ObjectRef<T>> {
+        let arena = self
+            .resolve_collection(collection)?
+            .arena::<T>()
+            .ok_or_else(|| pixui_error!("wrong collection item type"))?;
+        if !arena.contains(key) {
+            return Err(pixui_error!("unknown or stale item"));
+        }
+        Ok(ObjectRef { collection, key })
+    }
+
+    /// Resolves an item independently of slice lifetime. Addresses are checked
+    /// for application/collection identity, concrete type and arena generation.
     pub fn resolve_mut<T: Any>(&mut self, reference: ObjectRef<T>) -> PixuiResult<&mut T> {
-        self.slice_mut(reference.slice)?
-            .collection_by_id_mut(reference.collection)?
-            .arena_mut::<T>()
-            .ok_or_else(|| pixui_error!("wrong collection item type"))?
+        self.resolve_collection_mut::<T>(reference.collection)?
             .get_mut(reference.key)
             .ok_or_else(|| pixui_error!("unknown or stale item"))
     }
@@ -271,6 +383,7 @@ impl Application {
         slice: SliceId,
         name: &str,
     ) -> PixuiResult<&mut Arena<T>> {
-        self.slice_mut(slice)?.collection_mut::<T>(name)
+        let index = self.slice(slice)?.collection_index(name)?;
+        self.resolve_collection_mut(index)
     }
 }

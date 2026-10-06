@@ -6,11 +6,11 @@ use pixui_reflect::{DynamicObject, Reflect};
 
 type SequenceView = for<'a> fn(&'a dyn Any) -> PixuiResult<DynamicObject<'a>>;
 
-/// A named, homogeneous collection with an erased typed arena.
+/// Application-owned homogeneous storage with an erased typed arena.
 ///
 /// `new::<T>` chooses the collection's item type permanently. The collection
 /// owns an `Arena<T>` behind `Any`, so collections of different item types can
-/// coexist in a slice. Values are stored directly, without per-item wrappers
+/// coexist in the application. Values are stored directly, without per-item wrappers
 /// or reflection requirements. `T` must be `'static + Send` so the application
 /// can move to its owner thread. `Sync` is not required.
 ///
@@ -64,7 +64,8 @@ impl Collection {
         view(self.arena.as_ref())
     }
 
-    /// Immutable binding name. Names must be unique within a slice.
+    /// Diagnostic name and default for `Application::add_collection`. Slice-local
+    /// aliases may differ, and different collections may have the same name.
     pub fn name(&self) -> &str {
         &self.name
     }

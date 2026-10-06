@@ -9,17 +9,17 @@ use std::{
 use pixui_base::Key;
 use pixui_reflect::{Reflect, TypeDescriptor};
 
-use super::application_slice::SliceId;
+use super::collection_index::CollectionIndex;
 
-/// An opaque item address: slice identity, collection identity, and typed key.
+/// An opaque item address: collection index and typed arena key.
 ///
 /// Created by `Application::object_ref` after checking the item exists. It
 /// retains no borrow. Dispatch validates it again, rejecting foreign or stale
 /// handles. Identities survive reordering; handles are process-local and must
-/// not be persisted. Removing an item or its slice invalidates the handle.
+/// not be persisted. Removing an item invalidates the handle; removing a slice
+/// leaves it valid because collection storage belongs to the application.
 pub struct ObjectRef<T> {
-    pub(super) slice: SliceId,
-    pub(super) collection: u16,
+    pub(super) collection: CollectionIndex,
     pub(super) key: Key<T>,
 }
 

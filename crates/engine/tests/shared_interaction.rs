@@ -67,9 +67,8 @@ fn setup(
     pixui_engine::ui::definition::UiDefinitionId,
 ) {
     let app = Application::new();
-    let mut slice = ApplicationSlice::new("test");
-    actions::Actions::register(&mut slice).unwrap();
-    app.add_slice(slice).unwrap();
+    let slice = app.add_slice(ApplicationSlice::new("test")).unwrap();
+    actions::Actions::register(&app, slice).unwrap();
     let component = app.register_component::<Node>("node").unwrap();
     app.register_painter::<Node>(NodePainter).unwrap();
     let parts = (0..count)

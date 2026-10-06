@@ -124,7 +124,10 @@ fn row_action(
     let app = context.application()?;
     let item = context.value()?.downcast_ref::<Item>().unwrap();
     let slice = app.slice_named("test")?;
-    let arena = slice.collection("items")?.arena::<Item>().unwrap();
+    let arena = app
+        .collection(slice.id(), "items")?
+        .arena::<Item>()
+        .unwrap();
     let key = arena
         .iter()
         .find(|(_, candidate)| std::ptr::eq(*candidate, item))
@@ -143,12 +146,10 @@ fn setup(
     pixui_engine::ui::definition::UiDefinitionId,
 ) {
     let app = Application::with_capacity(capacity);
-    let mut slice = ApplicationSlice::new("test");
-    slice
-        .add_collection(Collection::new_reflected::<Item>("items"))
+    let slice = app.add_slice(ApplicationSlice::new("test")).unwrap();
+    app.add_collection(slice, Collection::new_reflected::<Item>("items"))
         .unwrap();
-    actions::Actions::register(&mut slice).unwrap();
-    app.add_slice(slice).unwrap();
+    actions::Actions::register(&app, slice).unwrap();
     let actions = actions::Actions::bind(&app).unwrap();
     let component_id = app.register_component::<Row>("row").unwrap();
     app.register_painter::<Row>(RowPainter).unwrap();
@@ -259,8 +260,7 @@ fn current_click_invokes_action_but_stale_deleted_and_closed_targets_fail() {
     let marked = output(&receiver);
     assert!(
         app.inspect(|app| Ok(app
-            .slice_named("test")?
-            .collection("items")?
+            .collection(app.slice_named("test")?.id(), "items")?
             .arena::<Item>()
             .unwrap()
             .iter()
@@ -779,8 +779,7 @@ fn raw_mouse_transitions_and_keyboard_navigation_are_interpreted_on_worker() {
     }
     app.inspect(move |app| {
         assert!(
-            !app.slice_named("test")?
-                .collection("items")?
+            !app.collection(app.slice_named("test")?.id(), "items")?
                 .arena::<Item>()
                 .unwrap()
                 .iter()
@@ -802,8 +801,7 @@ fn raw_mouse_transitions_and_keyboard_navigation_are_interpreted_on_worker() {
     output(&receiver);
     app.inspect(move |app| {
         assert!(
-            app.slice_named("test")?
-                .collection("items")?
+            app.collection(app.slice_named("test")?.id(), "items")?
                 .arena::<Item>()
                 .unwrap()
                 .iter()

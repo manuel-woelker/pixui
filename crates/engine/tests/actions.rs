@@ -32,17 +32,27 @@ fn unavailable(todos: &mut pixui_base::Arena<i32>) {
 
 #[test]
 fn dispatches_without_collection_injection_and_avoids_parameter_name_collisions() {
-    let mut slice = ApplicationSlice::new("numbers");
-    slice
-        .add_collection(Collection::new::<i32>("numbers"))
-        .unwrap();
-    slice.register_action(replace_action::descriptor()).unwrap();
-    slice.register_action(answer_action::descriptor()).unwrap();
-    slice.register_action(sum_action::descriptor()).unwrap();
-    let id = slice.id();
-    let key: Key<i32> = slice.collection_mut::<i32>("numbers").unwrap().insert(1);
     let mut application = Application::default();
-    application.add_slice(slice).unwrap();
+    let slice = application
+        .add_slice(ApplicationSlice::new("numbers"))
+        .unwrap();
+    application
+        .add_collection(slice, Collection::new::<i32>("numbers"))
+        .unwrap();
+    application
+        .register_action(slice, replace_action::descriptor())
+        .unwrap();
+    application
+        .register_action(slice, answer_action::descriptor())
+        .unwrap();
+    application
+        .register_action(slice, sum_action::descriptor())
+        .unwrap();
+    let id = slice;
+    let key: Key<i32> = application
+        .collection_mut::<i32>(slice, "numbers")
+        .unwrap()
+        .insert(1);
     let reference = application.object_ref(id, "numbers", key).unwrap();
     let call = application
         .action_call(
@@ -97,25 +107,31 @@ fn dispatches_without_collection_injection_and_avoids_parameter_name_collisions(
 
 #[test]
 fn rejects_keys_from_another_collection_and_checks_object_type() {
-    let mut slice = ApplicationSlice::new("numbers");
-    slice
-        .add_collection(Collection::new::<i32>("numbers"))
+    let mut application = Application::default();
+    let slice = application
+        .add_slice(ApplicationSlice::new("numbers"))
         .unwrap();
-    slice
-        .add_collection(Collection::new::<i32>("other"))
+    application
+        .add_collection(slice, Collection::new::<i32>("numbers"))
         .unwrap();
-    slice
-        .add_collection(Collection::new::<String>("strings"))
+    application
+        .add_collection(slice, Collection::new::<i32>("other"))
         .unwrap();
-    slice.register_action(replace_action::descriptor()).unwrap();
-    let id = slice.id();
-    let key = slice.collection_mut::<i32>("numbers").unwrap().insert(1);
-    let string_key = slice
-        .collection_mut::<String>("strings")
+    application
+        .add_collection(slice, Collection::new::<String>("strings"))
+        .unwrap();
+    application
+        .register_action(slice, replace_action::descriptor())
+        .unwrap();
+    let id = slice;
+    let key = application
+        .collection_mut::<i32>(slice, "numbers")
+        .unwrap()
+        .insert(1);
+    let string_key = application
+        .collection_mut::<String>(slice, "strings")
         .unwrap()
         .insert("text".into());
-    let mut application = Application::default();
-    application.add_slice(slice).unwrap();
     assert!(application.object_ref(id, "other", key).is_err());
     assert!(application.object_ref(id, "strings", key).is_err());
     assert!(application.object_ref(id, "missing", key).is_err());

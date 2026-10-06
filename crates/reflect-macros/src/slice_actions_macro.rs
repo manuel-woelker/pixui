@@ -85,8 +85,15 @@ pub(super) fn expand(options: Options, mut module: ItemMod) -> syn::Result<Token
         // Use the same signature validation and dispatch adapter as standalone actions.
         let adapter = super::action_macro::expand(function.clone())?;
         let name = &function.sig.ident;
-        if ["bind", "bind_to", "bind_target", "register", "slice_id"]
-            .contains(&name.to_string().as_str())
+        if [
+            "bind",
+            "bind_to",
+            "bind_target",
+            "register",
+            "register_in",
+            "slice_id",
+        ]
+        .contains(&name.to_string().as_str())
         {
             return Err(syn::Error::new(
                 name.span(),
@@ -172,8 +179,14 @@ pub(super) fn expand(options: Options, mut module: ItemMod) -> syn::Result<Token
         }
         impl #facade {
             /// Registers all enabled actions atomically after validating their bindings.
-            pub fn register(slice: &mut ::pixui_engine::application::application_slice::ApplicationSlice) -> ::pixui_base::PixuiResult<()> {
-                slice.register_actions(&[#(#descriptors),*])
+            pub fn register(application: &::pixui_engine::application::application_handle::ApplicationHandle,
+                slice: ::pixui_engine::application::application_slice::SliceId) -> ::pixui_base::PixuiResult<()> {
+                application.register_actions(slice, &[#(#descriptors),*])
+            }
+            /// Registers directly when already on the application's owner thread.
+            pub fn register_in(application: &mut ::pixui_engine::application::app::Application,
+                slice: ::pixui_engine::application::application_slice::SliceId) -> ::pixui_base::PixuiResult<()> {
+                application.register_actions(slice, &[#(#descriptors),*])
             }
             /// Binds by the attribute's slice name in one worker round trip.
             /// Missing slices/actions or different handler descriptors return errors.

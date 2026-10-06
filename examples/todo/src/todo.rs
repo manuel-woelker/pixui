@@ -1,6 +1,9 @@
 use pixui_base::{Arena, Key, PixuiResult, pixui_error};
 use pixui_engine::application::{
-    action::slice_actions, application_slice::ApplicationSlice, collection::Collection,
+    action::slice_actions,
+    application_handle::ApplicationHandle,
+    application_slice::{ApplicationSlice, SliceId},
+    collection::Collection,
 };
 
 #[pixui_reflect::reflect]
@@ -56,9 +59,10 @@ pub mod actions {
 }
 
 /// Builds a todo slice with a named collection and validated action bindings.
-pub fn create_slice() -> PixuiResult<ApplicationSlice> {
+pub fn create_slice(application: &ApplicationHandle) -> PixuiResult<SliceId> {
     let mut slice = ApplicationSlice::new("todo");
-    slice.add_collection(Collection::new_reflected::<TodoItem>("todos"))?;
+    let todos = application.register_collection(Collection::new_reflected::<TodoItem>("todos"))?;
+    slice.bind_collection("todos", todos)?;
     let mut settings = Collection::new_reflected::<TodoSettings>("settings");
     settings
         .arena_mut::<TodoSettings>()
@@ -66,9 +70,11 @@ pub fn create_slice() -> PixuiResult<ApplicationSlice> {
         .insert(TodoSettings {
             hide_completed: false,
         });
-    slice.add_collection(settings)?;
-    actions::TodoActions::register(&mut slice)?;
-    Ok(slice)
+    let settings = application.register_collection(settings)?;
+    slice.bind_collection("settings", settings)?;
+    let id = application.add_slice(slice)?;
+    actions::TodoActions::register(application, id)?;
+    Ok(id)
 }
 
 #[cfg(test)]

@@ -43,13 +43,12 @@ mod handlers {
 use handlers::{TodoItem, add_todo_action, mark_done_action};
 
 let application = Application::new();
-let mut slice = ApplicationSlice::new("todo");
-slice.add_collection(Collection::new::<TodoItem>("todos"))?;
-slice.register_action(add_todo_action::descriptor())?;
-slice.register_action(mark_done_action::descriptor())?;
-let add_todo = slice.action_handle_named("add_todo")?;
-let mark_done = slice.action_handle_named("mark_done")?;
-let slice_id = application.add_slice(slice)?;
+let slice_id = application.add_slice(ApplicationSlice::new("todo"))?;
+application.add_collection(slice_id, Collection::new::<TodoItem>("todos"))?;
+application.register_action(slice_id, add_todo_action::descriptor())?;
+application.register_action(slice_id, mark_done_action::descriptor())?;
+let add_todo = application.action(slice_id, "add_todo")?;
+let mark_done = application.action(slice_id, "mark_done")?;
 
 let call = add_todo.call(vec![
     Box::new(String::from("Buy milk")),
@@ -60,7 +59,7 @@ let call = mark_done.call(vec![Box::new(todo)])?;
 let caller_handle = application.clone();
 std::thread::spawn(move || caller_handle.dispatch(call)?.wait()).join().unwrap()?;
 let completed = application.inspect(move |state| {
-    Ok(state.slice(slice_id)?.collection("todos")?.arena::<TodoItem>().unwrap()
+    Ok(state.collection(slice_id, "todos")?.arena::<TodoItem>().unwrap()
         .get(key).unwrap().completed)
 })?;
 assert!(completed);
@@ -90,29 +89,43 @@ Ordinary borrowed reflection remains available separately.
 
 ## Registration and identity
 
-Configure collections and actions on an `ApplicationSlice`, then pass it to
-`ApplicationHandle::add_slice`. Registration waits for the worker's reply and
-returns a stable `SliceId`. `add_collection` rejects empty or duplicate names.
-Collection names and arena types are immutable; several collections of the
-same type may coexist. `register_action` checks every injected collection's
-name and type before adding the action. Missing collections, wrong types,
-empty names, and duplicate action names return errors without changing
-registration. Add collections before actions.
+`Application` owns an append-only collection store. `register_collection`
+returns an opaque `CollectionIndex`; its position supports direct lookup and its
+identity rejects foreign application indices. Collection names are diagnostic
+defaults, not globally unique names. `ApplicationSlice::bind_collection` maps a
+local name to an index, and multiple names or slices may share the same storage.
+`add_slice` validates all index identities before attaching the slice.
 
-Collection and action registration is append-only. Typed mutation exposes an
-arena without permitting collection replacement. Action names resolve to
-`ActionIndex`; indexed access checks bounds. An in-range index from another
-slice cannot be distinguished, so retain indices with their slice identity.
-Name lookup is linear and case-sensitive.
+Alternatively, add an empty slice and call
+`add_collection(slice_id, collection)` to register storage and bind its default
+name atomically. Duplicate or empty binding names leave storage and bindings
+unchanged. `bind_collection` attaches existing storage. Collection item types
+and bindings cannot be replaced.
 
-`ObjectRef<T>` combines a process-local `SliceId`, collection arena identity,
-and typed generational key. `ApplicationHandle::object_ref` validates the item
-on the worker before returning a handle. These opaque reflected values retain
-no borrow and have no field constructor. Dispatch rechecks identities, types,
-and generations. Removed items, removed slices, and foreign handles return
-errors. Slice reordering preserves handles. Handles are addresses, not
-serialization or authorization tokens. They may address another slice in the
-same application.
+Register actions through `Application` or `ApplicationHandle` after the slice
+and its collections exist. `register_action` validates injected names and types;
+`register_actions` validates its entire batch before modifying registration.
+Missing names, wrong types, duplicate action names, and multiple mutable
+collection parameters resolving to the same index return errors. The generated
+adapter currently supports at most one mutable parameter; manual descriptors
+with multiple collection bindings still undergo alias checks.
+
+Action registration is append-only. Names resolve to `ActionIndex`; indexed
+access checks bounds. Retain action indices with their slice identity. Action
+name lookup is linear and case-sensitive; slice-local collection bindings use a
+hash map. `CollectionKey` is an alias for the application-level
+`CollectionIndex`. `collection_key(slice_name, binding_name)` resolves a
+reusable index once.
+
+`ObjectRef<T>` combines a collection index and typed generational arena key.
+`object_ref(slice_id, name, key)` resolves a local binding;
+`object_ref_at(index, key)` addresses storage directly. Both validate the item
+before returning a borrow-free handle. Dispatch rechecks identities, types and
+generations. Foreign handles and removed items fail. Removing a slice
+invalidates calls targeting it, but collections, collection expressions and item
+references remain valid until application shutdown. References can be used by
+actions in other slices; they are addresses, not serialization or authorization
+tokens.
 
 ## Queueing and inspection
 
@@ -124,11 +137,11 @@ worker join handle or shared state.
 `ActionHandle` caches a slice ID, action index, and static descriptor. It is
 `Copy`, can be shared across caller threads, and does not keep the worker alive.
 `call(fields)` validates and constructs requests locally without channels or
-locks. Obtain handles from `ApplicationSlice::action_handle(index)` or
-`action_handle_named(name)` before transferring the slice to the worker. This
-also avoids any initial worker lookup. Append-only registration keeps cached
-indices stable. Construction does not check whether the slice is currently
-attached or alive; dispatch validates the target and any object references.
+locks. Obtain handles through `ApplicationHandle::action` or from a registered
+`ApplicationSlice` while already on the owner thread. Append-only registration
+keeps cached indices stable. Construction does not check whether the slice is
+currently attached or alive; dispatch validates the target and any object
+references.
 
 For an already attached slice, `ApplicationHandle::action(slice_id, name)`
 resolves a handle with one worker round trip. Reuse that handle for later calls:
@@ -141,9 +154,8 @@ mod handlers {
     pub fn sum(left: i32, right: i32) -> i32 { left + right }
 }
 let application = Application::new();
-let mut slice = ApplicationSlice::new("math");
-slice.register_action(handlers::sum_action::descriptor())?;
-let slice_id = application.add_slice(slice)?;
+let slice_id = application.add_slice(ApplicationSlice::new("math"))?;
+application.register_action(slice_id, handlers::sum_action::descriptor())?;
 let sum = application.action(slice_id, "sum")?;
 let call = sum.call(vec![Box::new(2i32), Box::new(3i32)])?;
 let result = application.dispatch(call)?.wait()?;
@@ -227,11 +239,10 @@ mod actions {
     }
 }
 
-let mut slice = ApplicationSlice::new("notes");
-slice.add_collection(Collection::new::<String>("notes"))?;
-actions::NoteActions::register(&mut slice)?;
 let application = Application::new();
-application.add_slice(slice)?;
+let slice = application.add_slice(ApplicationSlice::new("notes"))?;
+application.add_collection(slice, Collection::new::<String>("notes"))?;
+actions::NoteActions::register(&application, slice)?;
 let actions = actions::NoteActions::bind(&application)?;
 let key: Key<String> = actions.add("A note")?;
 # Ok::<(), pixui_base::PixuiError>(())
@@ -240,7 +251,9 @@ let key: Key<String> = actions.add("A note")?;
 The facade is generated **inside the annotated module**, with a public method
 for each `#[action]` function. Other module items remain ordinary Rust items.
 Registration discovers enabled actions automatically and validates the whole
-batch before adding any action. Configure collections first.
+batch before adding any action. Configure collections first. Use
+`register(&application_handle, slice_id)` from callers or
+`register_in(&mut application, slice_id)` when already on the owner thread.
 
 `bind` uses the attribute's exact slice name; application slice names must be
 nonempty, unique, and immutable. `bind_to` accepts a `SliceId` to use another
@@ -268,7 +281,7 @@ lookup is needed per call.
 Facades can be cloned and called from multiple threads. A facade retains a
 sender, keeping its worker alive. Calls are synchronous and may wait for queue
 capacity; never call them from that application's worker, including an inspect
-callback. Existing standalone action restrictions still apply, including at
-most one mutable argument. The method names `bind`, `bind_to`, `bind_target`,
-`register`, and `slice_id` are reserved. Conditional compilation attributes
-on action functions also apply to their generated facade members.
+callback. Existing standalone action restrictions still apply, including at most
+one mutable argument. The method names `bind`, `bind_to`, `bind_target`,
+`register`, `register_in`, and `slice_id` are reserved. Conditional compilation
+attributes on action functions also apply to their generated facade members.

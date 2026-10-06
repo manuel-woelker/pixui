@@ -91,10 +91,9 @@ pub fn definition(
 /// Checks the singleton on every settings-dependent render, so accidental
 /// corruption fails without silently rendering duplicate controls or no list.
 fn todo_settings(context: &ExpressionContext<'_>) -> PixuiResult<bool> {
-    let settings = context
-        .application()?
-        .slice_named("todo")?
-        .collection("settings")?
+    let application = context.application()?;
+    let settings = application
+        .collection(application.slice_named("todo")?.id(), "settings")?
         .arena::<TodoSettings>()
         .ok_or_else(|| pixui_error!("wrong todo settings collection type"))?;
     if settings.len() != 1 {
@@ -167,8 +166,8 @@ fn add_action(
     let german = settings.locale == "de";
     Ok(Box::new(move |application| {
         let slice = application.slice_named("todo")?;
-        let number = slice
-            .collection("todos")?
+        let number = application
+            .collection(slice.id(), "todos")?
             .arena::<TodoItem>()
             .ok_or_else(|| pixui_error!("wrong todo collection type"))?
             .len()
@@ -206,8 +205,8 @@ fn mark_action(
         .downcast_ref::<TodoItem>()
         .ok_or_else(|| pixui_error!("todo row requires todo context"))?;
     let slice = application.slice_named("todo")?;
-    let arena = slice
-        .collection("todos")?
+    let arena = application
+        .collection(slice.id(), "todos")?
         .arena::<TodoItem>()
         .ok_or_else(|| pixui_error!("wrong todo collection type"))?;
     // Loop contexts expose values, not keys. Resolve by borrowed identity so
@@ -245,11 +244,9 @@ mod tests {
     #[test]
     fn invalid_settings_keep_last_good_render_and_geometry() {
         let app = Application::new();
-        let mut slice = create_slice().unwrap();
-        slice
-            .register_action(clear_settings_action::descriptor())
+        let slice = create_slice(&app).unwrap();
+        app.register_action(slice, clear_settings_action::descriptor())
             .unwrap();
-        let slice = app.add_slice(slice).unwrap();
         let components = app.register_standard_components().unwrap();
         app.register_standard_painters().unwrap();
         let comets = crate::orbiting_comets::register(&app).unwrap();
@@ -292,7 +289,7 @@ mod tests {
     #[test]
     fn visibility_is_shared_hides_rows_without_gaps_and_rejects_stale_clicks() {
         let app = Application::new();
-        app.add_slice(create_slice().unwrap()).unwrap();
+        create_slice(&app).unwrap();
         let actions = TodoActions::bind(&app).unwrap();
         let first = actions.add_todo("Duplicate").unwrap();
         let second = actions.add_todo("Duplicate").unwrap();
@@ -358,8 +355,7 @@ mod tests {
         app.inspect(move |app| {
             assert_eq!(app.uis().instance(one)?.layout().hit_regions.len(), 2);
             let todos = app
-                .slice_named("todo")?
-                .collection("todos")?
+                .collection(app.slice_named("todo")?.id(), "todos")?
                 .arena::<TodoItem>()
                 .unwrap();
             assert_eq!(todos.len(), 2);
@@ -380,7 +376,7 @@ mod tests {
     #[test]
     fn animation_replaces_snapshots_without_invalidating_presented_actions() {
         let app = Application::new();
-        app.add_slice(create_slice().unwrap()).unwrap();
+        create_slice(&app).unwrap();
         let components = app.register_standard_components().unwrap();
         app.register_standard_painters().unwrap();
         let comets = crate::orbiting_comets::register(&app).unwrap();
@@ -471,7 +467,7 @@ mod tests {
         let mut displays = Vec::new();
         for custom in [false, true] {
             let app = Application::new();
-            app.add_slice(create_slice().unwrap()).unwrap();
+            create_slice(&app).unwrap();
             let components = app.register_standard_components().unwrap();
             if custom {
                 app.register_painter::<pixui_engine::components::button::ButtonComponent>(
@@ -578,7 +574,7 @@ mod tests {
     #[test]
     fn two_instances_translate_and_share_actions_and_collection_data() {
         let application = Application::new();
-        application.add_slice(create_slice().unwrap()).unwrap();
+        create_slice(&application).unwrap();
         let actions = TodoActions::bind(&application).unwrap();
         actions.add_todo("First").unwrap();
         let components = application.register_standard_components().unwrap();
@@ -664,8 +660,7 @@ mod tests {
         assert!(
             application
                 .inspect(|app| Ok(app
-                    .slice_named("todo")?
-                    .collection("todos")?
+                    .collection(app.slice_named("todo")?.id(), "todos")?
                     .arena::<TodoItem>()
                     .unwrap()
                     .iter()
@@ -690,7 +685,7 @@ mod tests {
     #[test]
     fn animated_windows_share_font_snapshots_and_new_todos_grow_them() {
         let application = Application::new();
-        application.add_slice(create_slice().unwrap()).unwrap();
+        create_slice(&application).unwrap();
         let actions = TodoActions::bind(&application).unwrap();
         let components = application.register_standard_components().unwrap();
         application.register_standard_painters().unwrap();

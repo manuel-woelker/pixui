@@ -1,143 +1,140 @@
+//! Stable application-level collection storage and slice-local bindings.
 use pixui_engine::application::{
     app::Application, application_slice::ApplicationSlice, collection::Collection,
-    collection_key::CollectionKey,
 };
 
-fn slice(name: &str) -> ApplicationSlice {
-    let mut slice = ApplicationSlice::new(name.to_owned());
-    slice
-        .add_collection(Collection::new::<i32>("numbers"))
-        .unwrap();
-    slice
-        .add_collection(Collection::new::<String>("labels"))
-        .unwrap();
-    slice
-}
-
 #[test]
-fn resolves_names_to_keys_and_indexed_collections() {
-    let mut application = Application::default();
-    let id = application.add_slice(slice("main")).unwrap();
-    let key = application.collection_key("main", "labels").unwrap();
-    assert_eq!(key, CollectionKey::new(id, 1));
-    assert_eq!(application.slice_index("main").unwrap(), 0);
+fn slices_share_storage_and_aliases_without_owning_collections() {
+    let mut app = Application::default();
+    let mut numbers = Collection::new::<i32>("numbers");
+    let key = numbers.arena_mut::<i32>().unwrap().insert(42);
+    let index = app.register_collection(numbers).unwrap();
+    let mut first = ApplicationSlice::new("first");
+    first.bind_collection("numbers", index).unwrap();
+    let first = app.add_slice(first).unwrap();
+    let second = app.add_slice(ApplicationSlice::new("second")).unwrap();
+    app.bind_collection(second, "shared", index).unwrap();
+    assert_eq!(app.collection_key("first", "numbers").unwrap(), index);
+    assert_eq!(app.collection_key("second", "shared").unwrap(), index);
+    assert!(std::ptr::eq(
+        app.collection(first, "numbers").unwrap(),
+        app.collection(second, "shared").unwrap()
+    ));
+    app.collection_mut::<i32>(second, "shared")
+        .unwrap()
+        .insert(7);
     assert_eq!(
-        application
-            .slice(id)
+        app.collection(first, "numbers")
             .unwrap()
-            .collection_index("labels")
-            .unwrap(),
-        1
-    );
-    let collection = application.resolve_collection(key).unwrap();
-    assert_eq!(collection.name(), "labels");
-    assert!(collection.arena::<String>().is_some());
-    assert!(collection.arena::<i32>().is_none());
-    assert!(application.collection_key("Main", "labels").is_err());
-    assert!(application.collection_key("main", "Labels").is_err());
-    assert!(
-        application
-            .resolve_collection(CollectionKey::new(id, usize::MAX))
-            .is_err()
-    );
-    let foreign = ApplicationSlice::new("foreign").id();
-    assert!(
-        application
-            .resolve_collection(CollectionKey::new(foreign, 0))
-            .is_err()
-    );
-}
-
-#[test]
-fn maintains_name_maps_on_reordering_removal_and_name_reuse() {
-    let mut application = Application::default();
-    let first = application.add_slice(slice("first")).unwrap();
-    let middle = application.add_slice(slice("middle")).unwrap();
-    let last = application.add_slice(slice("last")).unwrap();
-    let first_key = application.collection_key("first", "numbers").unwrap();
-    let middle_key = application.collection_key("middle", "numbers").unwrap();
-    let last_key = application.collection_key("last", "numbers").unwrap();
-    application.swap_slices(first, last).unwrap();
-    assert_eq!(application.slice_index("last").unwrap(), 0);
-    assert_eq!(application.slice_index("first").unwrap(), 2);
-    assert_eq!(application.slice_named("first").unwrap().id(), first);
-    assert_eq!(
-        application.resolve_collection(first_key).unwrap().name(),
-        "numbers"
-    );
-    application.remove_slice(middle).unwrap();
-    assert!(application.slice_index("middle").is_err());
-    assert!(application.resolve_collection(middle_key).is_err());
-    assert_eq!(application.slice_index("first").unwrap(), 1);
-    assert_eq!(
-        application.collection_key("last", "numbers").unwrap(),
-        last_key
-    );
-    application
-        .add_collection(first, Collection::new::<bool>("flags"))
-        .unwrap();
-    assert_eq!(
-        application
-            .slice(first)
+            .arena::<i32>()
             .unwrap()
-            .collection_index("flags")
-            .unwrap(),
+            .len(),
         2
     );
+    let reference = app.object_ref(first, "numbers", key).unwrap();
+    app.swap_slices(first, second).unwrap();
+    assert_eq!(app.slice_index("second").unwrap(), 0);
+    assert_eq!(app.slice_index("first").unwrap(), 1);
+    app.remove_slice(first).unwrap();
+    assert!(app.collection_key("first", "numbers").is_err());
+    assert_eq!(*app.resolve_mut(reference).unwrap(), 42);
     assert_eq!(
-        application.collection_key("first", "numbers").unwrap(),
-        first_key
-    );
-    let replacement = application.add_slice(slice("middle")).unwrap();
-    assert_ne!(replacement, middle);
-    assert!(application.resolve_collection(middle_key).is_err());
-    assert_eq!(
-        application
-            .collection_key("middle", "numbers")
+        app.resolve_collection(index)
             .unwrap()
-            .slice,
-        replacement
+            .arena::<i32>()
+            .unwrap()
+            .len(),
+        2
     );
-    assert!(application.swap_slices(first, middle).is_err());
-    assert_eq!(application.slice_index("first").unwrap(), 1);
+    app.remove_slice(second).unwrap();
+    // Even unbound collections remain alive until the application is dropped.
+    assert_eq!(app.collections().len(), 1);
+    assert_eq!(*app.resolve_mut(reference).unwrap(), 42);
+    let replacement = app.add_slice(ApplicationSlice::new("first")).unwrap();
+    app.bind_collection(replacement, "numbers", index).unwrap();
+    assert_ne!(replacement, first);
+    assert_eq!(app.collection_key("first", "numbers").unwrap(), index);
 }
 
 #[test]
-fn rejected_duplicate_and_empty_names_do_not_change_lookup_maps() {
-    let mut application = Application::default();
-    let id = application.add_slice(slice("main")).unwrap();
-    assert!(application.add_slice(slice("main")).is_err());
-    assert!(application.add_slice(slice("")).is_err());
+fn appending_collections_preserves_indices_and_rejected_bindings_are_atomic() {
+    let mut app = Application::default();
+    let id = app.add_slice(ApplicationSlice::new("main")).unwrap();
+    let index = app
+        .add_collection(id, Collection::new::<i32>("numbers"))
+        .unwrap();
+    let other = app
+        .add_collection(id, Collection::new::<String>("labels"))
+        .unwrap();
+    assert_ne!(index, other);
     assert!(
-        application
-            .add_collection(id, Collection::new::<bool>("numbers"))
+        app.add_collection(id, Collection::new::<bool>("numbers"))
             .is_err()
     );
+    assert!(app.add_collection(id, Collection::new::<bool>("")).is_err());
+    assert!(app.bind_collection(id, "numbers", other).is_err());
+    assert!(app.bind_collection(id, "", other).is_err());
     assert!(
-        application
-            .add_collection(id, Collection::new::<bool>(""))
+        app.register_collection(Collection::new::<bool>(""))
             .is_err()
     );
-    assert_eq!(application.slices().len(), 1);
-    assert_eq!(
-        application.collection_key("main", "numbers").unwrap(),
-        CollectionKey::new(id, 0)
+    assert_eq!(app.collections().len(), 2);
+    assert_eq!(app.slice(id).unwrap().collections().len(), 2);
+    assert_eq!(app.collection_key("main", "numbers").unwrap(), index);
+    assert!(
+        app.resolve_collection(index)
+            .unwrap()
+            .arena::<String>()
+            .is_none()
     );
-    assert_eq!(application.slice(id).unwrap().collections().len(), 2);
-    assert!(application.collection_key("main", "").is_err());
+    assert!(app.resolve_collection_mut::<String>(index).is_err());
+    assert!(app.collection_key("Main", "numbers").is_err());
+    assert!(app.collection_key("main", "Numbers").is_err());
+    assert!(app.add_slice(ApplicationSlice::new("main")).is_err());
+    assert!(app.add_slice(ApplicationSlice::new("")).is_err());
+    assert_eq!(app.slices().len(), 1);
 }
 
 #[test]
-fn worker_handle_returns_a_key_for_later_resolution() {
-    let handle = Application::new();
-    let id = handle.add_slice(slice("main")).unwrap();
-    let key = handle.collection_key("main", "labels").unwrap();
-    assert_eq!(key, CollectionKey::new(id, 1));
-    assert_eq!(
-        handle
-            .inspect(move |state| Ok(state.resolve_collection(key)?.name().to_owned()))
-            .unwrap(),
-        "labels"
-    );
-    assert!(handle.collection_key("missing", "labels").is_err());
+fn foreign_indices_and_slice_bindings_never_retarget_matching_positions() {
+    let mut first = Application::default();
+    let mut second = Application::default();
+    let a = first
+        .register_collection(Collection::new::<i32>("numbers"))
+        .unwrap();
+    let b = second
+        .register_collection(Collection::new::<i32>("numbers"))
+        .unwrap();
+    assert_ne!(a, b);
+    assert!(second.resolve_collection(a).is_err());
+    assert!(second.resolve_collection_mut::<i32>(a).is_err());
+    let mut foreign = ApplicationSlice::new("foreign");
+    foreign.bind_collection("numbers", a).unwrap();
+    assert!(second.add_slice(foreign).is_err());
+    assert!(second.slices().is_empty());
+    let id = second.add_slice(ApplicationSlice::new("local")).unwrap();
+    assert!(second.bind_collection(id, "numbers", a).is_err());
+    assert!(second.slice(id).unwrap().collections().is_empty());
+    second.bind_collection(id, "numbers", b).unwrap();
+}
+
+#[test]
+fn worker_handle_registers_and_shares_collections_by_index() {
+    let app = Application::new();
+    let index = app
+        .register_collection(Collection::new::<String>("labels"))
+        .unwrap();
+    let mut slice = ApplicationSlice::new("main");
+    slice.bind_collection("labels", index).unwrap();
+    let id = app.add_slice(slice).unwrap();
+    app.bind_collection(id, "alias", index).unwrap();
+    assert_eq!(app.collection_key("main", "labels").unwrap(), index);
+    assert_eq!(app.collection_key("main", "alias").unwrap(), index);
+    app.inspect(move |state| {
+        assert_eq!(state.resolve_collection(index)?.name(), "labels");
+        assert_eq!(state.collections().len(), 1);
+        Ok(())
+    })
+    .unwrap();
+    assert!(app.collection_key("missing", "labels").is_err());
 }

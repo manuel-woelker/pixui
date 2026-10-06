@@ -421,18 +421,24 @@ fn collection_loop_expressions_preserve_application_access_inside_nested_loops()
         app::Application, application_slice::ApplicationSlice, collection::Collection,
     };
     let mut application = Application::default();
-    let mut slice = ApplicationSlice::new("data");
-    slice
-        .add_collection(Collection::new_reflected::<model::Group>("groups"))
+    let slice = application
+        .add_slice(ApplicationSlice::new("data"))
         .unwrap();
-    slice
-        .add_collection(Collection::new_reflected::<i32>("extras"))
+    application
+        .add_collection(slice, Collection::new_reflected::<model::Group>("groups"))
         .unwrap();
-    let groups = slice.collection_mut::<model::Group>("groups").unwrap();
+    application
+        .add_collection(slice, Collection::new_reflected::<i32>("extras"))
+        .unwrap();
+    let groups = application
+        .collection_mut::<model::Group>(slice, "groups")
+        .unwrap();
     groups.insert(model::Group { items: vec![1, 2] });
     groups.insert(model::Group { items: vec![3] });
-    slice.collection_mut::<i32>("extras").unwrap().insert(99);
-    let id = application.add_slice(slice).unwrap();
+    application
+        .collection_mut::<i32>(slice, "extras")
+        .unwrap()
+        .insert(99);
     let nested_field = for_loop(
         model::Group::type_descriptor()
             .field_index("items")
@@ -441,11 +447,11 @@ fn collection_loop_expressions_preserve_application_access_inside_nested_loops()
         component(),
     );
     let nested_collection = LivePart::ForLoop(ForLoopPart {
-        expression: Expression::collection(id, 1),
+        expression: Expression::collection(application.collection_key("data", "extras").unwrap()),
         body: Box::new(component()),
     });
     let mut tree = LivePart::ForLoop(ForLoopPart {
-        expression: Expression::collection(id, 0),
+        expression: Expression::collection(application.collection_key("data", "groups").unwrap()),
         body: Box::new(composite(vec![nested_field, nested_collection])),
     });
     struct Collect(Vec<i32>);
@@ -476,9 +482,13 @@ fn collection_loop_expressions_preserve_application_access_inside_nested_loops()
 
 #[test]
 fn loop_reports_missing_expression_inputs_without_creating_body_state() {
-    use pixui_engine::application::application_slice::ApplicationSlice;
+    use pixui_engine::application::{app::Application, collection::Collection};
     let mut tree = LivePart::ForLoop(ForLoopPart {
-        expression: Expression::collection(ApplicationSlice::new("absent").id(), 0),
+        expression: Expression::collection(
+            Application::default()
+                .register_collection(Collection::new::<i32>("foreign"))
+                .unwrap(),
+        ),
         body: Box::new(component()),
     });
     let mut state = PartState::Unknown;

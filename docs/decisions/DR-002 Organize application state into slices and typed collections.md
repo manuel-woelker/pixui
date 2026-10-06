@@ -1,7 +1,8 @@
 # DR-002: Organize application state into slices and typed collections
 
-- Status: Accepted
-- Date: 2026-10-04
+- Status: Superseded for collection ownership and item addressing by
+  [DR-012](<DR-012 Own collections in application storage and bind them by index.md>)
+- Date: 2026-10-06
 
 ## Decision
 

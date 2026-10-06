@@ -40,22 +40,28 @@ fn fail() -> i32 {
 }
 
 fn setup(capacity: usize) -> (ApplicationHandle, SliceId, ActionIndex) {
-    let mut slice = ApplicationSlice::new("counter");
-    slice
-        .add_collection(Collection::new::<Cell<i32>>("counters"))
+    let application = Application::with_capacity(capacity);
+    let id = application
+        .add_slice(ApplicationSlice::new("counter"))
         .unwrap();
-    slice
-        .collection_mut::<Cell<i32>>("counters")
+    let mut counters = Collection::new::<Cell<i32>>("counters");
+    counters
+        .arena_mut::<Cell<i32>>()
         .unwrap()
         .insert(Cell::new(0));
-    let index = slice
-        .register_action(increment_action::descriptor())
+    application.add_collection(id, counters).unwrap();
+    let index = application
+        .register_action(id, increment_action::descriptor())
         .unwrap();
-    slice.register_action(hold_action::descriptor()).unwrap();
-    slice.register_action(observe_action::descriptor()).unwrap();
-    slice.register_action(fail_action::descriptor()).unwrap();
-    let application = Application::with_capacity(capacity);
-    let id = application.add_slice(slice).unwrap();
+    application
+        .register_action(id, hold_action::descriptor())
+        .unwrap();
+    application
+        .register_action(id, observe_action::descriptor())
+        .unwrap();
+    application
+        .register_action(id, fail_action::descriptor())
+        .unwrap();
     (application, id, index)
 }
 
@@ -71,8 +77,7 @@ fn count(application: &ApplicationHandle, slice: SliceId) -> i32 {
     application
         .inspect(move |state| {
             Ok(state
-                .slice(slice)?
-                .collection("counters")?
+                .collection(slice, "counters")?
                 .arena::<Cell<i32>>()
                 .unwrap()
                 .iter()
@@ -128,15 +133,12 @@ fn last_handle_drop_stops_worker_and_drops_application_state() {
     let (dropped, notification) = bounded::<()>(1);
     let application = Application::new();
     let clone = application.clone();
-    let mut slice = ApplicationSlice::new("lifecycle");
-    slice
-        .add_collection(Collection::new::<DropSignal>("signals"))
-        .unwrap();
-    slice
-        .collection_mut::<DropSignal>("signals")
+    let mut signals = Collection::new::<DropSignal>("signals");
+    signals
+        .arena_mut::<DropSignal>()
         .unwrap()
         .insert(DropSignal(dropped));
-    application.add_slice(slice).unwrap();
+    application.register_collection(signals).unwrap();
     drop(application);
     clone.inspect(|state| Ok(state.slices().len())).unwrap();
     assert!(notification.try_recv().is_err());
@@ -294,8 +296,7 @@ fn handle_constructs_requests_and_resolves_refs_on_worker() {
     let key = application
         .inspect(move |state| {
             Ok(state
-                .slice(slice)?
-                .collection("counters")?
+                .collection(slice, "counters")?
                 .arena::<Cell<i32>>()
                 .unwrap()
                 .iter()

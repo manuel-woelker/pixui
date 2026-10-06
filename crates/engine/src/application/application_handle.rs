@@ -12,10 +12,12 @@ use crate::{
 };
 
 use super::{
-    action::ActionCall,
+    action::{ActionCall, ActionDescriptor, ActionIndex},
     action_handle::ActionHandle,
     app::Application,
     application_slice::{ApplicationSlice, SliceId},
+    collection::Collection,
+    collection_index::CollectionIndex,
     collection_key::CollectionKey,
     dispatch::{ApplicationCommand, ApplicationReply, CommandSender, PendingAction},
     object_ref::ObjectRef,
@@ -146,6 +148,53 @@ impl ApplicationHandle {
             .wait()
     }
 
+    /// Transfers collection storage to the worker and returns a stable index.
+    pub fn register_collection(&self, collection: Collection) -> PixuiResult<CollectionIndex> {
+        self.request(move |application| application.register_collection(collection))?
+            .wait()
+    }
+
+    pub fn add_collection(
+        &self,
+        slice: SliceId,
+        collection: Collection,
+    ) -> PixuiResult<CollectionIndex> {
+        self.request(move |application| application.add_collection(slice, collection))?
+            .wait()
+    }
+
+    pub fn bind_collection(
+        &self,
+        slice: SliceId,
+        name: impl Into<String>,
+        index: CollectionIndex,
+    ) -> PixuiResult<()> {
+        let name = name.into();
+        self.request(move |application| application.bind_collection(slice, name, index))?
+            .wait()
+    }
+
+    /// Validates the action against this application's collection store.
+    pub fn register_action(
+        &self,
+        slice: SliceId,
+        action: &'static ActionDescriptor,
+    ) -> PixuiResult<ActionIndex> {
+        self.request(move |application| application.register_action(slice, action))?
+            .wait()
+    }
+
+    /// Registers all actions atomically after validating names, types and aliases.
+    pub fn register_actions(
+        &self,
+        slice: SliceId,
+        actions: &[&'static ActionDescriptor],
+    ) -> PixuiResult<()> {
+        let actions = actions.to_vec();
+        self.request(move |application| application.register_actions(slice, &actions))?
+            .wait()
+    }
+
     /// Resolves an action through one worker round trip. Cache the returned handle
     /// to construct later calls locally, including from other threads.
     pub fn action(&self, slice: SliceId, name: &str) -> PixuiResult<ActionHandle> {
@@ -155,7 +204,7 @@ impl ApplicationHandle {
     }
 
     /// Resolves slice and collection names on the worker once. Cache the returned
-    /// key for expression construction; removal of its slice invalidates the key.
+    /// index for expression construction; removing its slice retains the storage.
     pub fn collection_key(&self, slice: &str, collection: &str) -> PixuiResult<CollectionKey> {
         let slice = slice.to_owned();
         let collection = collection.to_owned();
@@ -183,6 +232,16 @@ impl ApplicationHandle {
     ) -> PixuiResult<ObjectRef<T>> {
         let collection = collection.to_owned();
         self.request(move |application| application.object_ref(slice, &collection, key))?
+            .wait()
+    }
+
+    /// Creates an item address directly from application-level collection storage.
+    pub fn object_ref_at<T: Any>(
+        &self,
+        collection: CollectionIndex,
+        key: Key<T>,
+    ) -> PixuiResult<ObjectRef<T>> {
+        self.request(move |application| application.object_ref_at(collection, key))?
             .wait()
     }
 

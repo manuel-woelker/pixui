@@ -18,37 +18,52 @@ is available.
 
 ### State organization
 
-`Application` owns named `ApplicationSlice` instances. Each slice groups named
-collections and registered actions. Slice names are unique within an
-application; collection and action names are unique within their slice. Names
-are immutable, and slice identities remain stable when slices are reordered.
+`Application` owns an append-only vector of homogeneous collections and named
+`ApplicationSlice` instances. Slices group local collection bindings and
+registered actions. Slice names are unique within an application; binding and
+action names are unique within their slice. Different slices or local names can
+reference the same collection. Bindings are append-only and cannot be replaced.
 
-Name-to-index maps resolve slice names and collection names. Slice identity also
-maps to its current vector position; removal and reordering refresh the slice
-maps. Lookups use hash maps, while collection access by index uses the vector.
+`register_collection` returns an opaque `CollectionIndex` containing a vector
+position and collection identity. Lookup is direct and validates identity, so a
+foreign application's index cannot retarget a same-position collection. There
+is no collection deletion or index reuse; storage lives until application
+shutdown, including after its last slice binding is removed. Collection names
+are diagnostic defaults rather than globally unique identifiers.
 
-`CollectionKey` combines a stable slice identity with an append-only collection
-index. `Application::collection_key(slice_name, collection_name)` resolves names
-once, and `resolve_collection(key)` borrows the target collection. The handle
-provides name resolution through one worker round trip. Collection expressions
-carry these keys. Keys survive reordering and additions, but fail after their
-slice is removed, including if another slice later reuses its name.
+`ApplicationSlice::bind_collection` configures named indices before `add_slice`,
+which validates all collection identities. Alternatively, `add_collection`
+registers storage and binds its default name to an existing slice atomically.
+Action registration goes through the application to check bound collection
+names, types and conflicting mutable aliases before modifying the action list.
+Generated facades provide `register(&handle, slice_id)` and
+`register_in(&mut application, slice_id)` for the two ownership contexts.
 
-A `Collection` holds one concrete item type in an `Arena<T>`. The arena is
-erased through `Any` at the collection boundary, allowing different collection
-types in one slice. Individual items remain ordinary Rust values and need no
-reflection wrapper or `Reflect` implementation. Items must be `'static + Send`;
-`Sync` is not required. Multiple collections can contain the same type.
+Name-to-index maps resolve slice names and slice-local collection names. Slice
+identity maps to its current vector position; removal and reordering refresh
+slice maps. `CollectionKey` aliases `CollectionIndex`.
+`collection_key(slice_name, collection_name)` resolves bindings once;
+`resolve_collection(index)` accesses the application store. Expressions carry
+these indices and remain valid after slice removal or reordering.
+
+A `Collection` owns an `Arena<T>` erased through `Any`. Items remain ordinary
+Rust values and need no reflection wrapper or `Reflect` implementation. Items
+must be `'static + Send`; `Sync` is not required. Multiple collections can
+contain the same type.
 
 An eight-byte `Key<T>` packs a slot index, arena identity, and generation
-counter. An `ObjectRef<T>` combines a typed key with a slice and collection
-identity so a request can identify an item without borrowing state. Resolution
-checks the target's identity, type, and generation. These addresses are
-process-local and are not authorization tokens or persistent identifiers.
+counter. An `ObjectRef<T>` combines a typed key with a collection index so a
+request can identify an item without borrowing state. Resolution checks the
+collection identity, concrete type and arena generation. Removing a slice
+invalidates its action calls while preserving collections and item references.
+These addresses are process-local and are not authorization tokens or persistent
+identifiers.
 
 See
 [DR-002](<decisions/DR-002 Organize application state into slices and typed collections.md>)
-for the rationale and tradeoffs compared with a plain application struct.
+for the rationale and tradeoffs compared with a plain application struct, and
+[DR-012](<decisions/DR-012 Own collections in application storage and bind them by index.md>)
+for the separation between collection storage and slice organization.
 
 ### Ownership and communication
 

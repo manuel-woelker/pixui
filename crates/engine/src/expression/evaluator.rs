@@ -10,7 +10,7 @@ use super::{
 ///
 /// The result borrows application storage or the current value, independently of
 /// the expression's lifetime. Field expressions require a reflected object getter.
-/// Missing slices or out-of-range collection indices return errors without mutation.
+/// Foreign collection indices return errors without mutation.
 /// Registration order determines collection indices; evaluation does not resolve names.
 /// Collections must opt into reflected access through `Collection::new_reflected`.
 /// Collection results use shared sequence storage: live items can be inspected

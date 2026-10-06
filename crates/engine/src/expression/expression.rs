@@ -1,6 +1,6 @@
 use pixui_reflect::FieldIndex;
 
-use crate::application::{application_slice::SliceId, collection_key::CollectionKey};
+use crate::application::collection_key::CollectionKey;
 
 /// An expression evaluated against application state.
 #[derive(Clone)]
@@ -13,12 +13,9 @@ impl Expression {
         Self { kind }
     }
 
-    /// References a collection by its slice identity and registration index.
-    pub fn collection(slice_id: SliceId, collection_index: usize) -> Self {
-        Self::new(ExpressionKind::Collection(CollectionKey::new(
-            slice_id,
-            collection_index,
-        )))
+    /// References stable application storage independently of slice lifetime.
+    pub fn collection(index: CollectionKey) -> Self {
+        Self::new(ExpressionKind::Collection(index))
     }
 
     /// References a previously resolved collection without repeating name lookup.
