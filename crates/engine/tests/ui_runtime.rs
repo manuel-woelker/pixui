@@ -638,3 +638,45 @@ fn hidden_instances_skip_rendering_keep_changes_and_refresh_when_shown() {
     .unwrap();
     assert!(output(&hidden_outputs).revision > restored.revision);
 }
+
+#[test]
+fn showing_unchanged_windows_accepts_hover_from_the_retained_presented_frame() {
+    let (app, actions, definition) = setup(16);
+    actions.add("hover target").unwrap();
+    let mut windows = Vec::new();
+    for theme in [Theme::Light, Theme::Dark] {
+        let (id, outputs) = app
+            .create_ui(
+                definition,
+                PresentationSettings {
+                    theme,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        let initial = output(&outputs);
+        windows.push((id, outputs, initial.revision));
+    }
+    for (id, outputs, presented_revision) in windows {
+        app.ui_command(UiCommand::Visibility {
+            instance: id,
+            visible: false,
+        })
+        .unwrap();
+        app.ui_command(UiCommand::Visibility {
+            instance: id,
+            visible: true,
+        })
+        .unwrap();
+        // Force a separate render before pointer input, reproducing an event
+        // arriving while the restored output has not yet been presented.
+        let restored = output(&outputs);
+        app.ui_command(UiCommand::Input {
+            instance: id,
+            revision: presented_revision,
+            input: UiInput::PointerMoved(Point { x: 20.0, y: 20.0 }),
+        })
+        .unwrap();
+        assert!(output(&outputs).revision > restored.revision);
+    }
+}

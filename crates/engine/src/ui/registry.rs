@@ -144,6 +144,9 @@ impl UiRegistry {
                     // Preserve accumulated dirty state while hidden. Showing also
                     // refreshes time-dependent drawing when no actions occurred.
                     if visible {
+                        if !instance.dirty {
+                            instance.redraw_only = true;
+                        }
                         instance.dirty = true;
                     }
                 }

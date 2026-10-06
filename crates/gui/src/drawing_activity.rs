@@ -1,6 +1,7 @@
 //! Wayland fallback: a withheld redraw opportunity pauses worker rendering.
 //! This is not an exact visibility query. Compositors normally withhold frame
 //! callbacks for invisible surfaces; a stalled compositor can behave the same way.
+//! Native pointer/keyboard interaction also resumes drawing without requiring focus.
 use std::time::{Duration, Instant};
 
 const PAUSE_DELAY: Duration = Duration::from_millis(500);

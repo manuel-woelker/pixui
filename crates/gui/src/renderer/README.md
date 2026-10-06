@@ -169,7 +169,8 @@ rendering. Unknown states are assumed visible, and unfocused windows continue
 rendering. Winit cannot report all visibility changes on every platform: Wayland
 visibility/minimization queries are unsupported. On Wayland, a requested drawing
 opportunity withheld for 500 ms pauses the worker. Returning redraw events,
-focus gain, resize or lifecycle restoration resume it. This is an operational
-fallback, not proof of invisibility: a stalled compositor can also withhold
-callbacks. Idle windows are not rendered just to probe visibility; detection
-begins when animation or an application change requests drawing.
+pointer/keyboard interaction, focus gain, resize or lifecycle restoration resume
+it. Hovering an unfocused window therefore resumes rendering too. This is an
+operational fallback, not proof of invisibility: a stalled compositor can also
+withhold callbacks. Idle windows are not rendered just to probe visibility;
+detection begins when animation or an application change requests drawing.

@@ -280,7 +280,13 @@ impl ApplicationHandler for Host {
         };
         if matches!(
             &event,
-            WindowEvent::RedrawRequested | WindowEvent::Focused(true)
+            WindowEvent::RedrawRequested
+                | WindowEvent::Focused(true)
+                | WindowEvent::CursorEntered { .. }
+                | WindowEvent::CursorMoved { .. }
+                | WindowEvent::MouseInput { .. }
+                | WindowEvent::MouseWheel { .. }
+                | WindowEvent::KeyboardInput { .. }
         ) {
             let resumed = native
                 .drawing_activity
