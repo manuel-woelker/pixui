@@ -148,6 +148,40 @@ impl ApplicationHandle {
             .wait()
     }
 
+    /// Adds a reflected value to an attached slice, backed by per-type storage.
+    pub fn bind<T: pixui_reflect::Reflect + Send>(
+        &self,
+        slice: SliceId,
+        name: impl Into<String>,
+        value: T,
+    ) -> PixuiResult<()> {
+        let name = name.into();
+        self.request(move |application| application.bind(slice, name, value))?
+            .wait()
+    }
+    pub fn create_entity<T: pixui_reflect::Reflect + Send>(
+        &self,
+        value: T,
+    ) -> PixuiResult<ObjectRef<T>> {
+        self.request(move |application| application.create_entity(value))?
+            .wait()
+    }
+    pub fn bind_entity<T: pixui_reflect::Reflect>(
+        &self,
+        slice: SliceId,
+        name: impl Into<String>,
+        reference: ObjectRef<T>,
+    ) -> PixuiResult<()> {
+        let name = name.into();
+        self.request(move |application| application.bind_entity(slice, name, reference))?
+            .wait()
+    }
+    pub fn entity_ref<T: Any>(&self, slice: SliceId, name: &str) -> PixuiResult<ObjectRef<T>> {
+        let name = name.to_owned();
+        self.request(move |application| application.entity_ref(slice, &name))?
+            .wait()
+    }
+
     /// Transfers collection storage to the worker and returns a stable index.
     pub fn register_collection(&self, collection: Collection) -> PixuiResult<CollectionIndex> {
         self.request(move |application| application.register_collection(collection))?

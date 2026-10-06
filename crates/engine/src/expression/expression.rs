@@ -23,6 +23,15 @@ impl Expression {
         Self::new(ExpressionKind::Collection(key))
     }
 
+    /// Borrows a checked reflected item directly, without a singleton loop.
+    pub fn entity<T: pixui_reflect::Reflect>(
+        reference: crate::application::object_ref::ObjectRef<T>,
+    ) -> Self {
+        Self::new(ExpressionKind::Entity(
+            crate::application::erased_object_ref::ErasedObjectRef::new(reference),
+        ))
+    }
+
     /// Reads a reflected field on the current root or innermost loop element.
     /// The index belongs to that value's descriptor, not to an application collection.
     pub fn field(index: FieldIndex) -> Self {
@@ -39,4 +48,5 @@ impl Expression {
 pub enum ExpressionKind {
     Field(FieldIndex),
     Collection(CollectionKey),
+    Entity(crate::application::erased_object_ref::ErasedObjectRef),
 }

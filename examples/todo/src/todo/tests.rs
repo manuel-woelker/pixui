@@ -10,16 +10,10 @@ use pixui_engine::application::app::Application;
 
 fn create_application() -> PixuiResult<Application> {
     let mut application = Application::default();
-    let slice = application.add_slice(ApplicationSlice::new("todo"))?;
+    let mut slice = ApplicationSlice::new("todo");
+    slice.bind("hide_done", false)?;
+    let slice = application.add_slice(slice)?;
     application.add_collection(slice, Collection::new_reflected::<TodoItem>("todos"))?;
-    let mut settings = Collection::new_reflected::<TodoSettings>("settings");
-    settings
-        .arena_mut::<TodoSettings>()
-        .unwrap()
-        .insert(TodoSettings {
-            hide_completed: false,
-        });
-    application.add_collection(slice, settings)?;
     TodoActions::register_in(&mut application, slice)?;
     Ok(application)
 }
@@ -268,41 +262,25 @@ fn handlers_are_ordinary_functions_with_direct_mutable_arguments() {
 }
 
 #[test]
-fn visibility_toggle_requires_a_single_settings_entry_and_has_no_request_fields() {
+fn visibility_toggle_uses_named_entity_and_has_no_request_fields() {
     let mut app = create_application().unwrap();
     let slice = app.slices()[0].id();
-    assert!(
-        app.slice(slice)
-            .unwrap()
-            .action_named("toggle_hide_completed")
-            .unwrap()
-            .arguments()
-            .fields()
-            .is_empty()
-    );
+    let action = app
+        .slice(slice)
+        .unwrap()
+        .action_named("toggle_hide_completed")
+        .unwrap();
+    assert!(action.arguments().fields().is_empty());
+    assert!(action.collections().is_empty());
+    assert_eq!(action.entities()[0].name, "hide_done");
     for expected in [true, false, true] {
         let call = app
             .action_call(slice, "toggle_hide_completed", vec![])
             .unwrap();
         app.dispatch(call).unwrap();
-        assert_eq!(
-            app.collection_mut::<TodoSettings>(slice, "settings")
-                .unwrap()
-                .iter()
-                .next()
-                .unwrap()
-                .1
-                .hide_completed,
-            expected
-        );
+        assert_eq!(*app.entity::<bool>(slice, "hide_done").unwrap(), expected);
     }
-    let settings = app
-        .collection_mut::<TodoSettings>(slice, "settings")
-        .unwrap();
-    settings.insert(TodoSettings {
-        hide_completed: false,
-    });
-    assert!(toggle_hide_completed(settings).is_err());
-    settings.clear();
-    assert!(toggle_hide_completed(settings).is_err());
+    let mut value = false;
+    toggle_hide_completed(EntityMut::new(&mut value));
+    assert!(value);
 }

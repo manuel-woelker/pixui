@@ -23,6 +23,16 @@ pub struct ObjectRef<T> {
     pub(super) key: Key<T>,
 }
 
+impl<T> ObjectRef<T> {
+    /// Storage address, useful for typed arena operations including removal.
+    pub fn collection_index(self) -> CollectionIndex {
+        self.collection
+    }
+    pub fn key(self) -> Key<T> {
+        self.key
+    }
+}
+
 impl<T> Copy for ObjectRef<T> {}
 impl<T> Clone for ObjectRef<T> {
     fn clone(&self) -> Self {

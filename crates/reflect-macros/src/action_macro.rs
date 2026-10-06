@@ -25,6 +25,7 @@ pub(super) fn expand(function: ItemFn) -> syn::Result<TokenStream> {
     let mut fields = Vec::new();
     let mut bindings = Vec::new();
     let mut injections = Vec::new();
+    let mut entity_injections = Vec::new();
     let mut arguments = Vec::new();
     let mut borrows = 0;
     for input in &signature.inputs {
@@ -76,6 +77,17 @@ pub(super) fn expand(function: ItemFn) -> syn::Result<TokenStream> {
                 fields.push(quote!(pub #parameter: ::pixui_engine::application::object_ref::ObjectRef<#target>));
                 bindings.push(quote!(let #parameter = #application.resolve_mut::<#target>(#request.#parameter)?;));
             }
+            arguments.push(quote!(#parameter));
+        } else if let Some(element) = entity_element(ty)? {
+            borrows += 1;
+            if borrows > 1 {
+                return Err(syn::Error::new(
+                    ty.span(),
+                    "actions currently support at most one mutable parameter",
+                ));
+            }
+            entity_injections.push(quote!(::pixui_engine::application::action::EntityBinding::new::<#element>(stringify!(#parameter))));
+            bindings.push(quote!(#[allow(non_snake_case)] let #parameter = ::pixui_engine::application::entity_mut::EntityMut::new(#application.entity_mut::<#element>(#slice, stringify!(#parameter))?);));
             arguments.push(quote!(#parameter));
         } else {
             fields.push(quote!(pub #parameter: #ty));
@@ -147,7 +159,7 @@ pub(super) fn expand(function: ItemFn) -> syn::Result<TokenStream> {
                             let result = #call;
                             Ok(::std::boxed::Box::new(result))
                         },
-                    )
+                    ).with_entities(::std::vec![#(#entity_injections),*])
                 })
             }
         }
@@ -191,6 +203,34 @@ pub(super) fn arena_element(ty: &Type) -> syn::Result<Option<&Type>> {
     }
 }
 
+/// EntityMut is a by-value injected borrow with one concrete item type.
+pub(super) fn entity_element(ty: &Type) -> syn::Result<Option<&Type>> {
+    let Type::Path(path) = ty else {
+        return Ok(None);
+    };
+    let Some(segment) = path
+        .path
+        .segments
+        .last()
+        .filter(|segment| segment.ident == "EntityMut")
+    else {
+        return Ok(None);
+    };
+    let PathArguments::AngleBracketed(arguments) = &segment.arguments else {
+        return Err(syn::Error::new(
+            ty.span(),
+            "injected EntityMut requires an item type",
+        ));
+    };
+    match arguments.args.first() {
+        Some(GenericArgument::Type(element)) if arguments.args.len() == 1 => Ok(Some(element)),
+        _ => Err(syn::Error::new(
+            ty.span(),
+            "injected EntityMut requires one item type and an elided lifetime",
+        )),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -200,6 +240,9 @@ mod tests {
             ("fn run<T>(value: T) {}", "non-generic"),
             ("fn run(item: &Item) {}", "&mut T"),
             ("fn run(a: &mut Item, b: &mut Item) {}", "at most one"),
+            ("fn run(a: EntityMut<bool>, b: &mut Item) {}", "at most one"),
+            ("fn run(a: EntityMut) {}", "item type"),
+            ("fn run(a: EntityMut<'static, bool>) {}", "elided lifetime"),
             ("fn run((a, b): (i32, i32)) {}", "simple names"),
             ("fn run() -> &Item { todo!() }", "owned"),
         ] {

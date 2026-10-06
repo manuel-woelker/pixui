@@ -4,15 +4,11 @@ use pixui_engine::application::{
     application_handle::ApplicationHandle,
     application_slice::{ApplicationSlice, SliceId},
     collection::Collection,
+    entity_mut::EntityMut,
 };
 
 #[pixui_reflect::reflect]
 pub mod model {
-    /// Slice-wide presentation preferences, stored as one settings entry.
-    pub struct TodoSettings {
-        pub hide_completed: bool,
-    }
-
     /// One task in the homogeneous todo collection.
     pub struct TodoItem {
         pub title: String,
@@ -20,7 +16,7 @@ pub mod model {
     }
 }
 
-pub use model::{TodoItem, TodoSettings};
+pub use model::TodoItem;
 
 #[slice_actions(slice = "todo", facade = TodoActions)]
 pub mod actions {
@@ -41,13 +37,8 @@ pub mod actions {
 
     /// Toggles shared completed-item visibility without modifying stored todos.
     #[action]
-    pub fn toggle_hide_completed(settings: &mut Arena<TodoSettings>) -> PixuiResult<()> {
-        if settings.len() != 1 {
-            return Err(pixui_error!("todo settings must contain exactly one entry"));
-        }
-        let (_, settings) = settings.iter_mut().next().expect("one settings entry");
-        settings.hide_completed = !settings.hide_completed;
-        Ok(())
+    pub fn toggle_hide_completed(mut hide_done: EntityMut<bool>) {
+        *hide_done = !*hide_done;
     }
 
     /// Marks a todo complete. Repeated calls are harmless.
@@ -63,15 +54,7 @@ pub fn create_slice(application: &ApplicationHandle) -> PixuiResult<SliceId> {
     let mut slice = ApplicationSlice::new("todo");
     let todos = application.register_collection(Collection::new_reflected::<TodoItem>("todos"))?;
     slice.bind_collection("todos", todos)?;
-    let mut settings = Collection::new_reflected::<TodoSettings>("settings");
-    settings
-        .arena_mut::<TodoSettings>()
-        .expect("settings arena")
-        .insert(TodoSettings {
-            hide_completed: false,
-        });
-    let settings = application.register_collection(settings)?;
-    slice.bind_collection("settings", settings)?;
+    slice.bind("hide_done", false)?;
     let id = application.add_slice(slice)?;
     actions::TodoActions::register(application, id)?;
     Ok(id)

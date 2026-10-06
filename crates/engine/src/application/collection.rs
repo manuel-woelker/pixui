@@ -66,6 +66,7 @@ impl Collection {
 
     /// Diagnostic name and default for `Application::add_collection`. Slice-local
     /// aliases may differ, and different collections may have the same name.
+    /// Internally allocated ad hoc collections have an empty name.
     pub fn name(&self) -> &str {
         &self.name
     }

@@ -65,6 +65,12 @@ antialiasing. Complex shaping, bidi, kerning, and system fallback remain outside
 the initial scope. See [text drawing](Text.md) for baseline placement, font
 acquisition, cache limits, and DPI behavior.
 
+Named entities use `Expression::entity(object_ref)` for direct reflected value
+access, without a singleton collection loop. Resolve slice-local names during
+setup with `entity_ref::<T>(slice_id, name)`. Evaluation reads the current item
+and validates collection identity and arena generation. The todo's `hide_done`
+boolean uses this expression to select its visible subtree.
+
 Each instance retains at most one pending output; publication never waits for
 the consumer. Use `OutputReceiver::try_recv` in a native event loop, or
 `recv_timeout` for headless verification. Dropping the receiver releases the

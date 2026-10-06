@@ -14,8 +14,8 @@ use super::collection_key::CollectionKey;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct SliceId(u64);
 
-/// A named group of collection bindings and registered actions.
-/// Collection names and action names are unique within their own namespaces.
+/// A named group of collection bindings, entity bindings and registered actions.
+/// Names are unique within each of those independent namespaces.
 /// Registration is append-only: bindings cannot be invalidated by replacement,
 /// removal, or renaming. Multiple collections may contain the same item type.
 pub struct ApplicationSlice {
@@ -23,6 +23,8 @@ pub struct ApplicationSlice {
     id: SliceId,
     collections: HashMap<String, CollectionIndex>,
     actions: Vec<&'static ActionDescriptor>,
+    entities: HashMap<String, super::erased_object_ref::ErasedObjectRef>,
+    pending_entities: Vec<(String, super::named_entities::PendingEntity)>,
 }
 
 impl ApplicationSlice {
@@ -37,6 +39,8 @@ impl ApplicationSlice {
             id: SliceId(id),
             collections: HashMap::new(),
             actions: vec![],
+            entities: HashMap::new(),
+            pending_entities: vec![],
         }
     }
 
@@ -53,6 +57,76 @@ impl ApplicationSlice {
     }
     pub fn actions(&self) -> &[&'static ActionDescriptor] {
         &self.actions
+    }
+
+    /// Stages a reflected value for insertion into application storage on add_slice.
+    /// Names are unique within the entity namespace, independent of collection and
+    /// action names. Failed names do not retain the supplied value. No ref exists
+    /// until registration; obtain one through Application::entity_ref afterward.
+    pub fn bind<T: pixui_reflect::Reflect + Send>(
+        &mut self,
+        name: impl Into<String>,
+        value: T,
+    ) -> PixuiResult<()> {
+        let name = name.into();
+        self.validate_entity_name(&name)?;
+        self.pending_entities.push((
+            name,
+            Box::new(move |application| {
+                Ok(super::erased_object_ref::ErasedObjectRef::new(
+                    application.create_entity(value)?,
+                ))
+            }),
+        ));
+        Ok(())
+    }
+
+    /// Binds an existing address without taking ownership of its item. Attachment
+    /// validates ownership and liveness before inserting any pending values.
+    pub fn bind_entity<T: pixui_reflect::Reflect>(
+        &mut self,
+        name: impl Into<String>,
+        reference: super::object_ref::ObjectRef<T>,
+    ) -> PixuiResult<()> {
+        let name = name.into();
+        self.validate_entity_name(&name)?;
+        self.entities.insert(
+            name,
+            super::erased_object_ref::ErasedObjectRef::new(reference),
+        );
+        Ok(())
+    }
+
+    /// Resolved entity address. Pending values cannot be read before attachment.
+    pub fn entity(&self, name: &str) -> PixuiResult<&super::erased_object_ref::ErasedObjectRef> {
+        self.entities
+            .get(name)
+            .ok_or_else(|| pixui_error!("unknown or pending entity `{name}`"))
+    }
+
+    /// Resolved addresses only; staged values appear after successful attachment.
+    pub fn entities(&self) -> &HashMap<String, super::erased_object_ref::ErasedObjectRef> {
+        &self.entities
+    }
+
+    pub(super) fn validate_entity_name(&self, name: &str) -> PixuiResult<()> {
+        super::named_entities::validate_name(name)?;
+        if self.entities.contains_key(name)
+            || self.pending_entities.iter().any(|(other, _)| other == name)
+        {
+            return Err(pixui_error!("duplicate entity binding `{name}`"));
+        }
+        Ok(())
+    }
+
+    pub(super) fn resolve_pending(
+        &mut self,
+        application: &mut super::app::Application,
+    ) -> PixuiResult<()> {
+        for (name, create) in std::mem::take(&mut self.pending_entities) {
+            self.entities.insert(name, create(application)?);
+        }
+        Ok(())
     }
 
     /// Binds a local, case-sensitive name to an existing application collection.

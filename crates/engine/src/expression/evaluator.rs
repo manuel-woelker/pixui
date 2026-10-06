@@ -20,6 +20,7 @@ pub fn evaluate<'a>(
     expression: &Expression,
 ) -> PixuiResult<DynamicObject<'a>> {
     match expression.kind() {
+        ExpressionKind::Entity(reference) => context.application()?.read_entity(reference),
         ExpressionKind::Field(index) => context.value()?.read_object(*index),
         ExpressionKind::Collection(key) => context
             .application()?

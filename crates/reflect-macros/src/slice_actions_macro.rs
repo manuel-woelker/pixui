@@ -127,6 +127,8 @@ pub(super) fn expand(options: Options, mut module: ItemMod) -> syn::Result<Token
                     quote!(#parameter: ::pixui_engine::application::object_ref::ObjectRef<#target>),
                 );
                 request_fields.push(quote!(#parameter));
+            } else if super::action_macro::entity_element(ty)?.is_some() {
+                continue;
             } else if matches!(ty.as_ref(), Type::Path(path) if path.path.segments.last().is_some_and(|segment| segment.ident == "String"))
             {
                 parameters

@@ -28,6 +28,10 @@ impl CollectionBinding {
     }
 }
 
+/// A mutable named item selected by an EntityMut parameter's name.
+/// Registration validates its type and liveness; dispatch revalidates generation.
+pub type EntityBinding = CollectionBinding;
+
 /// Owned request payload safe to send to the application thread.
 pub type ActionRequest = SendValue;
 /// Owned action output safe to return to the calling thread.
@@ -41,7 +45,8 @@ pub type ActionHandler = fn(&mut Application, SliceId, ActionRequest) -> ActionR
 ///
 /// `#[action]` generates the request struct, reflection, and adapter. Value
 /// parameters become request fields, mutable item references become opaque
-/// `ObjectRef<T>` fields, and mutable arenas are injected by parameter name.
+/// `ObjectRef<T>` fields, while mutable arenas and EntityMut<T> are injected
+/// by parameter name from collection and entity bindings respectively.
 /// Initially at most one mutable parameter is supported. Outputs are owned
 /// `Any` values. Errors propagate without rollback; panics are not caught.
 /// Descriptors are shared from static storage without reference counting.
@@ -51,6 +56,7 @@ pub struct ActionDescriptor {
     arguments: &'static TypeDescriptor,
     collections: Vec<CollectionBinding>,
     handler: ActionHandler,
+    entities: Vec<EntityBinding>,
 }
 
 impl ActionDescriptor {
@@ -67,7 +73,17 @@ impl ActionDescriptor {
             arguments: Args::type_descriptor(),
             collections,
             handler,
+            entities: vec![],
         }
+    }
+
+    /// Adds named entity injection metadata to a manual descriptor.
+    pub fn with_entities(mut self, entities: Vec<EntityBinding>) -> Self {
+        self.entities = entities;
+        self
+    }
+    pub fn entities(&self) -> &[EntityBinding] {
+        &self.entities
     }
 
     pub fn name(&self) -> &'static str {
@@ -96,6 +112,9 @@ impl ActionDescriptor {
                 self.name,
                 self.arguments.type_name()
             ));
+        }
+        for binding in &self.entities {
+            application.read_entity(application.slice(slice)?.entity(binding.name)?)?;
         }
         (self.handler)(application, slice, request)
     }

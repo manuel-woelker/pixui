@@ -2,7 +2,7 @@
 
 use crate::{
     orbiting_comets::{self, OrbitingComets},
-    todo::{TodoItem, TodoSettings},
+    todo::TodoItem,
 };
 use pixui_base::{PixuiResult, pixui_error};
 use pixui_engine::{
@@ -25,13 +25,8 @@ pub fn definition(
     comets: ComponentId<OrbitingComets>,
 ) -> PixuiResult<UiDefinition> {
     let todos = application.collection_key("todo", "todos")?;
-    let settings = application.collection_key("todo", "settings")?;
-    // Validate the example's singleton before registering a template that loops it.
-    application.inspect(|app| {
-        todo_settings(&ExpressionContext::new(app))?;
-        Ok(())
-    })?;
-    let hide_completed = TodoSettings::type_descriptor().field_index("hide_completed")?;
+    let slice = application.inspect(|app| Ok(app.slice_named("todo")?.id()))?;
+    let hide_done = application.entity_ref::<bool>(slice, "hide_done")?;
     let completed = TodoItem::type_descriptor().field_index("completed")?;
     let row = LivePart::Component(
         ComponentPart::typed(components.checkbox, todo_row).with_activation(mark_action),
@@ -59,59 +54,38 @@ pub fn definition(
                     ComponentPart::typed(components.button, add_button).with_activation(add_action),
                 ),
                 LivePart::Component(ComponentPart::typed(comets, orbiting_comets::props)),
-                LivePart::ForLoop(ForLoopPart {
-                    expression: Expression::from_collection(settings),
-                    body: Box::new(LivePart::Composite(CompositePart {
-                        parts: vec![
-                            LivePart::Component(
-                                ComponentPart::typed(components.checkbox, visibility_control)
-                                    .with_activation(visibility_action),
-                            ),
-                            LivePart::Match(MatchPart::new(
-                                Expression::field(hide_completed),
-                                vec![
-                                    MatchCandidate {
-                                        pattern: MatchPattern::value(false),
-                                        part: all,
-                                    },
-                                    MatchCandidate {
-                                        pattern: MatchPattern::value(true),
-                                        part: incomplete,
-                                    },
-                                ],
-                            )?),
-                        ],
-                    })),
-                }),
+                LivePart::Component(
+                    ComponentPart::typed(components.checkbox, visibility_control)
+                        .with_activation(visibility_action),
+                ),
+                LivePart::Match(MatchPart::new(
+                    Expression::entity(hide_done),
+                    vec![
+                        MatchCandidate {
+                            pattern: MatchPattern::value(false),
+                            part: all,
+                        },
+                        MatchCandidate {
+                            pattern: MatchPattern::value(true),
+                            part: incomplete,
+                        },
+                    ],
+                )?),
             ],
         }),
     ))
 }
 
-/// Checks the singleton on every settings-dependent render, so accidental
-/// corruption fails without silently rendering duplicate controls or no list.
-fn todo_settings(context: &ExpressionContext<'_>) -> PixuiResult<bool> {
-    let application = context.application()?;
-    let settings = application
-        .collection(application.slice_named("todo")?.id(), "settings")?
-        .arena::<TodoSettings>()
-        .ok_or_else(|| pixui_error!("wrong todo settings collection type"))?;
-    if settings.len() != 1 {
-        return Err(pixui_error!("todo settings must contain exactly one entry"));
-    }
-    Ok(settings
-        .iter()
-        .next()
-        .expect("one settings entry")
-        .1
-        .hide_completed)
+fn hide_done(context: &ExpressionContext<'_>) -> PixuiResult<bool> {
+    let app = context.application()?;
+    Ok(*app.entity::<bool>(app.slice_named("todo")?.id(), "hide_done")?)
 }
 fn visibility_control(
     context: &ExpressionContext<'_>,
     settings: &PresentationSettings,
 ) -> PixuiResult<CheckboxProps> {
     Ok(CheckboxProps {
-        checked: todo_settings(context)?,
+        checked: hide_done(context)?,
         label: if settings.locale == "de" {
             "Erledigte ausblenden"
         } else {
@@ -134,7 +108,7 @@ fn heading(
     context: &ExpressionContext<'_>,
     settings: &PresentationSettings,
 ) -> PixuiResult<LabelProps> {
-    todo_settings(context)?;
+    hide_done(context)?;
     Ok(LabelProps {
         text: if settings.locale == "de" {
             "Aufgaben"
@@ -236,17 +210,33 @@ mod tests {
     };
     use std::time::Duration;
 
-    #[pixui_engine::application::action::action]
-    fn clear_settings(settings: &mut pixui_base::Arena<TodoSettings>) {
-        settings.clear();
+    fn clear_settings_action() -> &'static pixui_engine::application::action::ActionDescriptor {
+        static ACTION: std::sync::OnceLock<pixui_engine::application::action::ActionDescriptor> =
+            std::sync::OnceLock::new();
+        ACTION.get_or_init(|| {
+            #[pixui_reflect::reflect(send)]
+            mod args {
+                pub struct Request {}
+            }
+            pixui_engine::application::action::ActionDescriptor::new::<args::Request>(
+                "clear_settings",
+                "Deletes the flag to verify stale binding failure",
+                vec![],
+                |app, slice, _| {
+                    let reference = app.entity_ref::<bool>(slice, "hide_done")?;
+                    let index = reference.collection_index();
+                    app.resolve_collection_mut::<bool>(index)?.clear();
+                    Ok(Box::new(()))
+                },
+            )
+        })
     }
 
     #[test]
-    fn invalid_settings_keep_last_good_render_and_geometry() {
+    fn stale_entity_keeps_last_good_render_and_geometry() {
         let app = Application::new();
         let slice = create_slice(&app).unwrap();
-        app.register_action(slice, clear_settings_action::descriptor())
-            .unwrap();
+        app.register_action(slice, clear_settings_action()).unwrap();
         let components = app.register_standard_components().unwrap();
         app.register_standard_painters().unwrap();
         let comets = crate::orbiting_comets::register(&app).unwrap();
@@ -279,7 +269,7 @@ mod tests {
             let ui = app.uis().instance(instance)?;
             assert_eq!(ui.revision(), initial.revision);
             assert_eq!(ui.layout().component_bounds, bounds);
-            assert!(ui.last_error().unwrap().contains("exactly one"));
+            assert!(ui.last_error().unwrap().contains("stale"));
             Ok(())
         })
         .unwrap();

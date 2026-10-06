@@ -7,4 +7,7 @@ pub mod collection;
 pub mod collection_index;
 pub mod collection_key;
 pub mod dispatch;
+pub mod entity_mut;
+pub mod erased_object_ref;
+mod named_entities;
 pub mod object_ref;

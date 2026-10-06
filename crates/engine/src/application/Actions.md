@@ -73,6 +73,7 @@ assert!(completed);
 | `title: String` | `title: String` | Move the supplied value |
 | `todo: &mut TodoItem` | `todo: ObjectRef<TodoItem>` | Resolve and exclusively borrow the item |
 | `todos: &mut Arena<TodoItem>` | Omitted | Inject the collection named `todos` in the target slice |
+| `hide_done: EntityMut<bool>` | Omitted | Borrow the entity named `hide_done` in the target slice |
 
 The generated module is named `<function>_action`. Its `request::Request`
 implements `Reflect`; `descriptor()` returns a static `ActionDescriptor`
@@ -126,6 +127,71 @@ invalidates calls targeting it, but collections, collection expressions and item
 references remain valid until application shutdown. References can be used by
 actions in other slices; they are addresses, not serialization or authorization
 tokens.
+
+## Named entities
+
+Create individual named values ergonomically on a slice. They are staged until
+`add_slice`, then inserted into one lazily created unnamed collection per
+concrete type. Multiple booleans occupy distinct arena slots; explicit
+collections remain separate. Values require `Reflect + Send`, without a `Sync`
+requirement. Entity, collection and action names use independent namespaces.
+
+```rust
+use pixui_engine::application::{
+    action::slice_actions, app::Application, application_slice::ApplicationSlice,
+};
+#[slice_actions(slice = "flags", facade = FlagActions)]
+mod actions {
+    use pixui_engine::application::entity_mut::EntityMut;
+    #[action]
+    pub fn toggle(mut hide_done: EntityMut<bool>) { *hide_done = !*hide_done; }
+}
+let application = Application::new();
+let mut slice = ApplicationSlice::new("flags");
+slice.bind("hide_done", false)?;
+slice.bind("show_details", true)?;
+let id = application.add_slice(slice)?;
+actions::FlagActions::register(&application, id)?;
+let actions = actions::FlagActions::bind(&application)?;
+actions.toggle()?;
+let reference = application.entity_ref::<bool>(id, "hide_done")?;
+let enabled = application.inspect(move |app| Ok(*app.resolve(reference)?))?;
+assert!(enabled);
+application.bind(id, "allow_editing", true)?;
+# Ok::<(), pixui_base::PixuiError>(())
+```
+
+`slice.bind_entity(name, existing_ref)` shares an existing item. Attachment
+validates all supplied references and collection indices before inserting staged
+values. Empty/duplicate names fail before insertion, both during staging and
+through `application.bind(id, name, value)`. Staged values cannot expose a ref
+before allocation; `entity_ref::<T>(id, name)` retrieves it afterward.
+`create_entity(value)` creates an unbound value for explicit sharing; registered
+slices also support `application.bind_entity(id, name, reference)`.
+
+Bindings are append-only. Removing a slice removes its names, not its stored
+items. Removing an item through its arena makes its bindings and expressions
+stale; type and generation validation return errors instead of retargeting a
+replacement item. Anonymous collection and item allocations remain until
+application shutdown unless explicitly removed through arena operations.
+
+`EntityMut<T>` implements `Deref` and `DerefMut`, and
+`EntityMut::new(&mut value)` allows directly calling the same ordinary action
+function. Its parameter name selects the entity exactly, including case. It is
+injected and omitted from both request fields and facade parameters.
+Registration validates existence, type, and conflicting mutable aliases;
+dispatch checks liveness again. Generated handlers still support at most one
+mutable parameter, including EntityMut. Qualified EntityMut paths work; aliases
+and explicit lifetime arguments do not. `&mut T` retains its caller-supplied
+ObjectRef behavior.
+
+Use `Expression::entity(reference)` to read a live reflected value without a
+singleton collection loop. Struct field expressions can still read fields of
+entities when that value is the current expression context. Erased named
+bindings use `ErasedObjectRef`, which shares only address metadata via Arc; the
+actual values remain ordinary items in application-owned arenas. See
+[DR-013](<../../../../docs/decisions/DR-013 Bind named entities to items in per type application collections.md>)
+for the storage and staging rationale.
 
 ## Queueing and inspection
 
@@ -263,7 +329,7 @@ insufficient: binding to a different handler returns an error.
 
 Generated parameters follow the request schema:
 
-- `&mut Arena<T>` is injected and omitted.
+- `&mut Arena<T>` and `EntityMut<T>` are injected and omitted.
 - `&mut T` becomes an owned `ObjectRef<T>`; resolve it with the application's
   `object_ref` method and the facade's `slice_id()`.
 - Owned `String` becomes `impl Into<String>`, accepting string literals,

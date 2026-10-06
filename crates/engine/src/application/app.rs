@@ -1,4 +1,7 @@
-use std::{any::Any, collections::HashMap};
+use std::{
+    any::{Any, TypeId},
+    collections::HashMap,
+};
 
 use pixui_base::erased_value::SendValues;
 use pixui_base::{Arena, Key, PixuiResult, pixui_error};
@@ -31,6 +34,7 @@ pub struct Application {
     pub(crate) text_service: std::cell::RefCell<crate::ui::text::service::TextService>,
     pub(crate) render_clock: crate::ui::render_clock::RenderClock,
     collections: Vec<Collection>,
+    pub(super) ad_hoc_collections: HashMap<TypeId, CollectionIndex>,
     slices: Vec<ApplicationSlice>,
     slice_names: HashMap<String, usize>,
     slice_ids: HashMap<SliceId, usize>,
@@ -90,7 +94,7 @@ impl Application {
     }
 
     /// Adds a slice without changing state on an empty or duplicate name.
-    pub fn add_slice(&mut self, slice: ApplicationSlice) -> PixuiResult<SliceId> {
+    pub fn add_slice(&mut self, mut slice: ApplicationSlice) -> PixuiResult<SliceId> {
         if slice.name().is_empty() || self.slice_names.contains_key(slice.name()) {
             return Err(pixui_error!(
                 "empty or duplicate slice name `{}`",
@@ -100,6 +104,10 @@ impl Application {
         for index in slice.collections().values() {
             self.resolve_collection(*index)?;
         }
+        for reference in slice.entities().values() {
+            self.read_entity(reference)?;
+        }
+        slice.resolve_pending(self)?;
         let id = slice.id();
         self.slice_names
             .insert(slice.name().to_owned(), self.slices.len());
@@ -133,12 +141,16 @@ impl Application {
         if collection.name().is_empty() {
             return Err(pixui_error!("empty collection name"));
         }
+        Ok(self.store_collection(collection))
+    }
+
+    pub(super) fn store_collection(&mut self, collection: Collection) -> CollectionIndex {
         let index = CollectionIndex {
             position: self.collections.len(),
             identity: collection.id,
         };
         self.collections.push(collection);
-        Ok(index)
+        index
     }
 
     pub fn collections(&self) -> &[Collection] {
@@ -284,6 +296,26 @@ impl Application {
                     ));
                 }
             }
+            let mut entity_borrows = std::collections::HashSet::new();
+            for binding in action.entities() {
+                let reference = target.entity(binding.name)?;
+                self.read_entity(reference)?;
+                if reference.item_type_id() != binding.item_type_id {
+                    return Err(pixui_error!(
+                        "entity `{}` must contain `{}`, got `{}`",
+                        binding.name,
+                        binding.item_type_name,
+                        reference.item_type_name()
+                    ));
+                }
+                let address = reference.address();
+                if borrowed.contains(&address.0) || !entity_borrows.insert(address) {
+                    return Err(pixui_error!(
+                        "action `{}` has conflicting mutable entity bindings",
+                        action.name()
+                    ));
+                }
+            }
         }
         self.slice_mut(slice)?.append_actions(actions);
         Ok(())
@@ -293,7 +325,7 @@ impl Application {
         Ok(&self.slices[self.slice_position(id)?])
     }
 
-    fn slice_mut(&mut self, id: SliceId) -> PixuiResult<&mut ApplicationSlice> {
+    pub(super) fn slice_mut(&mut self, id: SliceId) -> PixuiResult<&mut ApplicationSlice> {
         let index = self.slice_position(id)?;
         Ok(&mut self.slices[index])
     }
@@ -367,6 +399,15 @@ impl Application {
             return Err(pixui_error!("unknown or stale item"));
         }
         Ok(ObjectRef { collection, key })
+    }
+
+    /// Shared checked item access, independent of its slice bindings.
+    pub fn resolve<T: Any>(&self, reference: ObjectRef<T>) -> PixuiResult<&T> {
+        self.resolve_collection(reference.collection)?
+            .arena::<T>()
+            .ok_or_else(|| pixui_error!("wrong collection item type"))?
+            .get(reference.key)
+            .ok_or_else(|| pixui_error!("unknown or stale item"))
     }
 
     /// Resolves an item independently of slice lifetime. Addresses are checked

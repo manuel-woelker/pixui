@@ -51,6 +51,23 @@ Rust values and need no reflection wrapper or `Reflect` implementation. Items
 must be `'static + Send`; `Sync` is not required. Multiple collections can
 contain the same type.
 
+Slices also hold named entity bindings. `slice.bind(name, initial_value)` stages
+a `Reflect + Send` value; `add_slice` validates names and existing references
+before inserting staged values into one unnamed collection per concrete type.
+These collections use the same append-only store and typed arenas as explicit
+collections, but stay separate from them. Multiple named booleans occupy
+different slots in the shared boolean arena. Registered slices support
+`application.bind(slice_id, name, value)`; `bind_entity` shares existing refs.
+Entity, collection and action names have independent namespaces.
+
+`EntityMut<T>` action parameters resolve slice-local entity names and are
+omitted from requests. `&mut T` parameters still resolve caller-supplied item
+references. Registration checks types, liveness and overlapping mutable
+bindings; dispatch revalidates generations. Entity expressions read checked
+reflected refs directly. Removing a slice preserves its items; explicit item
+deletion leaves stale bindings that fail rather than retarget. See
+[DR-013](<decisions/DR-013 Bind named entities to items in per type application collections.md>).
+
 An eight-byte `Key<T>` packs a slot index, arena identity, and generation
 counter. An `ObjectRef<T>` combines a typed key with a collection index so a
 request can identify an item without borrowing state. Resolution checks the
@@ -405,8 +422,9 @@ See [DR-008](<decisions/DR-008 Retain only the active match subtree.md>) for the
 lifecycle rationale. All
 candidate templates are validated at registration, including inactive branches.
 
-The todo example stores its shared visibility flag in a singleton `settings`
-collection. Actions mutate it on the worker and invalidate both windows;
+The todo example stages its named `hide_done` boolean with `slice.bind`. Its
+entity expression drives matching directly. Actions mutate it through
+`EntityMut<bool>` on the worker and invalidate both windows;
 presentation settings remain per-window. Filtering hides rows without removing
 stored todos. The native GUI is now the example's default executable.
 
