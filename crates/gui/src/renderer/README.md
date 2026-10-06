@@ -167,7 +167,9 @@ visibility and known minimized state. A 250 ms native-state check detects
 changes on platforms without visibility events; this performs no worker
 rendering. Unknown states are assumed visible, and unfocused windows continue
 rendering. Winit cannot report all visibility changes on every platform: Wayland
-visibility/minimization queries are unsupported, so optimization there relies on
-available lifecycle/occlusion events. At startup the console reports the active
-visibility-tracking mode. Hide/show transitions print
-`Pixui window ...: hide/show (UI ...)` to the console.
+visibility/minimization queries are unsupported. On Wayland, a requested drawing
+opportunity withheld for 500 ms pauses the worker. Returning redraw events,
+focus gain, resize or lifecycle restoration resume it. This is an operational
+fallback, not proof of invisibility: a stalled compositor can also withhold
+callbacks. Idle windows are not rendered just to probe visibility; detection
+begins when animation or an application change requests drawing.

@@ -121,12 +121,6 @@ impl NativeWindow {
         } else {
             self.request_redraw();
         }
-        println!(
-            "Pixui window {:?}: {} (UI {:?})",
-            self.window.id(),
-            if visible { "show" } else { "hide" },
-            self.instance
-        );
         Some(UiCommand::Visibility {
             instance: self.instance,
             visible,
@@ -615,14 +609,6 @@ pub fn run_with_factory(
         target_os = "openbsd"
     )))]
     let wayland = false;
-    println!(
-        "Pixui visibility tracking: {}",
-        if wayland {
-            "Wayland drawing opportunities + native state"
-        } else {
-            "native window state"
-        }
-    );
     let proxy = event_loop.create_proxy();
     let mut host = Host {
         application,

@@ -389,8 +389,11 @@ Native windows report visibility transitions with `UiCommand::Visibility`.
 Hidden instances retain dirty state while skipping preparation, state traversal,
 painting and resource finalization. Actions still update application state and
 visible instances. Showing an instance requests fresh output using all
-accumulated changes and the current animation clock. The GUI logs hide/show
-transitions and uses native lifecycle events plus a 250 ms check of available
-visibility and minimization state. Unknown platform visibility is treated as
-visible; loss of focus never hides an instance. Headless instances start visible
-and can explicitly use the same visibility command.
+accumulated changes and the current animation clock. The GUI uses native
+lifecycle events plus a 250 ms check of available visibility and minimization
+state. On Wayland, a requested drawing opportunity withheld for 500 ms also
+pauses the worker; returning drawing events or explicit restoration resume it.
+This is an inference from compositor activity, not an exact visibility query.
+Unknown platform visibility is otherwise treated as visible; loss of focus never
+hides an instance. Headless instances start visible and can explicitly use the
+same visibility command.
