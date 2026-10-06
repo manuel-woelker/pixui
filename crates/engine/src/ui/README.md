@@ -4,8 +4,10 @@ A `UiDefinition` is a named reusable `LivePart` tree. Register it through
 `ApplicationHandle::register_ui`. Create independent realizations using
 `create_ui(definition_id, presentation_settings)`, which returns a
 `UiInstanceId` and an `OutputReceiver`. Each instance retains physical state,
-layout geometry, hit regions and action bindings, focus, hover, scroll offset,
-and a render revision. Native windows and surfaces belong to `pixui-gui`.
+layout geometry, hit regions and action bindings, and a render revision. Focus,
+hover and requested scrolling live in shared `UiDefinitionState`; input from one
+window refreshes all instances of that definition. Native windows and surfaces
+belong to `pixui-gui`.
 
 ## Components
 
@@ -27,6 +29,29 @@ Rendering walks a private copy of the definition template and retains only the
 instance's `LiveState`. This protects definitions from the legacy mutable walker
 API. Loop state follows positions; content invalidation clears focus and hover
 until keyed reconciliation is implemented.
+
+## Shared interaction
+
+`UiRegistry::definition(id)?.state()` exposes shared focus, hover and requested
+scrolling. Hover hit testing uses all prepared component bounds, not just action
+hit regions. The engine supplies `PaintContext::hovered` to every painter;
+components without activation can still draw a hover effect. Focus traversal
+visits only components with activation. Both refer to component order, including
+noninteractive components, so an action hit-region index is not a component
+index.
+
+The latest processed pointer input wins across windows; leaving a window clears
+shared hover. Interaction does not affect other definitions. Hidden instances
+retain pending updates and reflect shared state when shown. Scroll changes
+invalidate geometry for all peers; each clamps the shared requested offset to
+its viewport without changing the shared value during rendering. Focus and hover
+changes retain compatible input revisions while geometry is unchanged.
+
+Component identity currently follows prepared tree positions. Instances sharing
+a definition must retain corresponding component order; independent conditional
+structures need stable component keys before sharing interaction safely. Content
+invalidation clears positional focus and hover. Closing a window preserves
+shared state for other or future instances.
 
 ## Outputs and input
 

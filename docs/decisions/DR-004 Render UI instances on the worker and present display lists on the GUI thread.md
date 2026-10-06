@@ -1,7 +1,8 @@
 # DR-004: Render UI instances on the worker and present display lists on the GUI thread
 
-- Status: Accepted
-- Date: 2026-10-04
+- Status: Superseded for interaction ownership by
+  [DR-010](<DR-010 Share interaction state across windows of a UI definition.md>)
+- Date: 2026-10-06
 
 ## Decision
 

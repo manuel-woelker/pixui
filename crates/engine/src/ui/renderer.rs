@@ -161,6 +161,7 @@ pub fn render_measured(
     display.emit(DrawCommand::PushClip { rect: viewport });
     let mut layout = LayoutState {
         content_height,
+        scroll_offset: scroll,
         ..Default::default()
     };
     for (index, (component, state)) in visitor.components.into_iter().zip(states).enumerate() {
@@ -175,8 +176,6 @@ pub fn render_measured(
         };
         layout.component_bounds.push(bounds);
         display.emit(DrawCommand::PushClip { rect: bounds });
-        let interactive = component.activate.is_some();
-        let interaction_index = layout.hit_regions.len();
         application.painters().paint(
             component.address,
             application.components(),
@@ -187,8 +186,8 @@ pub fn render_measured(
                 settings,
                 width,
                 height: COMPONENT_HEIGHT,
-                focused: interactive && focus == Some(interaction_index),
-                hovered: interactive && hover == Some(interaction_index),
+                focused: focus == Some(index),
+                hovered: hover == Some(index),
                 origin: Point {
                     x: bounds.x,
                     y: bounds.y,
@@ -200,6 +199,7 @@ pub fn render_measured(
         if let Some(activate) = component.activate {
             layout.hit_regions.push(HitRegion {
                 bounds: bounds.intersect(viewport),
+                component_index: index,
                 activate,
             });
         }

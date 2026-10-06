@@ -148,7 +148,8 @@ operations and limitations.
 ### Definitions, instances, and windows
 
 `Application` owns a `UiRegistry` of named `UiDefinition`s and stable
-`UiDefinitionId`s. A definition contains a reusable `LivePart` template. Each
+`UiDefinitionId`s. A definition contains a reusable `LivePart` template and
+shared `UiDefinitionState` for focus, hover and requested scrolling. Each
 `UiInstance`, identified by `UiInstanceId`, holds the worker-side state for one
 window or headless target:
 
@@ -157,13 +158,20 @@ window or headless target:
   viewport size, and scale factor.
 - `LayoutState`: component bounds, clipped hit regions and action bindings,
   and content height.
-- Focus, hover, scroll offset, rendering revision, and the last rendering error.
+- Derived scroll offset for its viewport, rendering revision, and the last
+  rendering error.
 
-Multiple instances of the same definition share application collections but
-retain independent UI state. The initial native host maps one instance to one
-window. Native winit windows and renderer-owned graphics surfaces belong to the
-process main thread. `ApplicationHandle` still contains only a cheaply clonable
-command sender.
+Multiple instances of the same definition share application collections and
+interaction state. Component state, presentation settings and geometry remain
+per instance. The engine detects hover for all prepared components and passes
+shared hover to every painter through `PaintContext::hovered`, including
+components without actions. Hover and focus currently identify prepared
+component positions; instances must retain corresponding component order. Shared
+scrolling is clamped per viewport for drawing without modifying the shared
+requested offset. The initial native host maps one instance to one window.
+Native winit windows and renderer-owned graphics surfaces belong to the process
+main thread. `ApplicationHandle` still contains only a cheaply clonable command
+sender.
 
 `register_ui` and `create_ui` transfer definitions and settings to the worker;
 creation returns the instance ID and its output receiver. Registration rejects
@@ -289,8 +297,9 @@ See the [image guide](../crates/engine/src/ui/Images.md) and
 
 Any dispatched action invalidates all instances, including an action that
 returns an error after mutating data. Content invalidation clears focus and
-hover because loop reconciliation is positional. Settings and interaction
-changes invalidate only their instance. The worker renders dirty instances
+hover in each definition because loop reconciliation is positional. Settings
+changes invalidate one instance; shared interaction changes invalidate every
+instance of that definition. The worker renders dirty instances
 after batches of at most 32 commands. Inspection flushes preceding rendering
 work before reading instance state. Action replies acknowledge execution;
 they do not acknowledge native presentation.

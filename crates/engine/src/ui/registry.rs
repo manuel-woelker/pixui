@@ -45,6 +45,12 @@ impl UiRegistry {
         Ok(id)
     }
 
+    pub fn definition(&self, id: UiDefinitionId) -> PixuiResult<&UiDefinition> {
+        self.definitions
+            .get(&id)
+            .ok_or_else(|| pixui_error!("unknown UI definition"))
+    }
+
     pub fn definition_id(&self, name: &str) -> PixuiResult<UiDefinitionId> {
         self.names
             .get(name)
@@ -73,9 +79,6 @@ impl UiRegistry {
                 revision: RenderRevision::default(),
                 compatible_revision: RenderRevision::default(),
                 redraw_only: false,
-                focus: None,
-                hover: None,
-                scroll: 0.0,
                 dirty: true,
                 geometry_stale: true,
                 outputs,
@@ -103,12 +106,14 @@ impl UiRegistry {
     /// Content changes invalidate positional focus/hover. Scroll is retained and
     /// clamped after layout. Stable loop reconciliation can relax this later.
     pub fn invalidate_all(&mut self) {
+        for definition in self.definitions.values_mut() {
+            definition.state.focus = None;
+            definition.state.hover = None;
+        }
         for instance in self.instances.values_mut() {
             instance.dirty = true;
             instance.redraw_only = false;
             instance.geometry_stale = true;
-            instance.focus = None;
-            instance.hover = None;
         }
     }
 
@@ -124,6 +129,14 @@ impl UiRegistry {
         if let UiCommand::Close { instance } = command {
             self.close(instance)?;
             return Ok(None);
+        }
+        if let UiCommand::Input {
+            instance,
+            revision,
+            input,
+        } = command
+        {
+            return self.input(instance, revision, input, application);
         }
         let instance = self
             .instances
@@ -176,70 +189,118 @@ impl UiRegistry {
                 instance.dirty = true;
                 instance.geometry_stale = true;
             }
-            UiCommand::Input {
-                revision, input, ..
-            } => {
-                if revision < instance.compatible_revision
-                    || revision > instance.revision
-                    || revision.0 == 0
-                    || instance.geometry_stale
-                {
-                    if matches!(input, UiInput::PointerMoved(_)) {
-                        return Ok(None);
-                    }
-                    return Err(pixui_error!("stale UI input revision"));
-                }
-                let target = match input {
-                    UiInput::Activate(point) | UiInput::PointerMoved(point) => {
-                        if !point.x.is_finite() || !point.y.is_finite() {
-                            return Err(pixui_error!("invalid pointer coordinates"));
-                        }
-                        instance
-                            .layout
-                            .hit_regions
-                            .iter()
-                            .rposition(|region| region.bounds.contains(point))
-                    }
-                    UiInput::ActivateFocused => instance.focus,
-                    _ => None,
-                };
-                match input {
-                    UiInput::Activate(_) | UiInput::ActivateFocused => {
-                        instance.focus = target;
-                        instance.dirty = true;
-                        if let Some(index) = target {
-                            return (instance.layout.hit_regions[index].activate)(application)
-                                .map(Some);
-                        }
-                    }
-                    UiInput::PointerMoved(_) => {
-                        if instance.hover != target {
-                            instance.hover = target;
-                            instance.dirty = true;
-                        }
-                    }
-                    UiInput::FocusNext => {
-                        let count = instance.layout.hit_regions.len();
-                        instance.focus = if count == 0 {
-                            None
-                        } else {
-                            Some(instance.focus.map_or(0, |index| (index + 1) % count))
-                        };
-                        instance.dirty = true;
-                    }
-                    UiInput::Scroll(delta) => {
-                        if !delta.is_finite() {
-                            return Err(pixui_error!("invalid scroll delta"));
-                        }
-                        instance.scroll = (instance.scroll + delta).max(0.0);
-                        instance.dirty = true;
-                        instance.geometry_stale = true;
-                    }
-                }
-            }
+            UiCommand::Input { .. } => unreachable!(),
             UiCommand::Close { .. } => unreachable!(),
         }
         Ok(None)
+    }
+
+    fn input(
+        &mut self,
+        id: UiInstanceId,
+        revision: RenderRevision,
+        input: UiInput,
+        application: &Application,
+    ) -> PixuiResult<Option<ActionCall>> {
+        let instance = self
+            .instances
+            .get(&id)
+            .ok_or_else(|| pixui_error!("unknown UI instance"))?;
+        if revision < instance.compatible_revision
+            || revision > instance.revision
+            || revision.0 == 0
+            || instance.geometry_stale
+        {
+            if matches!(input, UiInput::PointerMoved(_)) {
+                return Ok(None);
+            }
+            return Err(pixui_error!("stale UI input revision"));
+        }
+        let definition = instance.definition;
+        let state = &mut self
+            .definitions
+            .get_mut(&definition)
+            .expect("registered definition")
+            .state;
+        let before = state.clone();
+        let mut geometry_changed = false;
+        let mut action = None;
+        match input {
+            UiInput::PointerMoved(point) => {
+                if !point.x.is_finite() || !point.y.is_finite() {
+                    return Err(pixui_error!("invalid pointer coordinates"));
+                }
+                let viewport = super::geometry::Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: instance.settings.viewport.width,
+                    height: instance.settings.viewport.height,
+                };
+                state.hover = instance
+                    .layout
+                    .component_bounds
+                    .iter()
+                    .rposition(|bounds| bounds.intersect(viewport).contains(point));
+            }
+            UiInput::Activate(point) => {
+                if !point.x.is_finite() || !point.y.is_finite() {
+                    return Err(pixui_error!("invalid pointer coordinates"));
+                }
+                let region = instance
+                    .layout
+                    .hit_regions
+                    .iter()
+                    .rev()
+                    .find(|region| region.bounds.contains(point));
+                state.focus = region.map(|region| region.component_index);
+                action = region
+                    .map(|region| (region.activate)(application))
+                    .transpose()?;
+            }
+            UiInput::ActivateFocused => {
+                let region = instance
+                    .layout
+                    .hit_regions
+                    .iter()
+                    .find(|region| Some(region.component_index) == state.focus);
+                action = region
+                    .map(|region| (region.activate)(application))
+                    .transpose()?;
+            }
+            UiInput::FocusNext => {
+                let regions = &instance.layout.hit_regions;
+                let next = regions
+                    .iter()
+                    .position(|region| Some(region.component_index) == state.focus)
+                    .map_or(0, |index| (index + 1) % regions.len());
+                state.focus = regions.get(next).map(|region| region.component_index);
+            }
+            UiInput::Scroll(delta) => {
+                if !delta.is_finite() {
+                    return Err(pixui_error!("invalid scroll delta"));
+                }
+                let maximum =
+                    (instance.layout.content_height - instance.settings.viewport.height).max(0.0);
+                state.scroll = (state.scroll + delta).clamp(0.0, maximum);
+                geometry_changed = state.scroll != before.scroll;
+            }
+        }
+        if *state != before {
+            for peer in self
+                .instances
+                .values_mut()
+                .filter(|peer| peer.definition == definition)
+            {
+                if geometry_changed {
+                    peer.geometry_stale = true;
+                    peer.redraw_only = false;
+                } else if !peer.dirty {
+                    peer.redraw_only = true;
+                }
+                peer.dirty = true;
+            }
+        }
+        Ok(action)
     }
 
     /// Publishes only complete successful renders, preserving the last good
@@ -257,20 +318,21 @@ impl UiRegistry {
                 instance.error = Some("render revision exhausted".into());
                 continue;
             };
+            let definition = &self.definitions[&instance.definition];
             let result = renderer::render_measured(
-                &self.definitions[&instance.definition].template,
+                &definition.template,
                 &mut instance.state,
                 application,
                 &instance.settings,
-                instance.scroll,
-                instance.focus,
-                instance.hover,
+                definition.state.scroll,
+                definition.state.focus,
+                definition.state.hover,
             );
             match result {
                 Ok(renderer::RenderedUi {
                     display_list,
                     mut layout,
-                    scroll,
+                    scroll: _,
                     redraw_after,
                     timings,
                     animating,
@@ -295,7 +357,6 @@ impl UiRegistry {
                     }
                     instance.redraw_only = false;
                     instance.layout = layout;
-                    instance.scroll = scroll;
                     instance.revision = RenderRevision(revision);
                     instance.geometry_stale = false;
                     instance.error = None;

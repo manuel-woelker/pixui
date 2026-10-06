@@ -677,6 +677,14 @@ fn showing_unchanged_windows_accepts_hover_from_the_retained_presented_frame() {
             input: UiInput::PointerMoved(Point { x: 20.0, y: 20.0 }),
         })
         .unwrap();
-        assert!(output(&outputs).revision > restored.revision);
+        let hovered = output(&outputs);
+        assert!(hovered.revision > restored.revision);
+        app.ui_command(UiCommand::Input {
+            instance: id,
+            revision: hovered.revision,
+            input: UiInput::PointerMoved(Point { x: -1.0, y: -1.0 }),
+        })
+        .unwrap();
+        output(&outputs);
     }
 }

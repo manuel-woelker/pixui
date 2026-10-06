@@ -22,7 +22,9 @@ pub struct PaintContext<'a, C: Component> {
     pub width: f32,
     pub height: f32,
     pub settings: &'a PresentationSettings,
+    /// Shared definition focus for this component.
     pub focused: bool,
+    /// Shared definition hover, supplied for every component, even without an action.
     pub hovered: bool,
     /// Master timeline time in microseconds, identical for every painter in this
     /// render. Use this instead of reading the system clock; overrides can seek.

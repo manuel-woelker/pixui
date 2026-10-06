@@ -12,6 +12,8 @@ pub struct UiInstanceId(pub(crate) u64);
 /// Clipped logical bounds and a worker-local activation binding.
 pub struct HitRegion {
     pub bounds: Rect,
+    /// Component position in the prepared tree, including noninteractive nodes.
+    pub component_index: usize,
     pub(crate) activate: ActionBinding,
 }
 
@@ -22,12 +24,14 @@ pub struct LayoutState {
     pub component_bounds: Vec<Rect>,
     pub hit_regions: Vec<HitRegion>,
     pub content_height: f32,
+    /// Derived geometry: shared requested scroll clamped for this viewport.
+    pub scroll_offset: f32,
 }
 
 /// All geometry and interaction live on the application worker. Layout belongs
 /// to `revision`; visual redraws preserve compatible presented input revisions.
-/// Stale discrete input is rejected and old motion is discarded. Focus and hover are
-/// cleared when content is invalidated because loop reconciliation is positional.
+/// Shared focus, hover and requested scrolling belong to the definition.
+/// Stale discrete input is rejected and old motion is discarded.
 pub struct UiInstance {
     pub(crate) definition: UiDefinitionId,
     pub(crate) state: LiveState,
@@ -36,9 +40,6 @@ pub struct UiInstance {
     pub(crate) revision: RenderRevision,
     pub(crate) compatible_revision: RenderRevision,
     pub(crate) redraw_only: bool,
-    pub(crate) focus: Option<usize>,
-    pub(crate) hover: Option<usize>,
-    pub(crate) scroll: f32,
     pub(crate) dirty: bool,
     pub(crate) geometry_stale: bool,
     pub(crate) outputs: OutputSender,
@@ -68,7 +69,8 @@ impl UiInstance {
     pub fn last_error(&self) -> Option<&str> {
         self.error.as_deref()
     }
+    /// Effective scroll for this viewport, derived from shared definition state.
     pub fn scroll_offset(&self) -> f32 {
-        self.scroll
+        self.layout.scroll_offset
     }
 }

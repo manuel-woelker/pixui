@@ -5,7 +5,7 @@ pub struct ButtonProps {
     pub label: String,
 }
 /// Local active styling, set by an optional component update. Native focus and
-/// hover are independent instance interaction supplied by PaintContext.
+/// hover come from shared definition interaction supplied by PaintContext.
 #[derive(Default)]
 pub struct ButtonState {
     pub active: bool,
