@@ -382,3 +382,15 @@ use weak snapshot identities and a 64 MiB LRU budget per window. GPU resources
 stay off the worker queue. See
 [renderer documentation](../crates/gui/src/renderer/README.md) and
 [DR-009](<decisions/DR-009 Plug GUI renderers into a shared display list contract.md>).
+
+### Hidden UI instances
+
+Native windows report visibility transitions with `UiCommand::Visibility`.
+Hidden instances retain dirty state while skipping preparation, state traversal,
+painting and resource finalization. Actions still update application state and
+visible instances. Showing an instance requests fresh output using all
+accumulated changes and the current animation clock. The GUI logs hide/show
+transitions and uses native lifecycle events plus a 250 ms check of available
+visibility and minimization state. Unknown platform visibility is treated as
+visible; loss of focus never hides an instance. Headless instances start visible
+and can explicitly use the same visibility command.

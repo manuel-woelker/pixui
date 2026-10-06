@@ -44,9 +44,15 @@ pub struct UiInstance {
     pub(crate) outputs: OutputSender,
     pub(crate) error: Option<String>,
     pub(crate) animation_request: Option<u64>,
+    pub(crate) visible: bool,
 }
 
 impl UiInstance {
+    /// Whether worker rendering is enabled. Headless instances start visible.
+    pub fn visible(&self) -> bool {
+        self.visible
+    }
+
     pub fn state(&self) -> &LiveState {
         &self.state
     }

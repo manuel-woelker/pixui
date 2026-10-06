@@ -57,6 +57,8 @@ struct NativeWindow {
     redraw: RedrawSchedule,
     overlay: crate::performance_overlay::PerformanceOverlay,
     occluded: bool,
+    worker_visible: bool,
+    drawing_activity: Option<crate::drawing_activity::DrawingActivity>,
 }
 
 impl NativeWindow {
@@ -81,9 +83,54 @@ impl NativeWindow {
         })
     }
 
+    fn request_redraw(&mut self) {
+        if let Some(activity) = &mut self.drawing_activity {
+            activity.request(Instant::now());
+        }
+        self.window.request_redraw();
+    }
+
     fn drawable(&self) -> bool {
         let size = self.window.inner_size();
-        self.presentation.active && !self.occluded && size.width > 0 && size.height > 0
+        self.worker_visible
+            && self.presentation.active
+            && !self.occluded
+            && size.width > 0
+            && size.height > 0
+    }
+
+    fn visibility_command(&mut self) -> Option<UiCommand> {
+        let size = self.window.inner_size();
+        let visible = self.presentation.active
+            && !self.occluded
+            && size.width > 0
+            && size.height > 0
+            && !self
+                .drawing_activity
+                .as_ref()
+                .is_some_and(|activity| activity.paused)
+            && self.window.is_visible() != Some(false)
+            && self.window.is_minimized() != Some(true);
+        if visible == self.worker_visible {
+            return None;
+        }
+        self.worker_visible = visible;
+        if !visible {
+            self.redraw.cancel();
+            self.overlay.refresh = None;
+        } else {
+            self.request_redraw();
+        }
+        println!(
+            "Pixui window {:?}: {} (UI {:?})",
+            self.window.id(),
+            if visible { "show" } else { "hide" },
+            self.instance
+        );
+        Some(UiCommand::Visibility {
+            instance: self.instance,
+            visible,
+        })
     }
 
     fn draw(&mut self) -> PixuiResult<bool> {
@@ -141,6 +188,8 @@ struct Host {
     factory: Box<dyn RendererFactory>,
     proxy: winit::event_loop::EventLoopProxy<()>,
     wake_pending: Arc<AtomicBool>,
+    visibility_check: Instant,
+    wayland: bool,
 }
 
 impl Host {
@@ -189,14 +238,25 @@ impl ApplicationHandler for Host {
                     redraw: RedrawSchedule::default(),
                     overlay: Default::default(),
                     occluded: false,
+                    worker_visible: true,
+                    drawing_activity: self.wayland.then(Default::default),
                 };
+                if let Some(command) = native.visibility_command() {
+                    self.pending.push(command)?;
+                }
                 self.pending.push(native.presentation())?;
                 self.windows.insert(native.window.id(), native);
             }
             for native in self.windows.values_mut() {
                 if !native.presentation.active {
                     native.presentation.resume()?;
-                    native.window.request_redraw();
+                    if let Some(activity) = &mut native.drawing_activity {
+                        activity.received();
+                    }
+                    native.request_redraw();
+                    if let Some(command) = native.visibility_command() {
+                        self.pending.push(command)?;
+                    }
                     self.pending.push(native.presentation())?;
                 }
             }
@@ -207,10 +267,16 @@ impl ApplicationHandler for Host {
         }
     }
 
-    fn suspended(&mut self, _: &ActiveEventLoop) {
+    fn suspended(&mut self, event_loop: &ActiveEventLoop) {
         for native in self.windows.values_mut() {
             native.presentation.suspend();
             native.redraw.cancel();
+            if let Some(command) = native.visibility_command()
+                && let Err(error) = self.pending.push(command)
+            {
+                self.fail(event_loop, error);
+                return;
+            }
         }
     }
 
@@ -218,7 +284,30 @@ impl ApplicationHandler for Host {
         let Some(native) = self.windows.get_mut(&id) else {
             return;
         };
+        if matches!(
+            &event,
+            WindowEvent::RedrawRequested | WindowEvent::Focused(true)
+        ) {
+            let resumed = native
+                .drawing_activity
+                .as_mut()
+                .is_some_and(|activity| activity.received());
+            if resumed
+                && let Some(command) = native.visibility_command()
+                && let Err(error) = self.pending.push(command)
+            {
+                self.fail(event_loop, error);
+                return;
+            }
+        }
         let mut close = false;
+        let check_visibility = matches!(
+            &event,
+            WindowEvent::Occluded(_)
+                | WindowEvent::Resized(_)
+                | WindowEvent::ScaleFactorChanged { .. }
+                | WindowEvent::Focused(true)
+        );
         let command = match event {
             WindowEvent::CloseRequested => {
                 close = true;
@@ -231,11 +320,17 @@ impl ApplicationHandler for Host {
                 if occluded {
                     native.redraw.cancel();
                 } else {
-                    native.window.request_redraw();
+                    if let Some(activity) = &mut native.drawing_activity {
+                        activity.received();
+                    }
+                    native.request_redraw();
                 }
                 None
             }
             WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => {
+                if let Some(activity) = &mut native.drawing_activity {
+                    activity.received();
+                }
                 if !native.drawable() {
                     native.redraw.cancel();
                 }
@@ -270,7 +365,10 @@ impl ApplicationHandler for Host {
                             native.redraw.presented(Instant::now(), interval);
                         }
                         Ok(false) => {}
-                        Err(error) => self.fail(event_loop, error),
+                        Err(error) => {
+                            self.fail(event_loop, error);
+                            return;
+                        }
                     }
                     None
                 }
@@ -305,7 +403,7 @@ impl ApplicationHandler for Host {
                 match event.logical_key {
                     Key::Named(NamedKey::F11) => {
                         native.overlay.toggle();
-                        native.window.request_redraw();
+                        native.request_redraw();
                         None
                     }
                     Key::Named(NamedKey::Tab) => native.input(UiInput::FocusNext),
@@ -317,6 +415,14 @@ impl ApplicationHandler for Host {
             }
             _ => None,
         };
+        if !close
+            && check_visibility
+            && let Some(visibility) = native.visibility_command()
+            && let Err(error) = self.pending.push(visibility)
+        {
+            self.fail(event_loop, error);
+            return;
+        }
         if let Some(command) = command
             && let Err(error) = self.enqueue(command)
         {
@@ -331,6 +437,23 @@ impl ApplicationHandler for Host {
         // Clear before reading mailboxes: publication racing this pass schedules
         // another wake, while outputs already published are observed below.
         self.wake_pending.store(false, Ordering::Release);
+        // Some platforms have no visibility event. Check native state periodically
+        // so restoration is detected even after animation and output have stopped.
+        let now = Instant::now();
+        if now >= self.visibility_check {
+            self.visibility_check = now + Duration::from_millis(250);
+            for native in self.windows.values_mut() {
+                if let Some(activity) = &mut native.drawing_activity {
+                    activity.check(now);
+                }
+                if let Some(command) = native.visibility_command()
+                    && let Err(error) = self.pending.push(command)
+                {
+                    self.fail(event_loop, error);
+                    return;
+                }
+            }
+        }
         if let Err(error) = self.pending.flush(&self.application) {
             self.fail(event_loop, error);
             return;
@@ -358,7 +481,7 @@ impl ApplicationHandler for Host {
                         );
                         native.output = Some(output);
                         if native.drawable() {
-                            native.window.request_redraw();
+                            native.request_redraw();
                         }
                     }
                 }
@@ -378,7 +501,7 @@ impl ApplicationHandler for Host {
                     .is_some_and(|deadline| deadline <= now)
             {
                 native.overlay.refresh = None;
-                native.window.request_redraw();
+                native.request_redraw();
             }
             if native.drawable()
                 && native
@@ -387,10 +510,10 @@ impl ApplicationHandler for Host {
                     .is_some_and(|deadline| deadline <= now)
             {
                 native.presentation.retry = None;
-                native.window.request_redraw();
+                native.request_redraw();
             }
             if native.drawable() && native.redraw.take_animation_wakeup(now) {
-                native.window.request_redraw();
+                native.request_redraw();
             }
             if native.drawable()
                 && native.redraw.take_due(now)
@@ -426,6 +549,7 @@ impl ApplicationHandler for Host {
                 })
                 .flatten()
                 .chain(retry)
+                .chain(Some(self.visibility_check))
                 .min();
             event_loop.set_control_flow(deadline.map_or(ControlFlow::Wait, ControlFlow::WaitUntil));
         }
@@ -472,6 +596,33 @@ pub fn run_with_factory(
     let event_loop = EventLoop::<()>::with_user_event()
         .build()
         .map_err(|e| pixui_error!("create native event loop: {e}"))?;
+    #[cfg(any(
+        target_os = "linux",
+        target_os = "freebsd",
+        target_os = "dragonfly",
+        target_os = "netbsd",
+        target_os = "openbsd"
+    ))]
+    let wayland = {
+        use winit::platform::wayland::EventLoopExtWayland;
+        event_loop.is_wayland()
+    };
+    #[cfg(not(any(
+        target_os = "linux",
+        target_os = "freebsd",
+        target_os = "dragonfly",
+        target_os = "netbsd",
+        target_os = "openbsd"
+    )))]
+    let wayland = false;
+    println!(
+        "Pixui visibility tracking: {}",
+        if wayland {
+            "Wayland drawing opportunities + native state"
+        } else {
+            "native window state"
+        }
+    );
     let proxy = event_loop.create_proxy();
     let mut host = Host {
         application,
@@ -482,6 +633,8 @@ pub fn run_with_factory(
         factory,
         proxy,
         wake_pending: Arc::new(AtomicBool::new(false)),
+        visibility_check: Instant::now(),
+        wayland,
     };
     event_loop
         .run_app(&mut host)

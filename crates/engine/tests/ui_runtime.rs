@@ -550,3 +550,91 @@ fn visual_redraws_preserve_targets_and_do_not_starve_presented_clicks() {
     app.ui_command(UiCommand::Close { instance: id }).unwrap();
     assert!(app.ui_command(UiCommand::Redraw { instance: id }).is_err());
 }
+
+#[test]
+fn hidden_instances_skip_rendering_keep_changes_and_refresh_when_shown() {
+    let (app, actions, definition) = setup(16);
+    actions.add("before").unwrap();
+    let (hidden, hidden_outputs) = app
+        .create_ui(definition, PresentationSettings::default())
+        .unwrap();
+    let (visible, visible_outputs) = app
+        .create_ui(definition, PresentationSettings::default())
+        .unwrap();
+    let initial = output(&hidden_outputs);
+    output(&visible_outputs);
+    let initial_states = state_ids(&app, hidden);
+    app.ui_command(UiCommand::Visibility {
+        instance: hidden,
+        visible: false,
+    })
+    .unwrap();
+    actions.add("while hidden").unwrap();
+    output(&visible_outputs);
+    actions.add("another change").unwrap();
+    output(&visible_outputs);
+    app.ui_command(UiCommand::AnimationFrame {
+        instance: hidden,
+        request: 7,
+    })
+    .unwrap();
+    let settings = PresentationSettings {
+        viewport: Size {
+            width: 500.0,
+            height: 300.0,
+        },
+        ..Default::default()
+    };
+    app.ui_command(UiCommand::Present {
+        instance: hidden,
+        settings,
+    })
+    .unwrap();
+    app.ui_command(UiCommand::Redraw { instance: hidden })
+        .unwrap();
+    let revision = app
+        .inspect(move |app| {
+            assert!(!app.uis().instance(hidden)?.visible());
+            assert!(app.uis().instance(visible)?.visible());
+            Ok(app.uis().instance(hidden)?.revision())
+        })
+        .unwrap();
+    assert_eq!(revision, initial.revision);
+    assert_eq!(state_ids(&app, hidden), initial_states);
+    assert!(matches!(
+        hidden_outputs.try_recv(),
+        Err(TryRecvError::Empty)
+    ));
+    app.ui_command(UiCommand::Visibility {
+        instance: hidden,
+        visible: true,
+    })
+    .unwrap();
+    let restored = output(&hidden_outputs);
+    assert!(restored.revision > initial.revision);
+    assert_eq!(restored.animation_request, Some(7));
+    assert_eq!(state_ids(&app, hidden).len(), 3);
+    assert!(restored.display_list.commands.iter().any(|command| matches!(command, DrawCommand::DrawText { text, .. } if text.contains("while hidden"))));
+    app.ui_command(UiCommand::Visibility {
+        instance: hidden,
+        visible: true,
+    })
+    .unwrap();
+    app.inspect(|_| Ok(())).unwrap();
+    assert!(matches!(
+        hidden_outputs.try_recv(),
+        Err(TryRecvError::Empty)
+    ));
+    // Showing refreshes animation even without content or settings changes.
+    app.ui_command(UiCommand::Visibility {
+        instance: hidden,
+        visible: false,
+    })
+    .unwrap();
+    app.ui_command(UiCommand::Visibility {
+        instance: hidden,
+        visible: true,
+    })
+    .unwrap();
+    assert!(output(&hidden_outputs).revision > restored.revision);
+}

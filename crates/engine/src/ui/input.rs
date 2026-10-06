@@ -35,6 +35,12 @@ pub enum UiCommand {
         instance: UiInstanceId,
         request: u64,
     },
+    /// Pauses worker preparation, painting and resource finalization while hidden.
+    /// Showing the instance requests a fresh render with accumulated changes.
+    Visibility {
+        instance: UiInstanceId,
+        visible: bool,
+    },
     Close {
         instance: UiInstanceId,
     },
@@ -47,6 +53,7 @@ impl UiCommand {
             | Self::Present { instance, .. }
             | Self::Redraw { instance }
             | Self::AnimationFrame { instance, .. }
+            | Self::Visibility { instance, .. }
             | Self::Close { instance } => *instance,
         }
     }

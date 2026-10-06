@@ -151,3 +151,23 @@ clearing the flag before inspecting mailboxes to avoid lost wakeups. Idle
 windows use `ControlFlow::Wait`; delayed updates, overlays, surface retries and
 pending worker commands supply deadlines when needed. Headless consumers need no
 waker and explicitly drive animation through commands.
+
+## Hidden windows
+
+The host sends `UiCommand::Visibility` when a window becomes hidden or visible.
+The worker skips the entire render for hidden instances: preparation, live-state
+walking, painting, text finalization and output publication. Application actions
+continue normally and dirty state is retained. Showing requests a fresh render,
+including when only animation time changed. Other visible instances keep
+updating. Queued animation request IDs are retained and acknowledged by the
+restored output.
+
+The host combines suspension, occlusion events, zero dimensions, known
+visibility and known minimized state. A 250 ms native-state check detects
+changes on platforms without visibility events; this performs no worker
+rendering. Unknown states are assumed visible, and unfocused windows continue
+rendering. Winit cannot report all visibility changes on every platform: Wayland
+visibility/minimization queries are unsupported, so optimization there relies on
+available lifecycle/occlusion events. At startup the console reports the active
+visibility-tracking mode. Hide/show transitions print
+`Pixui window ...: hide/show (UI ...)` to the console.

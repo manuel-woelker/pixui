@@ -81,6 +81,7 @@ impl UiRegistry {
                 outputs,
                 error: None,
                 animation_request: None,
+                visible: true,
             },
         );
         Ok((id, receiver))
@@ -130,11 +131,23 @@ impl UiRegistry {
             .ok_or_else(|| pixui_error!("unknown UI instance"))?;
         if !matches!(
             command,
-            UiCommand::Redraw { .. } | UiCommand::AnimationFrame { .. }
+            UiCommand::Redraw { .. }
+                | UiCommand::AnimationFrame { .. }
+                | UiCommand::Visibility { .. }
         ) {
             instance.redraw_only = false;
         }
         match command {
+            UiCommand::Visibility { visible, .. } => {
+                if instance.visible != visible {
+                    instance.visible = visible;
+                    // Preserve accumulated dirty state while hidden. Showing also
+                    // refreshes time-dependent drawing when no actions occurred.
+                    if visible {
+                        instance.dirty = true;
+                    }
+                }
+            }
             UiCommand::AnimationFrame { request, .. } => {
                 if instance
                     .animation_request
@@ -233,7 +246,7 @@ impl UiRegistry {
         self.instances
             .retain(|_, instance| instance.outputs.connected());
         for (id, instance) in &mut self.instances {
-            if !instance.dirty {
+            if !instance.dirty || !instance.visible {
                 continue;
             }
             instance.dirty = false;
