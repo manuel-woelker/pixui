@@ -17,3 +17,5 @@ pub mod renderer;
 pub mod resource;
 pub mod resource_table;
 pub mod text;
+pub mod window_mailbox;
+pub mod window_properties;

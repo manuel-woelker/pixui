@@ -94,7 +94,32 @@ pub fn definition_with_assets(
                 )?),
             ],
         }),
-    ))
+    )
+    .with_window_properties(window_properties))
+}
+
+fn window_properties(
+    context: &ExpressionContext<'_>,
+    settings: &PresentationSettings,
+) -> PixuiResult<pixui_engine::ui::window_properties::WindowProperties> {
+    let app = context.application()?;
+    let slice = app.slice_named("todo")?.id();
+    let todos = app
+        .collection(slice, "todos")?
+        .arena::<TodoItem>()
+        .ok_or_else(|| pixui_error!("wrong todo collection type"))?;
+    let open = todos.iter().filter(|(_, todo)| !todo.completed).count();
+    let title = if settings.locale == "de" {
+        format!("Aufgaben — {open} offen")
+    } else {
+        format!("Todos — {open} open")
+    };
+    Ok(pixui_engine::ui::window_properties::WindowProperties {
+        title: title.into(),
+        icon: Some(pixui_engine::resources::path::ResourcePath::new(
+            "images/pixui-logo.png",
+        )?),
+    })
 }
 
 fn animation_button(

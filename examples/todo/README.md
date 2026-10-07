@@ -43,6 +43,12 @@ with presentation settings, component state, layout and hit regions. Focus,
 hover and scrolling are shared by the UI definition. Both instances read the
 same todo collection.
 
+Window titles show the number of open todos, localized for each window. The
+logo is also sent as the native window icon where the platform supports runtime
+window icons (Wayland/macOS require separate application-icon integration).
+Title/icon changes use their own coalescing mailbox and still update while a
+window is hidden; unchanged properties are not resent.
+
 Click **Add todo** to append a generated task, or click a checkbox to mark a
 task done. Both windows update. Tab moves focus; Enter or Space activates the
 focused control. The mouse wheel scrolls overflowing content. Resize windows to

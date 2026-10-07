@@ -499,3 +499,26 @@ transparency and aspect ratio. Its `--assets` option installs an override
 directory above the default assets source. See
 [resource filesystem APIs](../crates/engine/src/resources/README.md) and
 [image snapshots](../crates/engine/src/ui/Images.md).
+
+## Native window properties
+
+UI definitions may register a window-properties resolver that derives a title
+and optional icon resource path from application state and presentation
+settings. The worker resolves icons through the existing image service and
+compares each instance's last published properties. Only changed titles or icon
+snapshots cross to the GUI as `WindowCommand::SetTitle` or
+`WindowCommand::SetIcon`.
+
+A separate coalescing mailbox retains the latest command for each property,
+independent of frame replacement. `OutputReceiver::window_commands()` exposes
+it; the existing event-loop waker covers both subscriptions. Native metadata is
+resolved and applied while hidden without painting. Animation-only and
+diagnostic refreshes skip metadata evaluation. Errors retain previous properties
+and are reported separately from render errors. Native icon display remains
+platform specific; Wayland/macOS need application-icon integration beyond
+winit's current window-icon setter.
+
+The todo example derives localized open-task counts for its window titles and
+shares the loaded logo snapshot between its image component and window icon.
+See [window properties](../crates/engine/src/ui/Window%20properties.md) for API,
+coalescing, lifecycle and native support details.

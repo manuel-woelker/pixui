@@ -19,6 +19,7 @@ pub struct UiDefinitionState {
 pub struct UiDefinition {
     pub(crate) name: String,
     pub(crate) template: LivePart,
+    pub(crate) window_properties: Option<super::window_properties::WindowPropertiesResolver>,
     pub(crate) state: UiDefinitionState,
 }
 
@@ -30,7 +31,18 @@ impl UiDefinition {
             name: name.into(),
             template,
             state: UiDefinitionState::default(),
+            window_properties: None,
         }
+    }
+
+    /// Resolves native metadata on the worker, independently of visibility and
+    /// painting. Without a resolver the host's startup defaults remain unchanged.
+    pub fn with_window_properties(
+        mut self,
+        resolver: super::window_properties::WindowPropertiesResolver,
+    ) -> Self {
+        self.window_properties = Some(resolver);
+        self
     }
 
     pub fn state(&self) -> &UiDefinitionState {

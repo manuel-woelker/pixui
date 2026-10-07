@@ -41,6 +41,9 @@ pub struct UiInstance {
     pub(crate) compatible_revision: RenderRevision,
     pub(crate) redraw_only: bool,
     pub(crate) dirty: bool,
+    pub(crate) window_properties_dirty: bool,
+    pub(crate) window_properties: Option<super::window_properties::ResolvedWindowProperties>,
+    pub(crate) window_properties_error: Option<String>,
     pub(crate) geometry_stale: bool,
     pub(crate) outputs: OutputSender,
     pub(crate) error: Option<String>,
@@ -69,6 +72,10 @@ impl UiInstance {
     }
     pub fn revision(&self) -> RenderRevision {
         self.revision
+    }
+    /// Most recent metadata resolution error, separate from painting failures.
+    pub fn window_properties_error(&self) -> Option<&str> {
+        self.window_properties_error.as_deref()
     }
     pub fn last_error(&self) -> Option<&str> {
         self.error.as_deref()

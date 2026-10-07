@@ -19,6 +19,7 @@ use pixui_engine::{
         instance::UiInstanceId,
         mailbox::OutputReceiver,
         presentation::PresentationSettings,
+        window_properties::WindowCommand,
     },
 };
 use std::{
@@ -460,6 +461,27 @@ impl ApplicationHandler for Host {
             return;
         }
         for native in self.windows.values_mut() {
+            // Native metadata is independent of drawable/occluded state and
+            // never requires a new display list or GPU work.
+            while let Ok(command) = native.outputs.window_commands().try_recv() {
+                match command {
+                    WindowCommand::SetTitle(title) => native.window.set_title(title.as_str()),
+                    WindowCommand::SetIcon(image) => {
+                        let icon = match image
+                            .as_ref()
+                            .map(crate::window_icon::from_image)
+                            .transpose()
+                        {
+                            Ok(icon) => icon,
+                            Err(error) => {
+                                self.fail(event_loop, error);
+                                return;
+                            }
+                        };
+                        native.window.set_window_icon(icon);
+                    }
+                }
+            }
             match native.outputs.try_recv() {
                 Ok(output) => {
                     if output.instance_id != native.instance {

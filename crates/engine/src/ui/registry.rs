@@ -82,6 +82,9 @@ impl UiRegistry {
                 compatible_revision: RenderRevision::default(),
                 redraw_only: false,
                 dirty: true,
+                window_properties_dirty: true,
+                window_properties: None,
+                window_properties_error: None,
                 geometry_stale: true,
                 outputs,
                 error: None,
@@ -117,6 +120,7 @@ impl UiRegistry {
         }
         for instance in self.instances.values_mut() {
             instance.dirty = true;
+            instance.window_properties_dirty = true;
             instance.redraw_only = false;
             instance.geometry_stale = true;
         }
@@ -180,6 +184,7 @@ impl UiRegistry {
                             instance.redraw_only = true;
                         }
                         instance.dirty = true;
+                        instance.window_properties_dirty = true;
                     }
                 }
             }
@@ -201,11 +206,13 @@ impl UiRegistry {
                     instance.redraw_only = true;
                 }
                 instance.dirty = true;
+                instance.window_properties_dirty = true;
             }
             UiCommand::Present { settings, .. } => {
                 settings.validate()?;
                 instance.settings = settings;
                 instance.dirty = true;
+                instance.window_properties_dirty = true;
                 instance.geometry_stale = true;
             }
             UiCommand::Input { .. } => unreachable!(),
@@ -330,6 +337,7 @@ impl UiRegistry {
                     peer.redraw_only = true;
                 }
                 peer.dirty = true;
+                peer.window_properties_dirty = true;
             }
         }
         Ok(action)
@@ -353,6 +361,14 @@ impl UiRegistry {
             .retain(|_, instance| instance.outputs.connected());
         let now = Instant::now();
         for (id, instance) in &mut self.instances {
+            if instance.window_properties_dirty {
+                instance.window_properties_dirty = false;
+                let definition = &self.definitions[&instance.definition];
+                instance.window_properties_error =
+                    update_window_properties(instance, definition, application)
+                        .err()
+                        .map(|error| format!("{error:?}"));
+            }
             if !instance.visible {
                 continue;
             }
@@ -469,5 +485,43 @@ fn decorate(instance: &mut UiInstance, output: &mut RenderOutput, now: Instant) 
             now,
         )?;
     }
+    Ok(())
+}
+
+fn update_window_properties(
+    instance: &mut UiInstance,
+    definition: &UiDefinition,
+    application: &Application,
+) -> PixuiResult<()> {
+    use super::window_properties::{ResolvedWindowProperties, WindowCommand};
+    let Some(resolve) = definition.window_properties else {
+        return Ok(());
+    };
+    let properties = resolve(
+        &crate::expression::context::ExpressionContext::new(application),
+        &instance.settings,
+    )?;
+    let resolved = ResolvedWindowProperties {
+        title: properties.title,
+        icon: properties
+            .icon
+            .as_ref()
+            .map(|path| application.load_image(path))
+            .transpose()?,
+    };
+    let previous = instance.window_properties.as_ref();
+    if previous.is_none_or(|previous| previous.title != resolved.title) {
+        instance
+            .outputs
+            .window_commands
+            .publish(WindowCommand::SetTitle(resolved.title.clone()));
+    }
+    if previous.is_none_or(|previous| previous.icon != resolved.icon) {
+        instance
+            .outputs
+            .window_commands
+            .publish(WindowCommand::SetIcon(resolved.icon.clone()));
+    }
+    instance.window_properties = Some(resolved);
     Ok(())
 }

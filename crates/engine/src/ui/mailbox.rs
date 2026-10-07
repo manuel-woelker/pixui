@@ -17,6 +17,7 @@ impl OutputWake {
 }
 
 pub(crate) struct OutputSender {
+    pub(crate) window_commands: super::window_mailbox::WindowCommandSender,
     sender: Option<Sender<RenderOutput>>,
     drain: Receiver<RenderOutput>,
     subscriber: Weak<()>,
@@ -26,23 +27,27 @@ pub(crate) struct OutputSender {
 /// Single GUI consumer. Dropping it disconnects the logical subscription.
 /// At most one pending complete output is retained per instance.
 pub struct OutputReceiver {
+    window_commands: super::window_mailbox::WindowCommandReceiver,
     receiver: Receiver<RenderOutput>,
     _subscription: Arc<()>,
     wake: Arc<OutputWake>,
 }
 
 pub(crate) fn mailbox() -> (OutputSender, OutputReceiver) {
+    let (window_sender, window_receiver) = super::window_mailbox::mailbox();
     let (sender, receiver) = bounded(1);
     let subscription = Arc::new(());
     let wake = Arc::new(OutputWake::default());
     (
         OutputSender {
+            window_commands: window_sender,
             sender: Some(sender),
             drain: receiver.clone(),
             subscriber: Arc::downgrade(&subscription),
             wake: wake.clone(),
         },
         OutputReceiver {
+            window_commands: window_receiver,
             receiver,
             _subscription: subscription,
             wake,
@@ -92,11 +97,20 @@ impl OutputReceiver {
     /// Installs a lightweight notification after publication and disconnection.
     /// Called on the publishing thread, outside the callback lock: do not block
     /// or panic. Notifications may be coalesced by the consumer.
-    /// Installation also wakes once, covering outputs published before attachment.
+    /// Installation wakes for both mailboxes, covering earlier publication.
     /// Only one callback is retained; installing another replaces it.
     pub fn set_waker(&self, callback: impl Fn() + Send + Sync + 'static) {
-        *self.wake.0.lock().expect("output wake lock") = Some(Arc::new(callback));
+        let callback: WakeCallback = Arc::new(callback);
+        let window_callback = callback.clone();
+        self.window_commands.set_waker(move || window_callback());
+        *self.wake.0.lock().expect("output wake lock") = Some(callback);
         self.wake.notify();
+    }
+
+    /// Separate coalescing metadata mailbox. Installing an output waker also
+    /// attaches it here; metadata can arrive without a new rendered frame.
+    pub fn window_commands(&self) -> &super::window_mailbox::WindowCommandReceiver {
+        &self.window_commands
     }
 
     /// Blocking convenience for headless consumers with a finite wait deadline.
@@ -141,16 +155,16 @@ mod tests {
         receiver.set_waker(move || {
             callback_calls.fetch_add(1, Ordering::SeqCst);
         });
-        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
         sender.publish(output(2));
         sender.publish(output(3));
-        assert_eq!(calls.load(Ordering::SeqCst), 3);
+        assert_eq!(calls.load(Ordering::SeqCst), 4);
         let latest = receiver.try_recv().unwrap();
         assert_eq!(latest.revision, RenderRevision(3));
         assert_eq!(latest.animation_request, Some(3));
         assert!(matches!(receiver.try_recv(), Err(TryRecvError::Empty)));
         drop(sender);
-        assert_eq!(calls.load(Ordering::SeqCst), 4);
+        assert_eq!(calls.load(Ordering::SeqCst), 6);
         assert!(matches!(
             receiver.try_recv(),
             Err(TryRecvError::Disconnected)
