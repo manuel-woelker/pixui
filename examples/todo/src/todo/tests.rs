@@ -12,6 +12,7 @@ fn create_application() -> PixuiResult<Application> {
     let mut application = Application::default();
     let mut slice = ApplicationSlice::new("todo");
     slice.bind("hide_done", false)?;
+    slice.bind("animation_paused", false)?;
     let slice = application.add_slice(slice)?;
     application.add_collection(slice, Collection::new_reflected::<TodoItem>("todos"))?;
     TodoActions::register_in(&mut application, slice)?;

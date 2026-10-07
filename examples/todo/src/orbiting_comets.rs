@@ -1,4 +1,5 @@
-//! A custom component generating a tiny color-keyed RGB snapshot each render.
+//! A custom component generating tiny RGB snapshots while playing and reusing
+//! the last snapshot while paused.
 
 use pixui_base::{PixuiResult, pixui_error};
 use pixui_engine::{
@@ -14,7 +15,10 @@ use pixui_engine::{
         presentation::{PresentationSettings, Theme},
     },
 };
-use std::f32::consts::{PI, TAU};
+use std::{
+    cell::RefCell,
+    f32::consts::{PI, TAU},
+};
 
 const WIDTH: u32 = 96;
 const HEIGHT: u32 = 32;
@@ -27,16 +31,33 @@ pub struct CometProps {
     pub speed: f32,
 }
 #[derive(Default)]
-pub struct CometState;
+pub struct CometState {
+    pub paused: bool,
+}
 impl Component for OrbitingComets {
     type Props = CometProps;
     type State = CometState;
+    fn prepare(
+        _: &CometProps,
+        state: &mut CometState,
+        context: &ExpressionContext<'_>,
+    ) -> PixuiResult<()> {
+        let app = context.application()?;
+        state.paused = *app.entity::<bool>(app.slice_named("todo")?.id(), "animation_paused")?;
+        Ok(())
+    }
 }
-pub struct CometPainter;
+
+/// Worker-local render cache, separate from component state. Keep one snapshot
+/// per theme so pausing either todo window preserves its own palette.
+#[derive(Default)]
+pub struct CometPainter {
+    images: RefCell<[Option<Image>; 2]>,
+}
 
 pub fn register(app: &ApplicationHandle) -> PixuiResult<ComponentId<OrbitingComets>> {
     let id = app.register_component::<OrbitingComets>("orbiting comets")?;
-    app.register_painter::<OrbitingComets>(CometPainter)?;
+    app.register_painter::<OrbitingComets>(CometPainter::default())?;
     Ok(id)
 }
 
@@ -57,11 +78,26 @@ pub fn props(
 
 impl Painter<OrbitingComets> for CometPainter {
     fn paint(&self, context: &mut PaintContext<'_, OrbitingComets>) -> PixuiResult<()> {
-        // Reduce in f64 before converting to the pixel generator's phase, keeping
-        // long-running timelines from losing their orbit in f32 precision.
-        let seconds = context.timestamp_us as f64 / 1_000_000.0 * f64::from(context.props.speed);
-        let phase = (seconds.rem_euclid(4.0) * f64::from(TAU) / 4.0) as f32;
-        let image = frame(phase, context.props.cyan, context.props.orange)?;
+        let slot = if context.settings.theme == Theme::Dark {
+            1
+        } else {
+            0
+        };
+        let image = {
+            let mut images = self.images.borrow_mut();
+            if !context.state.paused || images[slot].is_none() {
+                // Reduce in f64 before conversion, preserving small time steps
+                // even on a long-running master timeline.
+                let seconds =
+                    context.timestamp_us as f64 / 1_000_000.0 * f64::from(context.props.speed);
+                let phase = (seconds.rem_euclid(4.0) * f64::from(TAU) / 4.0) as f32;
+                images[slot] = Some(frame(phase, context.props.cyan, context.props.orange)?);
+            }
+            images[slot]
+                .as_ref()
+                .expect("initialized comet image")
+                .clone()
+        };
         let scale = (context.width / WIDTH as f32)
             .min(context.height / HEIGHT as f32)
             .min(1.0);
@@ -80,7 +116,7 @@ impl Painter<OrbitingComets> for CometPainter {
                 height,
             },
         );
-        if context.settings.timestamp_us.is_none() {
+        if !context.state.paused && context.settings.timestamp_us.is_none() {
             context.request_animation_frame();
         }
         Ok(())
@@ -184,8 +220,11 @@ mod tests {
             ui::renderer,
         };
         let mut app = Application::default();
+        let mut slice = pixui_engine::application::application_slice::ApplicationSlice::new("todo");
+        slice.bind("animation_paused", false).unwrap();
+        app.add_slice(slice).unwrap();
         let id = app.register_component::<OrbitingComets>("comets").unwrap();
-        app.register_painter::<OrbitingComets>(CometPainter)
+        app.register_painter::<OrbitingComets>(CometPainter::default())
             .unwrap();
         let root = LivePart::Component(ComponentPart::typed(id, props));
         let mut state = LiveState::new();
@@ -251,5 +290,49 @@ mod tests {
         assert_ne!(initial, frame(0.0, cyan, orange).unwrap());
         assert!(frame(f32::NAN, cyan, orange).is_err());
         assert!(frame(0.0, TRANSPARENT, orange).is_err());
+    }
+    #[test]
+    fn pause_reuses_snapshot_and_resume_draws_current_master_time() {
+        use pixui_engine::{
+            application::{app::Application, application_slice::ApplicationSlice},
+            live_model::{
+                part::{ComponentPart, LivePart},
+                state::LiveState,
+            },
+            ui::renderer,
+        };
+        let mut app = Application::default();
+        let mut slice = ApplicationSlice::new("todo");
+        slice.bind("animation_paused", false).unwrap();
+        let slice = app.add_slice(slice).unwrap();
+        let id = app.register_component::<OrbitingComets>("comets").unwrap();
+        app.register_painter::<OrbitingComets>(CometPainter::default())
+            .unwrap();
+        let root = LivePart::Component(ComponentPart::typed(id, props));
+        let mut state = LiveState::new();
+        let draw = |app: &Application, state: &mut LiveState, timestamp_us| {
+            let rendered = renderer::render_measured(
+                &root,
+                state,
+                app,
+                &PresentationSettings {
+                    timestamp_us: Some(timestamp_us),
+                    ..Default::default()
+                },
+                0.0,
+                None,
+                None,
+            )
+            .unwrap();
+            rendered.display_list.images[0].clone()
+        };
+        let original = draw(&app, &mut state, 1_000_000);
+        *app.entity_mut::<bool>(slice, "animation_paused").unwrap() = true;
+        let paused = draw(&app, &mut state, 1_000_000);
+        assert_eq!(original, paused);
+        assert_eq!(paused, draw(&app, &mut state, 3_000_000));
+        *app.entity_mut::<bool>(slice, "animation_paused").unwrap() = false;
+        assert_ne!(paused, draw(&app, &mut state, 3_000_000));
+        assert_ne!(paused.pixels(), draw(&app, &mut state, 4_000_000).pixels());
     }
 }

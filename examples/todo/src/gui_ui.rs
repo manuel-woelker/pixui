@@ -70,6 +70,10 @@ pub fn definition_with_assets(
                     ComponentPart::typed(components.button, add_button).with_activation(add_action),
                 ),
                 LivePart::Component(ComponentPart::typed(comets, orbiting_comets::props)),
+                LivePart::Component(
+                    ComponentPart::typed(components.button, animation_button)
+                        .with_activation(animation_action),
+                ),
                 LivePart::Component(logo),
                 LivePart::Component(
                     ComponentPart::typed(components.checkbox, visibility_control)
@@ -91,6 +95,31 @@ pub fn definition_with_assets(
             ],
         }),
     ))
+}
+
+fn animation_button(
+    context: &ExpressionContext<'_>,
+    settings: &PresentationSettings,
+) -> PixuiResult<ButtonProps> {
+    let app = context.application()?;
+    let paused = *app.entity::<bool>(app.slice_named("todo")?.id(), "animation_paused")?;
+    Ok(ButtonProps {
+        label: match (settings.locale.as_str(), paused) {
+            ("de", true) => "Animation fortsetzen",
+            ("de", false) => "Animation pausieren",
+            (_, true) => "Resume animation",
+            (_, false) => "Pause animation",
+        }
+        .into(),
+    })
+}
+fn animation_action(
+    _: &ExpressionContext<'_>,
+    _: &PresentationSettings,
+) -> PixuiResult<ActionBinding> {
+    Ok(Box::new(|app| {
+        app.action_call(app.slice_named("todo")?.id(), "toggle_animation", vec![])
+    }))
 }
 
 fn hide_done(context: &ExpressionContext<'_>) -> PixuiResult<bool> {
@@ -323,10 +352,10 @@ mod tests {
             .inspect(move |app| {
                 let a = app.uis().instance(one)?.layout();
                 let b = app.uis().instance(two)?.layout();
-                assert_eq!(a.hit_regions.len(), 3);
-                assert_eq!(a.component_bounds.len(), 6);
+                assert_eq!(a.hit_regions.len(), 4);
+                assert_eq!(a.component_bounds.len(), 7);
                 assert_eq!(a.component_bounds, b.component_bounds);
-                let rect = a.hit_regions[2].bounds;
+                let rect = a.hit_regions[3].bounds;
                 Ok(Point {
                     x: rect.x + 1.0,
                     y: rect.y + 1.0,
@@ -360,7 +389,7 @@ mod tests {
         outputs.recv_timeout(Duration::from_secs(2)).unwrap();
         other.recv_timeout(Duration::from_secs(2)).unwrap();
         app.inspect(move |app| {
-            assert_eq!(app.uis().instance(one)?.layout().hit_regions.len(), 2);
+            assert_eq!(app.uis().instance(one)?.layout().hit_regions.len(), 3);
             let todos = app
                 .collection(app.slice_named("todo")?.id(), "todos")?
                 .arena::<TodoItem>()
@@ -374,7 +403,7 @@ mod tests {
         outputs.recv_timeout(Duration::from_secs(2)).unwrap();
         other.recv_timeout(Duration::from_secs(2)).unwrap();
         app.inspect(move |app| {
-            assert_eq!(app.uis().instance(one)?.layout().hit_regions.len(), 4);
+            assert_eq!(app.uis().instance(one)?.layout().hit_regions.len(), 5);
             Ok(())
         })
         .unwrap();
@@ -579,7 +608,7 @@ mod tests {
                     .hit_regions
                     .len()))
                     .unwrap(),
-                3
+                4
             );
         }
         assert_ne!(displays[0], displays[1]);
@@ -646,7 +675,7 @@ mod tests {
         let (count, row) = application
             .inspect(move |app| {
                 let instance = app.uis().instance(light)?;
-                let rect = instance.layout().hit_regions[2].bounds;
+                let rect = instance.layout().hit_regions[3].bounds;
                 Ok((
                     instance.layout().hit_regions.len(),
                     Point {
@@ -656,7 +685,7 @@ mod tests {
                 ))
             })
             .unwrap();
-        assert_eq!(count, 4);
+        assert_eq!(count, 5);
         application
             .ui_command(UiCommand::Input {
                 instance: light,
@@ -770,5 +799,88 @@ mod tests {
         application
             .ui_command(UiCommand::Close { instance: dark })
             .unwrap();
+    }
+    #[test]
+    fn pause_button_stops_both_windows_and_resume_restarts_animation() {
+        let app = Application::new();
+        create_slice(&app).unwrap();
+        let components = app.register_standard_components().unwrap();
+        app.register_standard_painters().unwrap();
+        let comets = crate::orbiting_comets::register(&app).unwrap();
+        let definition = app
+            .register_ui(definition(&app, components, comets).unwrap())
+            .unwrap();
+        let (one, outputs) = app
+            .create_ui(definition, PresentationSettings::default())
+            .unwrap();
+        let (_, other) = app
+            .create_ui(
+                definition,
+                PresentationSettings {
+                    locale: "de".into(),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        let initial = outputs.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert!(initial.animating);
+        assert!(
+            other
+                .recv_timeout(Duration::from_secs(2))
+                .unwrap()
+                .animating
+        );
+        let point = app
+            .inspect(move |app| {
+                let rect = app.uis().instance(one)?.layout().hit_regions[1].bounds;
+                Ok(Point {
+                    x: rect.x + 1.0,
+                    y: rect.y + 1.0,
+                })
+            })
+            .unwrap();
+        let click = |revision| {
+            app.ui_command(UiCommand::Input {
+                instance: one,
+                revision,
+                input: UiInput::MouseButton {
+                    button: pixui_engine::ui::input::MouseButton::Left,
+                    state: pixui_engine::ui::input::ButtonState::Released,
+                    position: point,
+                    modifiers: Default::default(),
+                },
+            })
+            .unwrap()
+        };
+        click(initial.revision);
+        let paused = outputs.recv_timeout(Duration::from_secs(2)).unwrap();
+        let german = other.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert!(!paused.animating && !german.animating);
+        assert!(paused.display_list.commands.iter().any(
+            |c| matches!(c, DrawCommand::DrawText { text, .. } if text == "Resume animation")
+        ));
+        assert!(german.display_list.commands.iter().any(
+            |c| matches!(c, DrawCommand::DrawText { text, .. } if text == "Animation fortsetzen")
+        ));
+        app.ui_command(UiCommand::Redraw { instance: one }).unwrap();
+        let redrawn = outputs.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert!(!redrawn.animating);
+        assert_eq!(
+            paused.display_list.images[0],
+            redrawn.display_list.images[0]
+        );
+        click(redrawn.revision);
+        assert!(
+            outputs
+                .recv_timeout(Duration::from_secs(2))
+                .unwrap()
+                .animating
+        );
+        assert!(
+            other
+                .recv_timeout(Duration::from_secs(2))
+                .unwrap()
+                .animating
+        );
     }
 }

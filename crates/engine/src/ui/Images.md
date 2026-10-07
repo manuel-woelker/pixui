@@ -186,12 +186,16 @@ snapshots. When converting to phase, reduce in sufficient precision before
 converting to `f32`, avoiding large elapsed values losing small animation steps.
 
 The todo example's `OrbitingComets` painter derives phase from the master
-timestamp and emits a fresh 96 by 32 image. Its state remains a named `Default`
-unit type; there is no independent clock per node. Automatic time requests
-another frame at the next drawing opportunity; an explicit timestamp stops those
-requests until settings change. Shrinking, dithered tails expose either window's
-background without alpha. Retained output redraws reuse the snapshot; queue
-delays skip ahead in time rather than slowing the orbit.
+timestamp and emits a fresh 96 by 32 image while playing. Component state holds
+only a `paused` boolean. The painter caches one image per theme and reuses its
+exact snapshot while paused, avoiding pixel generation and repeated GPU uploads.
+There is no independent clock per node; resuming uses the current master time.
+The shared **Pause animation** / **Resume animation** button controls both
+windows. Paused redraws do not request animation frames. Automatic time requests
+another frame at the next drawing opportunity while playing; an explicit
+timestamp also stops those requests until settings change. Shrinking, dithered
+tails expose either window's background without alpha. Queue delays skip ahead
+in time rather than slowing the orbit.
 
 See [shared render resources](Resources.md) for typed indices, identity, and
 table ownership.

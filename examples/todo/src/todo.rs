@@ -41,6 +41,12 @@ pub mod actions {
         *hide_done = !*hide_done;
     }
 
+    /// Pauses or resumes animation in every window of the todo UI.
+    #[action]
+    pub fn toggle_animation(mut animation_paused: EntityMut<bool>) {
+        *animation_paused = !*animation_paused;
+    }
+
     /// Marks a todo complete. Repeated calls are harmless.
     /// Dispatch resolves the request's opaque todo reference before calling this function.
     #[action]
@@ -55,6 +61,7 @@ pub fn create_slice(application: &ApplicationHandle) -> PixuiResult<SliceId> {
     let todos = application.register_collection(Collection::new_reflected::<TodoItem>("todos"))?;
     slice.bind_collection("todos", todos)?;
     slice.bind("hide_done", false)?;
+    slice.bind("animation_paused", false)?;
     let id = application.add_slice(slice)?;
     actions::TodoActions::register(application, id)?;
     Ok(id)

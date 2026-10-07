@@ -212,7 +212,14 @@ pub fn paint(display: &DisplayList, width: u32, height: u32, scale: f32) -> Pixu
                             }
                             ImagePixels::Rgba { pixels } => pixels[index],
                         };
+                        if a == 0 {
+                            continue;
+                        }
                         let pixel = &mut canvas.pixels[y as usize * width as usize + x as usize];
+                        if a == 255 {
+                            *pixel = (u32::from(r) << 16) | (u32::from(g) << 8) | u32::from(b);
+                            continue;
+                        }
                         // Source-over into an opaque framebuffer, in encoded sRGB.
                         let blend = |channel: u8, shift: u32| {
                             (u32::from(channel) * u32::from(a)

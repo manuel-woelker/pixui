@@ -39,8 +39,9 @@ has been removed. Engine walker tests cover traversal independently.
 
 The GUI opens two windows from one `UiDefinition`: English/light at 640 by 480
 and German/dark at 420 by 640. Each window has its own worker-side `UiInstance`
-with presentation settings, component state, layout, hit regions, focus, hover,
-and scrolling. Both instances read the same todo collection.
+with presentation settings, component state, layout and hit regions. Focus,
+hover and scrolling are shared by the UI definition. Both instances read the
+same todo collection.
 
 Click **Add todo** to append a generated task, or click a checkbox to mark a
 task done. Both windows update. Tab moves focus; Enter or Space activates the
@@ -48,13 +49,21 @@ focused control. The mouse wheel scrolls overflowing content. Resize windows to
 see independent clipping, and close either window without closing the other.
 
 Click **Hide completed** / **Erledigte ausblenden** to filter completed rows in
-both windows. A singleton `TodoSettings` entry in the slice's `settings`
-collection owns the flag. The zero-argument `toggle_hide_completed` facade
-method dispatches an action that receives the settings arena by name.
+both windows. The named `hide_done` entity holds the boolean flag. The
+zero-argument `toggle_hide_completed` facade method dispatches an action that
+receives the entity through `EntityMut<bool>`.
 A `MatchPart` chooses the complete list or a loop that matches each todo's
 `completed` field. Hidden rows have no layout space or hit target; todos remain
 stored. Switching the list branch drops its component state and recreates it
 on return. Completing a visible item in filtered mode hides it immediately.
+
+Click **Pause animation** / **Animation pausieren** below the comet animation to
+pause both windows. The button changes to **Resume animation** /
+**Animation fortsetzen**. Pausing stops animation frame requests and preserves
+the last image snapshot on unrelated redraws, avoiding pixel generation and GPU
+reuploads. Resuming draws the current master timeline. The shared named
+`animation_paused` entity is toggled by the zero-argument
+`TodoActions::toggle_animation()` action.
 
 `gui_ui.rs` supplies typed label, button, and checkbox props resolvers and
 independent activation bindings. State initializes through `Default`. Separately
