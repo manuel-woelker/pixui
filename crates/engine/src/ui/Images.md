@@ -1,17 +1,18 @@
 # Dynamic images
 
-`Image` is a `Resource<ImageData>` owning an immutable, row-major RGB snapshot
-through the shared Arc-backed handle. Cloning shares
-the allocation; construct a new snapshot to change pixels or metadata. Published
-frames keep their exact versions until dropped, even if a newer frame replaces
-them. Pixels, width, height, and the optional transparent color are readable.
+`Image` is a `Resource<ImageData>` owning an immutable, row-major RGB or RGBA
+snapshot through the shared Arc-backed handle. Cloning shares the allocation;
+construct a new snapshot to change pixels or metadata. Published frames keep
+their exact versions until dropped, even if a newer frame replaces them. Width,
+height, and `ImagePixels` storage are readable. Match on the storage enum to
+handle both formats; `rgb_pixels()` is a convenience for known RGB data.
 
 ```rust
 use pixui_engine::ui::{display_list::Color, image::Image};
 let image = Image::new(2, 1, vec![Color(255, 0, 0), Color(255, 0, 255)],
                        Some(Color(255, 0, 255))).unwrap();
 let shared = image.clone();
-assert_eq!(image.pixels().as_ptr(), shared.pixels().as_ptr());
+assert_eq!(image.rgb_pixels().unwrap().as_ptr(), shared.rgb_pixels().unwrap().as_ptr());
 ```
 
 Dimensions must be nonzero; the pixel count must exactly match width times
@@ -22,8 +23,68 @@ contents; separately constructed equal pixels are distinct resources. Debug
 output shows metadata without dumping pixels.
 
 Color-key transparency skips pixels exactly equal to the reserved RGB color,
-leaving earlier drawing visible. There is no partial alpha or blending. `None`
-makes every pixel opaque, including magenta. Visible artwork must avoid its key.
+leaving earlier drawing visible. `None` makes every RGB pixel opaque, including
+magenta. Visible artwork must avoid its key.
+
+`Image::new_rgba` accepts `Vec<RgbaColor>` in RGBA channel order with straight
+(unpremultiplied) alpha. Zero alpha leaves the background unchanged, 255
+replaces it, and intermediate alpha blends source-over. The software renderer
+blends in encoded sRGB with integer rounding; femtovg handles premultiplication
+once when sampling. RGB uses three bytes per pixel and RGBA four; frame
+diagnostics account for each format. Glyph atlases remain separate
+single-channel coverage resources.
+
+```rust
+use pixui_engine::ui::image::{Image, RgbaColor};
+let translucent = Image::new_rgba(1, 1, vec![RgbaColor(0, 128, 255, 128)])?;
+# Ok::<(), pixui_base::PixuiError>(())
+```
+
+## Filesystem loading
+
+[`ImageLoader`](crate::resources::image_loader::ImageLoader) decodes bounded PNG
+and JPEG resources selected by relative filename. See
+[resource filesystems](../resources/README.md) for source setup, layering and
+limits. For explicit loading, retain the snapshot for reuse. The standard core
+`ImageComponent` instead takes `ImageProps { path: ResourcePath }` and resolves
+its snapshot during worker-side preparation. Painters and the native UI thread
+perform no resource I/O.
+
+Configure an application loader before rendering:
+
+```rust,no_run
+use std::sync::Arc;
+use pixui_engine::{
+    application::app::Application,
+    components::image::ImageProps,
+    live_model::part::ComponentPart,
+    resources::{directory::DirectoryFilesystem, image_loader::ImageLoader},
+};
+let app = Application::new();
+app.set_image_loader(ImageLoader::new(Arc::new(DirectoryFilesystem::new("assets")?)))?;
+let components = app.register_standard_components()?;
+app.register_standard_painters()?;
+let image = ComponentPart::typed(components.image, |_, _| {
+    ImageProps::new("images/pixui-logo.png")
+});
+# Ok::<(), pixui_base::PixuiError>(())
+```
+
+`ImageState` retains the prepared snapshot. The standard `ImagePainter` centers
+it within the component dimensions while preserving its aspect ratio. Custom
+painters can access the same prepared image through `context.state.image()`.
+The application caches weak handles by resource path, sharing live snapshots
+across components and windows without retaining unused pixel buffers. Changing
+the path loads on demand. Replacing the application loader clears lookup and
+invalidates windows; older outputs keep their original snapshots. Loading
+failures preserve the last published output, and later renders can retry.
+
+The todo UI loads `assets/images/pixui-logo.png` through the `assets` root and
+shows it in an image component. Run with `--assets /path/to/overrides` to try a
+higher-priority `images/pixui-logo.png`. Missing files fall back; invalid
+overrides report an error. The example locates its default assets from the
+source checkout; packaged applications should supply an explicit installed
+assets directory.
 
 ## Shared command construction
 
@@ -52,7 +113,9 @@ Sharing avoids repeated source copies across frames and windows, while CPU
 sampling, framebuffer allocation, and native presentation still run on redraws.
 A painter that changes pixels every frame must allocate a new immutable version.
 For unchanged images, retain snapshots in application data and clone them into
-props. No image registry, upload queue, or GUI cache is required initially.
+props. The femtovg renderer caches uploaded textures by snapshot identity;
+unchanged images need no new upload. Loading the same filename again creates a
+new identity.
 
 ## Animation scheduling
 

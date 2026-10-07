@@ -124,4 +124,19 @@ mod tests {
         });
         assert!(FrameMemory::measure(&display).display_list >= before.display_list + 5);
     }
+    #[test]
+    fn rgba_memory_counts_four_bytes_per_pixel_and_deduplicates() {
+        use crate::ui::image::{ImageData, RgbaColor};
+        let image = Image::new_rgba(2, 1, vec![RgbaColor(1, 2, 3, 128); 2]).unwrap();
+        let display = DisplayList {
+            images: vec![image.clone(), image].into(),
+            ..Default::default()
+        };
+        assert_eq!(
+            FrameMemory::measure(&display).images,
+            size_of::<ImageData>() + 8
+        );
+        let rgb = Image::new(2, 1, vec![Color(1, 2, 3); 2], None).unwrap();
+        assert_eq!(rgb.storage_bytes(), size_of::<ImageData>() + 6);
+    }
 }

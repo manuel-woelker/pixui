@@ -31,7 +31,9 @@ The resolver is an ordinary function taking `&ExpressionContext` and
 once per physical component per render. `ComponentPart::typed_with_update`
 additionally accepts a function taking `&Props` and `&mut State`, returning
 `PixuiResult<()>`. Updates run once after resolving props and before painting.
-All components finish preparation before any painter runs; physical state is
+Before the binding update, `Component::prepare` can resolve component-owned
+state such as image resources. Its default implementation does nothing. All
+components finish preparation before any painter runs; physical state is
 then reborrowed in tree order without another expression walk or state cloning.
 
 `ComponentId<C>` contains a registry identity and append-only index. It is
@@ -88,3 +90,17 @@ back. Panics follow the application worker's panic policy.
 
 See the [image and animation guide](../ui/Images.md) for snapshot ownership,
 color-key transparency, and painter-requested redraw scheduling.
+
+## Image component
+
+`components::image::ImageComponent` is registered by the standard helpers. Its
+`ImageProps` holds a validated relative `ResourcePath` (`ImageProps::new`
+accepts a filename). Configure `Application::set_image_loader` or its handle
+equivalent before rendering. Preparation resolves the path into `ImageState`;
+the standard `ImagePainter` centers the snapshot with aspect-preserving scaling.
+Custom painters can read `ImageState::image()` without doing filesystem I/O.
+
+The worker's weak path cache shares live snapshots across nodes and windows.
+Changing props resolves the new path; replacing the application loader clears
+lookup and invalidates existing UIs. Failed loads abort frame publication,
+retaining the previous output. See [resource loading](../resources/README.md).

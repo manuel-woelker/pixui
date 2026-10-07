@@ -20,6 +20,11 @@ impl<T> Resource<T> {
     pub fn from_value(value: T) -> Self {
         Self(Arc::new(value))
     }
+    /// Retains a still-live snapshot observed through `downgrade`. Returns None
+    /// after its last owning handle is dropped; never constructs a new version.
+    pub fn upgrade(weak: &Weak<T>) -> Option<Self> {
+        weak.upgrade().map(Self)
+    }
     pub fn identity(&self) -> ResourceIdentity<T> {
         ResourceIdentity {
             address: Arc::as_ptr(&self.0) as usize,

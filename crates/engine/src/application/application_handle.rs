@@ -39,6 +39,18 @@ pub struct ApplicationHandle {
 }
 
 impl ApplicationHandle {
+    /// Configures image lookup on the worker and invalidates existing UIs.
+    pub fn set_image_loader(
+        &self,
+        loader: crate::resources::image_loader::ImageLoader,
+    ) -> PixuiResult<()> {
+        self.request(move |application| {
+            application.set_image_loader(loader);
+            Ok(())
+        })?
+        .wait()
+    }
+
     /// Registers component C on the worker without creating physical state.
     pub fn register_component<C: Component>(
         &self,

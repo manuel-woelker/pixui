@@ -6,4 +6,5 @@ pub mod components;
 pub mod expression;
 pub mod live_model;
 pub mod painters;
+pub mod resources;
 pub mod ui;

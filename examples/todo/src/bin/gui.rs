@@ -18,6 +18,7 @@ use pixui_gui::{
 fn main() -> PixuiResult<()> {
     let mut selection = RendererSelection::Auto;
     let mut freeze_animation = false;
+    let mut asset_override = None;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         if arg == "--renderer" {
@@ -27,6 +28,10 @@ fn main() -> PixuiResult<()> {
                     pixui_base::pixui_error!("--renderer requires auto, software, or femtovg")
                 })?
                 .parse()?;
+        } else if arg == "--assets" {
+            asset_override = Some(std::path::PathBuf::from(args.next().ok_or_else(|| {
+                pixui_base::pixui_error!("--assets requires an override directory")
+            })?));
         } else if arg == "--freeze-animation" {
             freeze_animation = true;
         } else if arg != "--custom-painter" {
@@ -49,13 +54,17 @@ fn main() -> PixuiResult<()> {
         application.register_painter::<pixui_engine::components::checkbox::CheckboxComponent>(
             pixui_engine::painters::checkbox::CheckboxPainter,
         )?;
+        application.register_painter::<pixui_engine::components::image::ImageComponent>(
+            pixui_engine::painters::image::ImagePainter,
+        )?;
     } else {
         application.register_standard_painters()?;
     }
-    let definition = application.register_ui(gui_ui::definition(
+    let definition = application.register_ui(gui_ui::definition_with_assets(
         &application,
         components,
         pixui_example_todo::orbiting_comets::register(&application)?,
+        asset_override.as_deref(),
     )?)?;
     let mut windows = Vec::new();
     for (title, theme, locale, width, height) in [

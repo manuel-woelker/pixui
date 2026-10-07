@@ -362,3 +362,48 @@ fn gpu_budget_keeps_recent_textures_and_evicts_older_live_versions() {
     render(&mut scene, &gpu, &older, 1.0);
     assert_eq!(scene.stats().uploads, 4);
 }
+
+#[test]
+fn rgba_alpha_matches_software_without_double_premultiplication() {
+    use pixui_engine::ui::{display_list_builder::DisplayListBuilder, image::RgbaColor};
+    let Some(gpu) = gpu() else { return };
+    let image = Image::new_rgba(
+        3,
+        1,
+        vec![
+            RgbaColor(200, 100, 50, 0),
+            RgbaColor(200, 100, 50, 128),
+            RgbaColor(200, 100, 50, 255),
+        ],
+    )
+    .unwrap();
+    let mut builder = DisplayListBuilder::default();
+    builder.emit(DrawCommand::FillRect {
+        rect: Rect {
+            x: 0.0,
+            y: 0.0,
+            width: 64.0,
+            height: 64.0,
+        },
+        color: Color(20, 40, 60),
+    });
+    let index = builder.image_index(&image);
+    builder.emit(DrawCommand::DrawImage {
+        image: index,
+        destination: Rect {
+            x: 0.0,
+            y: 0.0,
+            width: 30.0,
+            height: 10.0,
+        },
+    });
+    let display = builder.finish().unwrap().0;
+    let mut scene = Scene::new(gpu.device.clone(), gpu.queue.clone(), DEFAULT_CACHE_BYTES).unwrap();
+    let actual = render(&mut scene, &gpu, &display, 1.0);
+    let expected = crate::painter::paint(&display, 64, 64, 1.0).unwrap();
+    for (rgba, rgb) in actual.as_chunks::<4>().0.iter().zip(expected) {
+        for (channel, shift) in [(0, 16), (1, 8), (2, 0)] {
+            assert!((i16::from(rgba[channel]) - ((rgb >> shift) & 255) as i16).abs() <= 1);
+        }
+    }
+}

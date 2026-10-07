@@ -5,7 +5,7 @@ use pixui_base::{PixuiResult, pixui_error};
 use pixui_engine::ui::{
     display_list::{Color, DisplayList, DrawCommand},
     geometry::Rect,
-    image::ImageData,
+    image::{ImageData, ImagePixels, RgbaColor},
     text::resource::FontResource,
 };
 
@@ -97,22 +97,32 @@ impl Scene {
         for image in display.images.iter() {
             self.texture_size(image.width(), image.height())?;
             if self.images.get(image, self.frame).is_none() {
-                let pixels: Vec<_> = image
-                    .pixels()
-                    .iter()
-                    .map(|&Color(r, g, b)| {
-                        rgb::RGBA8::new(
-                            r,
-                            g,
-                            b,
-                            if image.transparent_color() == Some(Color(r, g, b)) {
-                                0
-                            } else {
-                                255
-                            },
-                        )
-                    })
-                    .collect();
+                let pixels: Vec<rgb::RGBA8> = match image.pixels() {
+                    ImagePixels::Rgb {
+                        pixels,
+                        transparent_color,
+                    } => pixels
+                        .iter()
+                        .map(|&Color(r, g, b)| {
+                            rgb::RGBA8::new(
+                                r,
+                                g,
+                                b,
+                                if *transparent_color == Some(Color(r, g, b)) {
+                                    0
+                                } else {
+                                    255
+                                },
+                            )
+                        })
+                        .collect(),
+                    ImagePixels::Rgba { pixels } => pixels
+                        .iter()
+                        .map(|&RgbaColor(r, g, b, a)| rgb::RGBA8::new(r, g, b, a))
+                        .collect(),
+                };
+                // Pixels are straight alpha: omit PREMULTIPLIED so femtovg
+                // performs the one required premultiplication when sampling.
                 let id = self
                     .canvas
                     .create_image(

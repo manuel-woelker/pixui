@@ -51,6 +51,7 @@ impl<C: Component> ErasedBinding for Binding<C> {
                 std::any::type_name::<C::State>()
             )
         })?;
+        C::prepare(&props, state, context)?;
         (self.update)(&props, state)?;
         Ok(Box::new(props))
     }

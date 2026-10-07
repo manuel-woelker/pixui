@@ -8,7 +8,9 @@ use pixui_base::{PixuiResult, pixui_error};
 use pixui_engine::{
     application::application_handle::ApplicationHandle,
     component_registry::component_id::ComponentId,
-    components::{button::ButtonProps, checkbox::CheckboxProps, label::LabelProps},
+    components::{
+        button::ButtonProps, checkbox::CheckboxProps, image::ImageProps, label::LabelProps,
+    },
     expression::{context::ExpressionContext, expression::Expression},
     live_model::{
         match_part::{MatchCandidate, MatchPart, MatchPattern},
@@ -24,6 +26,20 @@ pub fn definition(
     components: StandardComponents,
     comets: ComponentId<OrbitingComets>,
 ) -> PixuiResult<UiDefinition> {
+    definition_with_assets(application, components, comets, None)
+}
+
+/// Creates a definition with an optional higher-priority resource directory.
+pub fn definition_with_assets(
+    application: &ApplicationHandle,
+    components: StandardComponents,
+    comets: ComponentId<OrbitingComets>,
+    override_root: Option<&std::path::Path>,
+) -> PixuiResult<UiDefinition> {
+    crate::logo::configure_resources(application, override_root)?;
+    let logo = ComponentPart::typed(components.image, |_, _| {
+        ImageProps::new("images/pixui-logo.png")
+    });
     let todos = application.collection_key("todo", "todos")?;
     let slice = application.inspect(|app| Ok(app.slice_named("todo")?.id()))?;
     let hide_done = application.entity_ref::<bool>(slice, "hide_done")?;
@@ -54,6 +70,7 @@ pub fn definition(
                     ComponentPart::typed(components.button, add_button).with_activation(add_action),
                 ),
                 LivePart::Component(ComponentPart::typed(comets, orbiting_comets::props)),
+                LivePart::Component(logo),
                 LivePart::Component(
                     ComponentPart::typed(components.checkbox, visibility_control)
                         .with_activation(visibility_action),
@@ -307,7 +324,7 @@ mod tests {
                 let a = app.uis().instance(one)?.layout();
                 let b = app.uis().instance(two)?.layout();
                 assert_eq!(a.hit_regions.len(), 3);
-                assert_eq!(a.component_bounds.len(), 5);
+                assert_eq!(a.component_bounds.len(), 6);
                 assert_eq!(a.component_bounds, b.component_bounds);
                 let rect = a.hit_regions[2].bounds;
                 Ok(Point {
@@ -391,8 +408,11 @@ mod tests {
             });
         assert!(initial.animating);
         assert_eq!(initial.redraw_after, None);
-        assert_eq!(initial.display_list.images.len(), 1);
-        let pixels = initial.display_list.images[0].pixels().to_vec();
+        assert_eq!(initial.display_list.images.len(), 2);
+        let pixels = initial.display_list.images[0]
+            .rgb_pixels()
+            .unwrap()
+            .to_vec();
         for request in 1..=3 {
             app.ui_command(UiCommand::AnimationFrame { instance, request })
                 .unwrap();
@@ -413,7 +433,7 @@ mod tests {
             latest.display_list.images[0],
             initial.display_list.images[0]
         );
-        assert_eq!(initial.display_list.images[0].pixels(), pixels);
+        assert_eq!(initial.display_list.images[0].rgb_pixels().unwrap(), pixels);
         let point = app
             .inspect(move |app| {
                 let bounds = app.uis().instance(instance)?.layout().hit_regions[0].bounds;
@@ -470,6 +490,10 @@ mod tests {
                 .unwrap();
                 app.register_painter::<pixui_engine::components::checkbox::CheckboxComponent>(
                     pixui_engine::painters::checkbox::CheckboxPainter,
+                )
+                .unwrap();
+                app.register_painter::<pixui_engine::components::image::ImageComponent>(
+                    pixui_engine::painters::image::ImagePainter,
                 )
                 .unwrap();
             } else {

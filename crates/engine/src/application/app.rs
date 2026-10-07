@@ -32,6 +32,7 @@ pub struct Application {
     // Finalization mutates only this cache while renderers borrow application
     // data immutably. RefCell is worker-local; no shared application-state lock.
     pub(crate) text_service: std::cell::RefCell<crate::ui::text::service::TextService>,
+    pub(crate) image_service: std::cell::RefCell<crate::resources::image_service::ImageService>,
     pub(crate) render_clock: crate::ui::render_clock::RenderClock,
     collections: Vec<Collection>,
     pub(super) ad_hoc_collections: HashMap<TypeId, CollectionIndex>,
@@ -41,6 +42,23 @@ pub struct Application {
 }
 
 impl Application {
+    /// Selects the application resource source and clears its weak image cache.
+    /// Existing windows are invalidated; old outputs retain their snapshots.
+    pub fn set_image_loader(&mut self, loader: crate::resources::image_loader::ImageLoader) {
+        *self.image_service.get_mut() = crate::resources::image_service::ImageService::new(loader);
+        self.uis.invalidate_all();
+    }
+
+    /// Reuses a live snapshot for this path across components and windows.
+    /// A cache miss loads synchronously on this thread. The cache retains no
+    /// pixels after component states, props and outputs release their handles.
+    pub fn load_image(
+        &self,
+        path: &crate::resources::path::ResourcePath,
+    ) -> PixuiResult<crate::ui::image::Image> {
+        self.image_service.borrow_mut().load(path)
+    }
+
     /// Application-local component identities and type metadata.
     pub fn components(&self) -> &ComponentRegistry {
         &self.components

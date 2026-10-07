@@ -25,7 +25,10 @@ fn image_validation_and_identity() {
     let first = image(Color(1, 2, 3));
     let clone = first.clone();
     assert_eq!(first, clone);
-    assert_eq!(first.pixels().as_ptr(), clone.pixels().as_ptr());
+    assert_eq!(
+        first.rgb_pixels().unwrap().as_ptr(),
+        clone.rgb_pixels().unwrap().as_ptr()
+    );
     assert_ne!(first, image(Color(1, 2, 3)));
     assert_eq!(first.width(), 1);
     assert_eq!(first.height(), 1);
@@ -53,7 +56,7 @@ fn builder_deduplicates_and_retains_snapshots_after_finish() {
     drop(first);
     drop(second);
     assert_eq!(display.images.len(), 2);
-    assert_eq!(display.images[0].pixels(), &[Color(1, 2, 3)]);
+    assert_eq!(display.images[0].rgb_pixels().unwrap(), &[Color(1, 2, 3)]);
     assert_eq!(delay, None);
 }
 
@@ -94,4 +97,19 @@ fn shortest_redraw_request_wins_and_zero_is_clamped() {
     let mut builder = DisplayListBuilder::default();
     builder.request_redraw_after(Duration::ZERO);
     assert_eq!(builder.finish().unwrap().1, Some(MIN_REDRAW_DELAY));
+}
+
+#[test]
+fn rgba_validation_storage_and_snapshot_identity() {
+    use pixui_engine::ui::image::{ImagePixels, RgbaColor};
+    let pixels = vec![RgbaColor(10, 20, 30, 128)];
+    let first = Image::new_rgba(1, 1, pixels.clone()).unwrap();
+    assert!(matches!(first.pixels(), ImagePixels::Rgba { pixels: stored } if *stored == pixels));
+    assert!(first.rgb_pixels().is_none());
+    assert_eq!(first.transparent_color(), None);
+    assert_eq!(first, first.clone());
+    assert_ne!(first, Image::new_rgba(1, 1, pixels).unwrap());
+    for (width, height) in [(0, 1), (1, 0), (2, 2), (u32::MAX, u32::MAX)] {
+        assert!(Image::new_rgba(width, height, vec![]).is_err());
+    }
 }

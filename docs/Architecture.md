@@ -459,3 +459,43 @@ This is an inference from compositor activity, not an exact visibility query.
 Unknown platform visibility is otherwise treated as visible; loss of focus never
 hides an instance. Headless instances start visible and can explicitly use the
 same visibility command.
+
+## Resource filesystems and images
+
+Engine resource filesystems open owned `Read + Send` readers for validated
+relative `ResourcePath` filenames backed by `PixuiString`. Directory sources
+have explicit roots and reject paths or resolved symlinks escaping their root.
+Layered sources search in priority order and fall back only when a resource is
+absent. Opening, reading or decoding failures remain errors from the selected
+source.
+
+`ImageLoader` is a cheaply cloneable handle with private `Arc<Inner>` ownership.
+It reads a bounded encoded buffer and decodes PNG/JPEG into existing immutable
+`Image` snapshots, enforcing pixel and decode buffer limits. Images store either
+RGB with an optional color key or straight-alpha RGBA. Both software and femtovg
+renderers support the formats; display lists retain snapshots through the same
+resource indices and GPU identity cache used for generated images. Font coverage
+atlases retain their existing single-channel representation.
+
+The standard core `ImageComponent` takes a relative resource path as its prop.
+Configure `Application::set_image_loader` through the handle before rendering.
+`Component::prepare` resolves the path into `ImageState` on the worker, after
+props resolution and before binding updates or painting. The standard
+`ImagePainter` draws that snapshot with centered, aspect-preserving scaling.
+Custom painters reuse the prepared image without doing resource I/O.
+
+An application-owned weak path cache shares live snapshots across components and
+windows without retaining unused pixel buffers. Changing props resolves the new
+path; replacing the loader clears lookup and invalidates existing UIs. Loading
+errors preserve previous state and published output. Direct `ImageLoader::load`
+still returns a fresh snapshot. There is no automatic hot reload. Loading is
+synchronous and can block preparation; painters and native UI threads do no I/O.
+Embedded readers can be added without changing decoding. Future network fetches
+need background scheduling rather than blocking application dispatch or treating
+pending requests as absence.
+
+The todo image component displays `assets/images/pixui-logo.png`, preserving
+transparency and aspect ratio. Its `--assets` option installs an override
+directory above the default assets source. See
+[resource filesystem APIs](../crates/engine/src/resources/README.md) and
+[image snapshots](../crates/engine/src/ui/Images.md).

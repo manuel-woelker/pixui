@@ -4,6 +4,7 @@ use pixui_base::{PixuiResult, pixui_error};
 use pixui_engine::ui::{
     display_list::{Color, DisplayList, DrawCommand},
     geometry::{Point, Rect},
+    image::{ImagePixels, RgbaColor},
     text::resource::FontResource,
 };
 
@@ -191,13 +192,35 @@ pub fn paint(display: &DisplayList, width: u32, height: u32, scale: f32) -> Pixu
                             .floor()
                             .clamp(0.0, (source.height() - 1) as f32)
                             as usize;
-                        let color = source.pixels()[sy * source.width() as usize + sx];
-                        if source.transparent_color() != Some(color) {
-                            canvas.pixels[y as usize * width as usize + x as usize] =
-                                (u32::from(color.0) << 16)
-                                    | (u32::from(color.1) << 8)
-                                    | u32::from(color.2);
-                        }
+                        let index = sy * source.width() as usize + sx;
+                        let RgbaColor(r, g, b, a) = match source.pixels() {
+                            ImagePixels::Rgb {
+                                pixels,
+                                transparent_color,
+                            } => {
+                                let Color(r, g, b) = pixels[index];
+                                RgbaColor(
+                                    r,
+                                    g,
+                                    b,
+                                    if *transparent_color == Some(pixels[index]) {
+                                        0
+                                    } else {
+                                        255
+                                    },
+                                )
+                            }
+                            ImagePixels::Rgba { pixels } => pixels[index],
+                        };
+                        let pixel = &mut canvas.pixels[y as usize * width as usize + x as usize];
+                        // Source-over into an opaque framebuffer, in encoded sRGB.
+                        let blend = |channel: u8, shift: u32| {
+                            (u32::from(channel) * u32::from(a)
+                                + ((*pixel >> shift) & 255) * (255 - u32::from(a))
+                                + 127)
+                                / 255
+                        };
+                        *pixel = (blend(r, 16) << 16) | (blend(g, 8) << 8) | blend(b, 0);
                     }
                 }
             }

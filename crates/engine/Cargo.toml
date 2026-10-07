@@ -11,6 +11,8 @@ crossbeam-channel = "0.5.17"
 pixui-base = { path = "../base" }
 pixui-reflect = { path = "../reflect" }
 pixui-reflect-macros = { path = "../reflect-macros" }
+image = { version = "0.25.10", default-features = false, features = ["png", "jpeg"] }
 
 [dev-dependencies]
+png = "0.18.1"
 expect-test = "1.5"

@@ -306,3 +306,33 @@ fn snapping_and_dpi_transitions_preserve_safe_sampling() {
         .unwrap()
     );
 }
+
+#[test]
+fn rgba_source_over_preserves_background_and_blends_once() {
+    use pixui_engine::ui::image::{Image, RgbaColor};
+    let image = Image::new_rgba(
+        3,
+        1,
+        vec![
+            RgbaColor(200, 100, 50, 0),
+            RgbaColor(200, 100, 50, 128),
+            RgbaColor(200, 100, 50, 255),
+        ],
+    )
+    .unwrap();
+    let mut builder = DisplayListBuilder::default();
+    builder.emit(DrawCommand::FillRect {
+        rect: rect(0.0, 0.0, 3.0, 1.0),
+        color: Color(20, 40, 60),
+    });
+    let index = builder.image_index(&image);
+    builder.emit(DrawCommand::DrawImage {
+        image: index,
+        destination: rect(0.0, 0.0, 3.0, 1.0),
+    });
+    let display = builder.finish().unwrap().0;
+    assert_eq!(
+        paint(&display, 3, 1, 1.0).unwrap(),
+        vec![0x14283c, 0x6e4637, 0xc86432]
+    );
+}

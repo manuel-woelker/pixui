@@ -166,7 +166,7 @@ mod tests {
                     Color(255, 255, 220);
             }
             assert_eq!(
-                frame(phase, cyan, orange).unwrap().pixels(),
+                frame(phase, cyan, orange).unwrap().rgb_pixels().unwrap(),
                 expected,
                 "phase {phase}"
             );
@@ -201,11 +201,29 @@ mod tests {
         };
         let (initial, delay) = draw(Some(0));
         assert!(!delay);
-        assert_eq!(initial.pixels(), draw(Some(0)).0.pixels());
-        assert_ne!(initial.pixels(), draw(Some(1_000_000)).0.pixels());
-        assert_eq!(initial.pixels(), draw(Some(4_000_000)).0.pixels());
-        assert_eq!(initial.pixels(), draw(Some(0)).0.pixels());
-        assert!(draw(Some(u64::MAX)).0.pixels().contains(&TRANSPARENT));
+        assert_eq!(
+            initial.rgb_pixels().unwrap(),
+            draw(Some(0)).0.rgb_pixels().unwrap()
+        );
+        assert_ne!(
+            initial.rgb_pixels().unwrap(),
+            draw(Some(1_000_000)).0.rgb_pixels().unwrap()
+        );
+        assert_eq!(
+            initial.rgb_pixels().unwrap(),
+            draw(Some(4_000_000)).0.rgb_pixels().unwrap()
+        );
+        assert_eq!(
+            initial.rgb_pixels().unwrap(),
+            draw(Some(0)).0.rgb_pixels().unwrap()
+        );
+        assert!(
+            draw(Some(u64::MAX))
+                .0
+                .rgb_pixels()
+                .unwrap()
+                .contains(&TRANSPARENT)
+        );
         assert!(draw(None).1);
     }
 
@@ -218,12 +236,18 @@ mod tests {
         assert_eq!(initial.width(), WIDTH);
         assert_eq!(initial.height(), HEIGHT);
         assert_eq!(initial.transparent_color(), Some(TRANSPARENT));
-        assert!(initial.pixels().contains(&TRANSPARENT));
-        assert!(initial.pixels().contains(&cyan));
-        assert!(initial.pixels().contains(&orange));
-        assert_ne!(initial.pixels(), quarter.pixels());
-        assert_eq!(initial.pixels(), frame(TAU, cyan, orange).unwrap().pixels());
-        assert_eq!(initial.pixels(), frame(0.0, cyan, orange).unwrap().pixels());
+        assert!(initial.rgb_pixels().unwrap().contains(&TRANSPARENT));
+        assert!(initial.rgb_pixels().unwrap().contains(&cyan));
+        assert!(initial.rgb_pixels().unwrap().contains(&orange));
+        assert_ne!(initial.rgb_pixels().unwrap(), quarter.rgb_pixels().unwrap());
+        assert_eq!(
+            initial.rgb_pixels().unwrap(),
+            frame(TAU, cyan, orange).unwrap().rgb_pixels().unwrap()
+        );
+        assert_eq!(
+            initial.rgb_pixels().unwrap(),
+            frame(0.0, cyan, orange).unwrap().rgb_pixels().unwrap()
+        );
         assert_ne!(initial, frame(0.0, cyan, orange).unwrap());
         assert!(frame(f32::NAN, cyan, orange).is_err());
         assert!(frame(0.0, TRANSPARENT, orange).is_err());

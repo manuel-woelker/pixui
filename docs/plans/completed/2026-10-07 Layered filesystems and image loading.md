@@ -1,7 +1,7 @@
 # Layered filesystems and image loading plan
 
-Status: proposed. This plan covers resource lookup and image decoding in the
-engine. Implementation has not started.
+Status: implemented. Resource lookup, image decoding, RGB/RGBA rendering and
+the todo logo component are complete.
 
 ## Goals
 
@@ -12,7 +12,7 @@ engine. Implementation has not started.
 - Reuse the existing immutable, shared `Image` snapshots and display list
   tables.
 
-## Proposed design
+## Implemented design
 
 ### Resource filesystem
 
@@ -21,7 +21,7 @@ interface, a validated path type, and directory and layered implementations.
 Keep it independent of UI types; image decoding lives in a separate module.
 There is no need for another crate yet.
 
-Illustrative API:
+Public API (abbreviated):
 
 ```rust,ignore
 pub trait ResourceFilesystem: Send + Sync {
@@ -143,14 +143,17 @@ not a deferred prerequisite.
 
 ### Ownership, reuse, and execution
 
-Loading is explicit and synchronous initially. Load assets during application
-setup or an explicit action, retain the returned `Image` in
-application/component data, and let painters register that snapshot in the
-shared display list. Do not read files or decode images during painting or on
-the native UI thread. Loading in a worker action blocks that worker; document
-this limitation.
+Loading is synchronous. Explicit callers retain the returned `Image`; the
+standard core `ImageComponent` takes a relative `ResourcePath` prop and resolves
+it into its state during worker-side preparation. Painters register the prepared
+snapshot in the shared display list. Do not read files or decode images during
+painting or on the native UI thread. Loading in a worker action blocks that
+worker; document this limitation.
 
-There is no automatic loader cache in the first version. Retaining and cloning
+Direct `ImageLoader` calls have no automatic cache. The application provides a
+weak path cache that shares live snapshots across image components/windows and
+releases pixels when state and outputs release their owners. Replacing the
+application loader clears lookup and invalidates UIs. Retaining and cloning
 the returned `Image` preserves resource identity and existing renderer caching.
 Calling `load` again deliberately produces a new snapshot. Replacing an image
 does not invalidate older render outputs; their shared ownership keeps the old
@@ -185,59 +188,77 @@ Keep HTTP caching, retries and authentication inside that integration.
 
 ## Implementation checklist
 
-- [ ] Add documented `ResourcePath` validation and the filesystem interface in
+- [x] Add documented `ResourcePath` validation and the filesystem interface in
   named modules; keep `mod.rs` and `lib.rs` limited to module declarations.
-- [ ] Implement rooted directory opening with owned readers, containment checks,
+- [x] Implement rooted directory opening with owned readers, containment checks,
   and useful errors.
-- [ ] Implement ordered, nestable layered lookup and document fallback behavior.
-- [ ] Add the RGB/RGBA storage enum, constructors, renderer support, font atlas
+- [x] Implement ordered, nestable layered lookup and document fallback behavior.
+- [x] Add the RGB/RGBA storage enum, constructors, renderer support, font atlas
   compatibility, and format-aware memory accounting.
-- [ ] Add the decoder dependency, bounded reading, decoding limits, image
+- [x] Add the decoder dependency, bounded reading, decoding limits, image
   conversion and the cloneable loader handle with convenience API.
-- [ ] Load the supplied logo at `assets/images/pixui-logo.png` during todo
-      application setup, using the relative resource filename
+- [x] Load the supplied logo at `assets/images/pixui-logo.png` during todo
+      component preparation, using the relative resource filename
       `images/pixui-logo.png` with `assets` as the filesystem root. Add an image
       component to the todo UI whose painter draws the retained snapshot,
       preserving its aspect ratio and transparency. Demonstrate overriding the
       logo with an optional higher-priority directory.
-- [ ] Update `crates/engine/src/ui/Images.md` and `docs/Architecture.md` to
+- [x] Update `crates/engine/src/ui/Images.md` and `docs/Architecture.md` to
       explain source lookup, decoding, snapshot ownership, and which thread
       performs loading.
-- [ ] Run `./n check` after each completed unit and resolve introduced failures.
+- [x] Run `./n check` after each completed unit and resolve introduced failures.
 
 ## Verification
 
-- [ ] Path tests cover valid nested names and each rejected path form,
+- [x] Path tests cover valid nested names and each rejected path form,
   including Windows-style absolute and traversal paths on every platform.
-- [ ] Directory tests cover independent readers, exact bytes, empty files,
+- [x] Directory tests cover independent readers, exact bytes, empty files,
       absence, invalid roots and errors. Loader tests cover bounded reads and
       read errors. Exercise symlink containment where supported.
-- [ ] Fake source tests verify priority, absence-only fallback, error
+- [x] Fake source tests verify priority, absence-only fallback, error
       propagation, nested layers, and no reads of lower sources once a match is
       found.
-- [ ] Decode fixtures cover PNG and JPEG, malformed/truncated input, unsupported
+- [x] Decode fixtures cover PNG and JPEG, malformed/truncated input, unsupported
       formats, dimension/allocation limits, missing resources, opaque RGB,
       binary transparency, and partial RGBA transparency. Use generated fixtures
       where possible and keep binary fixtures small.
-- [ ] Renderer tests verify RGB color keys and RGBA alpha values of zero,
+- [x] Renderer tests verify RGB color keys and RGBA alpha values of zero,
       partial and full opacity over known backgrounds in both backends. Verify
       font atlases and memory accounting for both storage variants.
-- [ ] Integration tests load an override and verify that drawing retains the
+- [x] Integration tests load an override and verify that drawing retains the
   resulting snapshot, repeated registration shares its resource index, and an
   older output remains valid after replacing the loaded image.
-- [ ] Manually verify the todo logo image component and its override in both
-  renderer backends, including transparent edges over the UI background and
-  correct aspect ratio. Run automated tests through the existing nextest/check
-  tasks.
+- [x] Verify the todo logo visually (user confirmation), with automated
+  aspect-ratio and override tests and required GPU/software blending tests.
+  Run automated tests through the existing nextest/check tasks.
 
-## Open questions and assumptions
+## Assumptions and implementation notes
 
-1. Proposed initial encoded-size and decoder allocation limits are 32 MiB and
-   256 MiB, configurable per loader, with the existing pixel limit as an upper
-   bound. Confirm these defaults against intended asset sizes during
-   implementation.
+1. Default encoded-size and decode buffer limits are 32 MiB and 256 MiB,
+   configurable through `ImageLoadLimits`, with the engine pixel limit as an
+   upper bound. Decoder internal allocation limits are best effort; encoded data
+   and allocator overhead are additional memory.
 2. Directory roots and source order are configured explicitly by the
    application. Application-wide resource registration and implicit painter
    access are not needed for this first version.
-3. Initial loads are setup-time operations. Runtime loading remains available,
-   but responsive loading of large assets will need background work later.
+3. Component preparation may synchronously load a cache miss. Responsive loading
+   of large runtime assets will need background work later.
+4. Following review, `ImageComponent`, `ImageProps`, `ImageState` and
+   `ImagePainter` are standard core APIs. Props carry a resource path, not an
+   already-loaded snapshot. `Component::prepare` resolves resources before
+   painting through an application-owned weak cache. Capturing props resolvers
+   are unnecessary; the existing function-pointer API remains unchanged.
+5. Todo assets are located relative to its source checkout at setup. Packaging
+   resources with an installed binary remains a separate deployment concern.
+
+## Verification results
+
+- `./n check` passes, including nextest, documentation tests, formatting and
+  clippy.
+- Required GPU tests (`PIXUI_REQUIRE_GPU=1`) pass, including RGB color keys,
+  partial RGBA alpha, glyph atlases, clipping, DPI and texture cache behavior.
+- The user confirmed that the todo UI looks good. Override selection, corrupt
+  override errors, logo aspect ratio and snapshot reuse are also checked
+  automatically; native override appearance was not separately confirmed.
+- Follow-up verification covers path changes, shared cache hits, weak ownership,
+  missing loader errors, failed loads, and loader replacement invalidating UIs.

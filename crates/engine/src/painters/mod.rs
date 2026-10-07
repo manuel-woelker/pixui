@@ -1,6 +1,7 @@
 pub mod button;
 pub mod checkbox;
 pub mod context;
+pub mod image;
 pub mod label;
 pub mod painter;
 pub mod palette;
