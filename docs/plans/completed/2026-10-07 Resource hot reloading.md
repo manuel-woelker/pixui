@@ -1,6 +1,6 @@
 # Resource hot reloading
 
-Status: implemented and automatically verified; native GUI smoke test pending.
+Status: completed; automated checks passed and the user confirmed it works.
 
 ## Goal
 
@@ -218,7 +218,8 @@ snapshot retention exists unless runtime reload is enabled.
   background preparation, immutable swaps, and lifecycle choices in a decision
   record if adopted.
 - [x] Add automated tests and run `./n check` after implementation/fix units.
-- [ ] Perform the native GUI smoke test described below.
+- [x] Native GUI verification: user confirmed it works after rebooting to load
+  the updated NVIDIA driver.
 
 ## Verification
 
@@ -277,10 +278,10 @@ snapshot retention exists unless runtime reload is enabled.
   behavior, target validation, watch-owned pixel release, scoped hints,
   rescan reconciliation, and deterministic bounded debounce/retry scheduling.
 - `./n check` passed all seven tasks during implementation. API setup examples
-  are compiled as documentation tests. Native visual verification remains
-  pending; keep this plan active until the user confirms the example workflow.
+  are compiled as documentation tests. The user confirmed it works on
+  2026-10-07 after rebooting to resolve an NVIDIA driver/library mismatch.
 - See
-  [DR-015](../decisions/DR-015%20Reload%20resources%20through%20a%20shared%20background%20pipeline.md)
+  [DR-015](../../decisions/DR-015%20Reload%20resources%20through%20a%20shared%20background%20pipeline.md)
   for the adopted decisions.
 
 ## Assumptions and limits
