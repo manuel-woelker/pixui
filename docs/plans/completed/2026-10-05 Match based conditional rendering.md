@@ -1,7 +1,7 @@
 # Match based conditional rendering plan
 
-Status: implemented; native manual verification pending. Conditional live parts
-and shared todo visibility settings are implemented.
+Status: completed; moved to completed at the user's request. Conditional live
+parts and shared todo visibility settings are implemented.
 
 ## Goal
 
@@ -195,8 +195,8 @@ stale revisions cannot activate rows after layout changes.
       animation remains compatible with current visible action targets.
 - [ ] Inspect English/German visibility controls, all-completed/empty lists,
       focus/scroll changes, and repeated toggles in the native todo UI.
-- [ ] Run `./n check`; record manual verification accurately before completing
-      and moving this plan to the completed folder.
+- [x] Run `./n check`. The detailed native inspection above was not recorded;
+      the user requested archiving this implemented plan.
 
 ## Assumptions and choices to confirm
 
@@ -226,6 +226,6 @@ stale revisions cannot activate rows after layout changes.
   retained/reset/dropped state, inactive component validation, shared windows,
   duplicate todo titles, zero-field settings requests, stale clicks, and render
   error retention. Existing component Default/update and animation tests pass.
-- `./n check` passes after implementation and follow-up changes. Native GUI
-  launched for manual verification; user confirmation is pending. The plan
-  remains here until that verification is complete.
+- `./n check` passes after implementation and follow-up changes. The native GUI
+  was launched during implementation. A detailed manual checklist result was not
+  recorded; the user requested moving this remaining plan to completed.
