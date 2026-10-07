@@ -10,6 +10,10 @@ Run the [native todo example](examples/todo/README.md) with
 `./t cargo run -p pixui-example-todo --bin gui`. It shows one UI definition in
 two independently configured windows sharing the same application data.
 
+Run the [widget showcase](examples/showcase/README.md) with
+`./t cargo run -p pixui-example-showcase` to try buttons, checkboxes,
+conditional content, collection rows, images, themes, and localization together.
+
 [`crates/reflect`](crates/reflect) provides explicit indexed field reads
 and method invocation; see its [API and assumptions](crates/reflect/README.md).
 

@@ -1507,6 +1507,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "pixui-example-showcase"
+version = "0.1.0"
+dependencies = [
+ "pixui-base",
+ "pixui-engine",
+ "pixui-gui",
+ "pixui-reflect",
+]
+
+[[package]]
 name = "pixui-example-todo"
 version = "0.1.0"
 dependencies = [
