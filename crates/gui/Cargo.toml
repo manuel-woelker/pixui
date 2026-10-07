@@ -8,7 +8,7 @@ publish = false
 pixui-base = { path = "../base" }
 pixui-engine = { path = "../engine" }
 crossbeam-channel = "0.5.17"
-winit = "0.30.13"
+winit = "=0.31.0-beta.3"
 softbuffer = "0.4.8"
 femtovg = { version = "=0.27.0", default-features = false, features = ["wgpu"] }
 wgpu = "=30.0.1"

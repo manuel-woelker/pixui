@@ -515,8 +515,9 @@ it; the existing event-loop waker covers both subscriptions. Native metadata is
 resolved and applied while hidden without painting. Animation-only and
 diagnostic refreshes skip metadata evaluation. Errors retain previous properties
 and are reported separately from render errors. Native icon display remains
-platform specific; Wayland/macOS need application-icon integration beyond
-winit's current window-icon setter.
+platform specific. Winit 0.31 supports Wayland icons when the compositor
+implements `xdg_toplevel_icon_v1`; macOS requires application-icon integration
+beyond the window-icon setter.
 
 The todo example derives localized open-task counts for its window titles and
 shares the loaded logo snapshot between its image component and window icon.

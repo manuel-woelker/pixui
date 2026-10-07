@@ -33,5 +33,5 @@ pub trait Renderer {
 /// Creates independently owned renderers on the event-loop thread. A factory
 /// may share GPU device/queue state without sharing window surfaces.
 pub trait RendererFactory {
-    fn create(&mut self, window: Arc<Window>) -> PixuiResult<Box<dyn Renderer>>;
+    fn create(&mut self, window: Arc<dyn Window>) -> PixuiResult<Box<dyn Renderer>>;
 }

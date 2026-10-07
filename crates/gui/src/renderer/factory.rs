@@ -40,7 +40,7 @@ impl BuiltinRendererFactory {
             gpu: None,
         }
     }
-    fn gpu(&mut self, window: Arc<Window>) -> PixuiResult<Box<dyn Renderer>> {
+    fn gpu(&mut self, window: Arc<dyn Window>) -> PixuiResult<Box<dyn Renderer>> {
         if let Some(gpu) = &self.gpu {
             let surface = gpu
                 .instance
@@ -73,7 +73,7 @@ impl BuiltinRendererFactory {
     }
 }
 impl RendererFactory for BuiltinRendererFactory {
-    fn create(&mut self, window: Arc<Window>) -> PixuiResult<Box<dyn Renderer>> {
+    fn create(&mut self, window: Arc<dyn Window>) -> PixuiResult<Box<dyn Renderer>> {
         if self.selection != RendererSelection::Software {
             match self.gpu(window.clone()) {
                 Ok(renderer) => return Ok(renderer),

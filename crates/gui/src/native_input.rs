@@ -11,14 +11,23 @@ pub(crate) fn button_state(state: winit::event::ElementState) -> ButtonState {
     }
 }
 
-pub(crate) fn mouse_button(button: winit::event::MouseButton) -> MouseButton {
+fn mouse_button(button: winit::event::MouseButton) -> MouseButton {
     match button {
         winit::event::MouseButton::Left => MouseButton::Left,
         winit::event::MouseButton::Right => MouseButton::Right,
         winit::event::MouseButton::Middle => MouseButton::Middle,
         winit::event::MouseButton::Back => MouseButton::Back,
         winit::event::MouseButton::Forward => MouseButton::Forward,
-        winit::event::MouseButton::Other(value) => MouseButton::Other(value),
+        button => MouseButton::Other(button as u16),
+    }
+}
+
+/// Convert primary pointer buttons into the engine's mouse-style input model.
+/// Touch maps to left click; unknown device codes retain their numeric identity.
+pub(crate) fn pointer_button(source: winit::event::ButtonSource) -> Option<MouseButton> {
+    match source {
+        winit::event::ButtonSource::Unknown(code) => Some(MouseButton::Other(code)),
+        source => source.mouse_button().map(mouse_button),
     }
 }
 
@@ -27,7 +36,7 @@ pub(crate) fn modifiers(state: winit::keyboard::ModifiersState) -> Modifiers {
         shift: state.shift_key(),
         control: state.control_key(),
         alt: state.alt_key(),
-        super_key: state.super_key(),
+        super_key: state.meta_key(),
     }
 }
 
@@ -124,7 +133,7 @@ mod tests {
             (NativeButton::Middle, MouseButton::Middle),
             (NativeButton::Back, MouseButton::Back),
             (NativeButton::Forward, MouseButton::Forward),
-            (NativeButton::Other(17), MouseButton::Other(17)),
+            (NativeButton::Button17, MouseButton::Other(16)),
         ] {
             assert_eq!(mouse_button(native), expected);
         }
@@ -138,6 +147,26 @@ mod tests {
                 alt: true,
                 super_key: true
             }
+        );
+    }
+
+    #[test]
+    fn pointer_sources_preserve_mouse_and_unknown_buttons_and_map_touch_to_left() {
+        use winit::event::{ButtonSource, FingerId, MouseButton as NativeButton};
+        assert_eq!(
+            pointer_button(ButtonSource::Mouse(NativeButton::Right)),
+            Some(MouseButton::Right)
+        );
+        assert_eq!(
+            pointer_button(ButtonSource::Unknown(42)),
+            Some(MouseButton::Other(42))
+        );
+        assert_eq!(
+            pointer_button(ButtonSource::Touch {
+                finger_id: FingerId::from_raw(1),
+                force: None,
+            }),
+            Some(MouseButton::Left)
         );
     }
 }

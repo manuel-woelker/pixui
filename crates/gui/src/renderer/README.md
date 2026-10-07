@@ -9,7 +9,7 @@ Femtovg. Auto tries GPU initialization, logs a failed attempt, and falls back to
 software for that window. Auto also chooses software when the available adapter
 is a CPU implementation. Explicit Femtovg selection returns failure instead.
 `host::run_with_factory` accepts a custom `RendererFactory`; its `create` method
-receives an `Arc<Window>` and returns one `Box<dyn Renderer>` per window.
+receives an `Arc<dyn Window>` and returns one `Box<dyn Renderer>` per window.
 Renderers have no Send/Sync requirement.
 
 ## Contract

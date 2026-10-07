@@ -1,10 +1,11 @@
 //! Native icon conversion happens only for a changed worker-side snapshot.
 use pixui_base::{PixuiResult, pixui_error};
 use pixui_engine::ui::image::{Image, ImagePixels, RgbaColor};
-use winit::window::Icon;
+use winit::icon::{Icon, RgbaIcon};
 
 pub(crate) fn from_image(image: &Image) -> PixuiResult<Icon> {
-    Icon::from_rgba(rgba(image), image.width(), image.height())
+    RgbaIcon::new(rgba(image), image.width(), image.height())
+        .map(Icon::from)
         .map_err(|error| pixui_error!("create native window icon: {error}"))
 }
 fn rgba(image: &Image) -> Vec<u8> {

@@ -12,7 +12,7 @@ use winit::window::Window;
 pub use super::scene::CacheStats;
 
 pub struct FemtovgRenderer {
-    window: Arc<Window>,
+    window: Arc<dyn Window>,
     gpu: Rc<Gpu>,
     surface: Option<wgpu::Surface<'static>>,
     config: Option<wgpu::SurfaceConfiguration>,
@@ -25,7 +25,7 @@ pub struct FemtovgRenderer {
 impl FemtovgRenderer {
     /// Creates an independent GPU device for this renderer. Built-in factories
     /// instead share one device across compatible windows.
-    pub fn new(window: Arc<Window>) -> PixuiResult<Self> {
+    pub fn new(window: Arc<dyn Window>) -> PixuiResult<Self> {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
         let surface = instance
             .create_surface(window.clone())
@@ -34,7 +34,7 @@ impl FemtovgRenderer {
         Self::with_gpu(window, gpu, surface)
     }
     pub(crate) fn with_gpu(
-        window: Arc<Window>,
+        window: Arc<dyn Window>,
         gpu: Rc<Gpu>,
         surface: wgpu::Surface<'static>,
     ) -> PixuiResult<Self> {

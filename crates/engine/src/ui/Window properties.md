@@ -65,7 +65,8 @@ too.
 ## Native support
 
 The host uses winit's native title and window-icon setters. Runtime window icons
-are unsupported on Wayland and macOS in the pinned winit version, along with
+use winit 0.31.0-beta.3, including Wayland support when the compositor
+implements `xdg_toplevel_icon_v1`. Runtime icons remain unsupported on macOS and
 mobile/web platforms. Those systems need application-icon integration (such as
 desktop entries or application bundles). Receiving an icon command does not
 guarantee it appears in native decorations. This implementation does not install

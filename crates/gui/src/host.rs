@@ -23,7 +23,9 @@ use pixui_engine::{
     },
 };
 use std::{
+    cell::RefCell,
     collections::{HashMap, HashSet},
+    rc::Rc,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -35,7 +37,7 @@ use winit::{
     dpi::LogicalSize,
     event::{Ime, MouseScrollDelta, WindowEvent},
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
-    window::{Window, WindowId},
+    window::{Window, WindowAttributes, WindowId},
 };
 
 /// One window for an already-created worker-side UI instance.
@@ -47,7 +49,7 @@ pub struct WindowSpec {
 }
 
 struct NativeWindow {
-    window: Arc<Window>,
+    window: Arc<dyn Window>,
     presentation: Presentation,
     instance: UiInstanceId,
     outputs: OutputReceiver,
@@ -63,7 +65,7 @@ struct NativeWindow {
 
 impl NativeWindow {
     fn presentation(&mut self) -> UiCommand {
-        let size = self.window.inner_size();
+        let size = self.window.surface_size();
         self.settings.scale_factor = self.window.scale_factor() as f32;
         self.settings.viewport = Size {
             width: size.width as f32 / self.settings.scale_factor,
@@ -91,7 +93,7 @@ impl NativeWindow {
     }
 
     fn drawable(&self) -> bool {
-        let size = self.window.inner_size();
+        let size = self.window.surface_size();
         self.worker_visible
             && self.presentation.active
             && !self.occluded
@@ -100,7 +102,7 @@ impl NativeWindow {
     }
 
     fn visibility_command(&mut self) -> Option<UiCommand> {
-        let size = self.window.inner_size();
+        let size = self.window.surface_size();
         let visible = self.presentation.active
             && !self.occluded
             && size.width > 0
@@ -133,7 +135,7 @@ impl NativeWindow {
         if !self.drawable() {
             return Ok(false);
         }
-        let size = self.window.inner_size();
+        let size = self.window.surface_size();
         self.presentation.draw(
             &output.display_list,
             output.revision,
@@ -158,17 +160,17 @@ struct Host {
     specifications: Vec<WindowSpec>,
     windows: HashMap<WindowId, NativeWindow>,
     pending: PendingInput,
-    error: Option<String>,
+    error: Rc<RefCell<Option<String>>>,
     factory: Box<dyn RendererFactory>,
-    proxy: winit::event_loop::EventLoopProxy<()>,
+    proxy: winit::event_loop::EventLoopProxy,
     wake_pending: Arc<AtomicBool>,
     visibility_check: Instant,
     wayland: bool,
 }
 
 impl Host {
-    fn fail(&mut self, event_loop: &ActiveEventLoop, error: impl std::fmt::Debug) {
-        self.error = Some(format!("{error:?}"));
+    fn fail(&mut self, event_loop: &dyn ActiveEventLoop, error: impl std::fmt::Debug) {
+        *self.error.borrow_mut() = Some(format!("{error:?}"));
         event_loop.exit();
     }
 
@@ -179,16 +181,16 @@ impl Host {
 }
 
 impl ApplicationHandler for Host {
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+    fn can_create_surfaces(&mut self, event_loop: &dyn ActiveEventLoop) {
         let result = (|| -> PixuiResult<()> {
             for specification in self.specifications.drain(..) {
-                let attributes = Window::default_attributes()
+                let attributes = WindowAttributes::default()
                     .with_title(specification.title)
-                    .with_inner_size(LogicalSize::new(
+                    .with_surface_size(LogicalSize::new(
                         specification.settings.viewport.width,
                         specification.settings.viewport.height,
                     ));
-                let window = Arc::new(
+                let window: Arc<dyn Window> = Arc::from(
                     event_loop
                         .create_window(attributes)
                         .map_err(|e| pixui_error!("create native window: {e}"))?,
@@ -198,7 +200,7 @@ impl ApplicationHandler for Host {
                 let wake_pending = self.wake_pending.clone();
                 specification.outputs.set_waker(move || {
                     if !wake_pending.swap(true, Ordering::AcqRel) {
-                        let _ = proxy.send_event(());
+                        proxy.wake_up();
                     }
                 });
                 let mut native = NativeWindow {
@@ -241,7 +243,7 @@ impl ApplicationHandler for Host {
         }
     }
 
-    fn suspended(&mut self, event_loop: &ActiveEventLoop) {
+    fn destroy_surfaces(&mut self, event_loop: &dyn ActiveEventLoop) {
         for native in self.windows.values_mut() {
             native.presentation.suspend();
             native.redraw.cancel();
@@ -254,7 +256,7 @@ impl ApplicationHandler for Host {
         }
     }
 
-    fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
+    fn window_event(&mut self, event_loop: &dyn ActiveEventLoop, id: WindowId, event: WindowEvent) {
         let Some(native) = self.windows.get_mut(&id) else {
             return;
         };
@@ -262,9 +264,9 @@ impl ApplicationHandler for Host {
             &event,
             WindowEvent::RedrawRequested
                 | WindowEvent::Focused(true)
-                | WindowEvent::CursorEntered { .. }
-                | WindowEvent::CursorMoved { .. }
-                | WindowEvent::MouseInput { .. }
+                | WindowEvent::PointerEntered { .. }
+                | WindowEvent::PointerMoved { .. }
+                | WindowEvent::PointerButton { .. }
                 | WindowEvent::MouseWheel { .. }
                 | WindowEvent::KeyboardInput { .. }
         ) {
@@ -284,7 +286,7 @@ impl ApplicationHandler for Host {
         let check_visibility = matches!(
             &event,
             WindowEvent::Occluded(_)
-                | WindowEvent::Resized(_)
+                | WindowEvent::SurfaceResized(_)
                 | WindowEvent::ScaleFactorChanged { .. }
                 | WindowEvent::Focused(true)
         );
@@ -307,7 +309,7 @@ impl ApplicationHandler for Host {
                 }
                 None
             }
-            WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => {
+            WindowEvent::SurfaceResized(_) | WindowEvent::ScaleFactorChanged { .. } => {
                 if let Some(activity) = &mut native.drawing_activity {
                     activity.received();
                 }
@@ -338,8 +340,9 @@ impl ApplicationHandler for Host {
                             let millihertz = native
                                 .window
                                 .current_monitor()
-                                .and_then(|monitor| monitor.refresh_rate_millihertz())
-                                .filter(|rate| *rate > 0)
+                                .and_then(|monitor| monitor.current_video_mode())
+                                .and_then(|mode| mode.refresh_rate_millihertz())
+                                .map(std::num::NonZeroU32::get)
                                 .unwrap_or(60_000);
                             let interval = Duration::from_secs_f64(1000.0 / f64::from(millihertz));
                             native.redraw.presented(Instant::now(), interval);
@@ -365,18 +368,47 @@ impl ApplicationHandler for Host {
                     None
                 }
             }
-            WindowEvent::CursorMoved { position, .. } => {
+            WindowEvent::PointerMoved {
+                position,
+                primary: true,
+                ..
+            } => {
                 native.pointer = Point {
                     x: position.x as f32 / native.settings.scale_factor,
                     y: position.y as f32 / native.settings.scale_factor,
                 };
                 Some(native.input(UiInput::PointerMoved(native.pointer)))
             }
-            WindowEvent::CursorEntered { .. } => Some(native.input(UiInput::PointerEntered)),
-            WindowEvent::CursorLeft { .. } => Some(native.input(UiInput::PointerLeft)),
-            WindowEvent::MouseInput { button, state, .. } => {
+            WindowEvent::PointerEntered {
+                position,
+                primary: true,
+                ..
+            } => {
+                native.pointer = Point {
+                    x: position.x as f32 / native.settings.scale_factor,
+                    y: position.y as f32 / native.settings.scale_factor,
+                };
+                Some(native.input(UiInput::PointerEntered))
+            }
+            WindowEvent::PointerLeft { primary: true, .. } => {
+                Some(native.input(UiInput::PointerLeft))
+            }
+            WindowEvent::PointerButton {
+                button,
+                state,
+                position,
+                primary: true,
+                ..
+            } => {
+                native.pointer = Point {
+                    x: position.x as f32 / native.settings.scale_factor,
+                    y: position.y as f32 / native.settings.scale_factor,
+                };
+                let Some(button) = native_input::pointer_button(button) else {
+                    return;
+                };
                 Some(native.input(UiInput::MouseButton {
-                    button: native_input::mouse_button(button),
+                    button,
                     state: native_input::button_state(state),
                     position: native.pointer,
                     modifiers: native.modifiers,
@@ -389,6 +421,7 @@ impl ApplicationHandler for Host {
                         x: position.x as f32 / native.settings.scale_factor,
                         y: position.y as f32 / native.settings.scale_factor,
                     },
+                    _ => return,
                 };
                 Some(native.input(UiInput::MouseWheel {
                     delta,
@@ -414,6 +447,7 @@ impl ApplicationHandler for Host {
                 Ime::Preedit(text, cursor) => UiInput::ImePreedit { text, cursor },
                 Ime::Commit(text) => UiInput::ImeCommit(text),
                 Ime::Disabled => UiInput::ImeDisabled,
+                _ => return,
             })),
             _ => None,
         };
@@ -435,7 +469,7 @@ impl ApplicationHandler for Host {
         }
     }
 
-    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+    fn about_to_wait(&mut self, event_loop: &dyn ActiveEventLoop) {
         // Clear before reading mailboxes: publication racing this pass schedules
         // another wake, while outputs already published are observed below.
         self.wake_pending.store(false, Ordering::Release);
@@ -609,9 +643,7 @@ pub fn run_with_factory(
             ));
         }
     }
-    let event_loop = EventLoop::<()>::with_user_event()
-        .build()
-        .map_err(|e| pixui_error!("create native event loop: {e}"))?;
+    let event_loop = EventLoop::new().map_err(|e| pixui_error!("create native event loop: {e}"))?;
     #[cfg(any(
         target_os = "linux",
         target_os = "freebsd",
@@ -632,12 +664,14 @@ pub fn run_with_factory(
     )))]
     let wayland = false;
     let proxy = event_loop.create_proxy();
-    let mut host = Host {
+    // Winit owns the handler; retain its failure result after the loop returns.
+    let error = Rc::new(RefCell::new(None));
+    let host = Host {
         application,
         specifications,
         windows: HashMap::new(),
         pending: PendingInput::default(),
-        error: None,
+        error: error.clone(),
         factory,
         proxy,
         wake_pending: Arc::new(AtomicBool::new(false)),
@@ -645,9 +679,9 @@ pub fn run_with_factory(
         wayland,
     };
     event_loop
-        .run_app(&mut host)
+        .run_app(host)
         .map_err(|e| pixui_error!("run native event loop: {e}"))?;
-    if let Some(error) = host.error {
+    if let Some(error) = error.borrow_mut().take() {
         return Err(pixui_error!("GUI host failed: {error}"));
     }
     Ok(())

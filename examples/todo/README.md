@@ -45,7 +45,8 @@ same todo collection.
 
 Window titles show the number of open todos, localized for each window. The
 logo is also sent as the native window icon where the platform supports runtime
-window icons (Wayland/macOS require separate application-icon integration).
+window icons (Wayland requires compositor support for `xdg_toplevel_icon_v1`;
+macOS requires separate application-icon integration).
 Title/icon changes use their own coalescing mailbox and still update while a
 window is hidden; unchanged properties are not resent.
 

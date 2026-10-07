@@ -9,15 +9,15 @@ use std::{num::NonZeroU32, sync::Arc};
 use winit::window::Window;
 
 pub struct SoftwareRenderer {
-    window: Arc<Window>,
-    surface: Option<Surface<Arc<Window>, Arc<Window>>>,
+    window: Arc<dyn Window>,
+    surface: Option<Surface<Arc<dyn Window>, Arc<dyn Window>>>,
     width: u32,
     height: u32,
     scale: f32,
     timings: RendererTimings,
 }
 impl SoftwareRenderer {
-    pub fn new(window: Arc<Window>) -> PixuiResult<Self> {
+    pub fn new(window: Arc<dyn Window>) -> PixuiResult<Self> {
         let mut renderer = Self {
             window,
             surface: None,
