@@ -33,3 +33,26 @@ pub fn create() -> PixuiResult<(ApplicationHandle, UiDefinitionId)> {
     )?)))?;
     Ok((application, definition))
 }
+
+/// Start optional native resource watching; the caller retains the returned guard.
+pub fn hot_reload(
+    application: &ApplicationHandle,
+) -> PixuiResult<pixui_engine::resources::reload::session::ResourceReloadSession> {
+    let german = application.register_language("de")?;
+    let session =
+        pixui_engine::resources::reload::builder::ResourceReloadBuilder::new(application.clone())
+            .watch_images()
+            .catalog(
+                Arc::new(DirectoryFilesystem::new(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/translations"
+                ))?),
+                pixui_engine::resources::path::ResourcePath::new("showcase/de.po")?,
+                "showcase",
+                german,
+                Arc::new(pixui_engine::i18n::po::PoFormat),
+            )?
+            .start()?;
+    session.wait_initial(std::time::Duration::from_secs(5))?;
+    Ok(session)
+}

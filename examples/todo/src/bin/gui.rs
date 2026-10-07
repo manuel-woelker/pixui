@@ -18,6 +18,7 @@ use pixui_gui::{
 fn main() -> PixuiResult<()> {
     let mut selection = RendererSelection::Auto;
     let mut freeze_animation = false;
+    let mut hot_reload = true;
     let mut asset_override = None;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
@@ -32,6 +33,10 @@ fn main() -> PixuiResult<()> {
             asset_override = Some(std::path::PathBuf::from(args.next().ok_or_else(|| {
                 pixui_base::pixui_error!("--assets requires an override directory")
             })?));
+        } else if arg == "--no-hot-reload" {
+            hot_reload = false;
+        } else if arg == "--hot-reload" {
+            hot_reload = true;
         } else if arg == "--freeze-animation" {
             freeze_animation = true;
         } else if arg != "--custom-painter" {
@@ -66,6 +71,9 @@ fn main() -> PixuiResult<()> {
         pixui_example_todo::orbiting_comets::register(&application)?,
         asset_override.as_deref(),
     )?)?;
+    let _reload = hot_reload
+        .then(|| pixui_example_todo::translations::hot_reload(&application))
+        .transpose()?;
     let mut windows = Vec::new();
     for (title, theme, locale, width, height) in [
         ("Todos - English / light", Theme::Light, "en", 640.0, 480.0),

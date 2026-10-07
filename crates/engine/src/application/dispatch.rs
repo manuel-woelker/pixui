@@ -20,6 +20,10 @@ pub(super) enum ApplicationCommand {
         reply: ReplySender<ActionOutput>,
     },
     Task(ApplicationTask),
+    Resource {
+        update: Box<crate::resources::reload::target::Prepared>,
+        reply: ReplySender<bool>,
+    },
     Ui {
         command: crate::ui::input::UiCommand,
         reply: ReplySender<()>,
@@ -31,6 +35,9 @@ impl ApplicationCommand {
         match self {
             Self::Dispatch { call, reply } => {
                 let _ = reply.send(application.dispatch(call));
+            }
+            Self::Resource { update, reply } => {
+                let _ = reply.send(update.apply(application));
             }
             Self::Task(task) => {
                 // Inspection is a barrier: observe UI output and geometry for

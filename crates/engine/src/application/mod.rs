@@ -13,3 +13,4 @@ mod named_entities;
 pub mod object_ref;
 
 pub mod i18n;
+mod resource_reload;

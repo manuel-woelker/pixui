@@ -31,6 +31,10 @@ impl DirectoryFilesystem {
     }
 }
 impl ResourceFilesystem for DirectoryFilesystem {
+    fn watch_roots(&self) -> Vec<std::path::PathBuf> {
+        vec![self.root.clone()]
+    }
+
     fn open(&self, path: &ResourcePath) -> PixuiResult<Option<ResourceReader>> {
         let candidate = self.root.join(path.as_str());
         let resolved = match fs::canonicalize(&candidate) {

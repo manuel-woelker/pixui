@@ -1,6 +1,6 @@
 # Resource hot reloading
 
-Status: proposed.
+Status: implemented and automatically verified; native GUI smoke test pending.
 
 ## Goal
 
@@ -10,7 +10,7 @@ handling. Keep decoding and catalog parsing off the application/UI threads.
 Publish immutable replacements on the application worker and preserve the last
 successful resource when a reload fails.
 
-## Proposed decisions
+## Decisions
 
 - Use native directory notifications through `notify::recommended_watcher`,
   recursively watching configured directory roots. Watch directories rather
@@ -19,7 +19,8 @@ successful resource when a reload fails.
 - Hot reload is available in normal builds through a regular `notify`
   dependency. It is disabled at runtime by default and starts only on explicit
   request. Production disables it by not starting a reload session; no Cargo
-  feature is involved. Examples expose an explicit `--hot-reload` option.
+  feature is involved. The examples explicitly enable it by default and expose
+  `--no-hot-reload` to disable it (`--hot-reload` enables it again).
 - Use one reload session per application, with one background coordinator/loader
   thread initially. The OS backend may create its own internal threads.
   Image and catalog jobs share this thread and scheduling code; their decode
@@ -52,11 +53,12 @@ already supports transferring owned data to the worker.
 ## Shared resource sources and registration
 
 Extend `ResourceFilesystem` with an object-safe, default-empty capability to
-report native watch roots. A directory reports its canonical root plus logical
-prefix mapping; layered sources combine child mappings. Custom embedded/network
-sources remain unchanged and unwatched. Keep watching configuration independent
-of decoding. Do not downcast filesystem trait objects or require every source
-to implement OS watching.
+report native watch roots. A directory reports its canonical root mapping
+directly onto relative resource paths; layered sources combine these roots.
+Arbitrary mount-prefix remapping is outside the existing filesystem API. Custom
+embedded/network sources remain unchanged and unwatched. Keep watching
+configuration independent of decoding. Do not downcast filesystem trait objects
+or require every source to implement OS watching.
 
 Map event paths lexically relative to registered canonical roots, including
 paths that no longer exist. Construct validated `ResourcePath`s and perform
@@ -86,17 +88,18 @@ watcher. A newly added language requires explicit registration in this version.
 Illustrative API, subject to implementation details:
 
 ```rust,ignore
-let mut reload = ResourceReloadBuilder::new(application.clone())
-    .quiet_period(Duration::from_millis(200));
-reload.images(image_loader.clone()); // Same source as the application loader.
-reload.catalog(
-    translations_filesystem,
-    ResourcePath::new("todos/de.po")?,
-    "todos",
-    german,
-    Arc::new(PoFormat),
-)?;
-let reload_session = reload.start()?; // Retain for the native application's lifetime.
+let reload_session = ResourceReloadBuilder::new(application.clone())
+    .quiet_period(Duration::from_millis(200))
+    .watch_images() // Uses the application's configured loader.
+    .catalog(
+        translations_filesystem,
+        ResourcePath::new("todos/de.po")?,
+        "todos",
+        german,
+        Arc::new(PoFormat),
+    )?
+    .start()?;
+reload_session.wait_initial(Duration::from_secs(5))?;
 ```
 
 Enforce that watched image sources match the application's configured loader;
@@ -194,27 +197,28 @@ snapshot retention exists unless runtime reload is enabled.
 
 ## Implementation checklist
 
-- [ ] Add the normal dependency and document runtime opt-in, disabled by default
-  in development and production alike.
-- [ ] Expose source watch-root mappings through directory/layered filesystems,
+- [x] Add the normal dependency and document runtime opt-in, disabled by default
+  in the engine API. Examples opt in by default.
+- [x] Expose source watch-root mappings through directory/layered filesystems,
   preserving path validation and fallback rules.
-- [ ] Implement explicit target registration, image-use subscriptions, session
+- [x] Implement explicit target registration, image-use subscriptions, session
   identities, and configuration validation.
-- [ ] Implement the shared native notification/debounce/background job pipeline,
+- [x] Implement the shared native notification/debounce/background job pipeline,
       bounded work queues, rescan reconciliation, retries, and stale-result
       handling.
-- [ ] Add prepared image replacement and watched-snapshot retention to the image
+- [x] Add prepared image replacement and watched-snapshot retention to the image
   service; preserve ordinary weak-cache behavior.
-- [ ] Add file-backed catalog loading through the same pipeline and existing
+- [x] Add file-backed catalog loading through the same pipeline and existing
   transactional worker installation.
-- [ ] Implement cancellation, shutdown, disconnect handling, and diagnostics.
-- [ ] Add example `--hot-reload` wiring for images and German catalogs; retain
-  normal embedded catalogs and headless export behavior.
-- [ ] Update resource/i18n API guides and architecture documentation. Record
+- [x] Implement cancellation, shutdown, disconnect handling, and diagnostics.
+- [x] Add default-enabled example hot-reload wiring with `--no-hot-reload` for
+      images and German catalogs; retain normal embedded catalogs and headless
+      export behavior.
+- [x] Update resource/i18n API guides and architecture documentation. Record
   background preparation, immutable swaps, and lifecycle choices in a decision
   record if adopted.
-- [ ] Add tests and perform the verification below; run `./n check` after each
-  completed implementation/fix unit.
+- [x] Add automated tests and run `./n check` after implementation/fix units.
+- [ ] Perform the native GUI smoke test described below.
 
 ## Verification
 
@@ -239,13 +243,49 @@ snapshot retention exists unless runtime reload is enabled.
   Exercise create, overwrite, rename, and remove for images and PO on CI hosts.
 - Run `./n check`, using the normal compilation, clippy, and nextest tasks.
   Verify runtime-disabled behavior without special build flags.
-- Manually run showcase/todo with reload enabled. Edit the logo and German PO
-  while windows are open, verify both windows and native titles update, try an
-  incomplete/invalid save, then recover. Verify disabled mode never reacts.
+- Manually run showcase/todo with their default reload settings. Edit the logo
+  and German PO while windows are open, verify both windows and native titles
+  update, try an incomplete/invalid save, then recover. Verify disabled mode
+  never reacts.
 
-## Assumptions and limits to confirm
+## Implementation and verification results
 
-- Proposed defaults: 200 ms quiet period, one loader thread, explicit catalog
+- Runtime-only opt-in is implemented with normal dependencies; no Cargo feature
+  or debug-build default is involved. The plan was committed before
+  implementation.
+- The session uses one coordinator/loader thread, a 256-event hint queue,
+  4096-target cap, one prepared/in-flight update, and BLAKE3 accepted-content
+  hashes. Retry policy is three attempts per observed change, with at least
+  100 ms between retries. Debounce defaults to 200 ms and is configurable.
+- Watch-root capability maps native roots directly to relative filenames.
+  Layered sources combine roots and retain their normal resolution semantics.
+- `watch_images()` captures the current application loader; initial watched
+  misses return a pending error and are prepared in the background. The existing
+  last-good-frame path bridges the wait; there is no new placeholder UI.
+- `wait_initial` reports targets known at startup, once. The caller owns the
+  guard; it stops without waiting for worker queue capacity, and joins in-flight
+  synchronous loads. Application failure cancels the service too.
+- Both examples enable hot reload by default and accept `--no-hot-reload` to
+  disable it. Embedded catalog baselines and headless
+  export remain unchanged. Icons already use resource paths and update through
+  the same image service.
+- Automated tests cover native create/write/atomic rename/directory move,
+  layered overrides/removal, missing paths, malformed catalog recovery,
+  background thread affinity, two windows, hidden-window titles/icons,
+  immutable outputs, unchanged image identity, stale revisions/session/loader,
+  edits during parsing, queue-full shutdown, worker failure, runtime-disabled
+  behavior, target validation, watch-owned pixel release, scoped hints,
+  rescan reconciliation, and deterministic bounded debounce/retry scheduling.
+- `./n check` passed all seven tasks during implementation. API setup examples
+  are compiled as documentation tests. Native visual verification remains
+  pending; keep this plan active until the user confirms the example workflow.
+- See
+  [DR-015](../decisions/DR-015%20Reload%20resources%20through%20a%20shared%20background%20pipeline.md)
+  for the adopted decisions.
+
+## Assumptions and limits
+
+- Implemented defaults: 200 ms quiet period, one loader thread, explicit catalog
   registration, retain last good values on complete deletion.
 - Watch roots must exist at startup. Creating new files/subdirectories under
   them is supported; deleting/replacing a watched root itself reports a backend

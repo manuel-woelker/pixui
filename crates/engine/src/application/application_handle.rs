@@ -35,7 +35,7 @@ pub type TryDispatchResult = Result<PendingAction, TrySendError<ActionCall>>;
 /// from this same application's worker, because it cannot process its own queue.
 #[derive(Clone)]
 pub struct ApplicationHandle {
-    sender: CommandSender,
+    pub(super) sender: CommandSender,
 }
 
 impl ApplicationHandle {

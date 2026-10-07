@@ -73,8 +73,22 @@ before any painting begins.
 cache. The direct `ImageLoader::load` API still creates fresh snapshots. The
 application cache releases pixel ownership to component states and render
 outputs; dead lookup entries are pruned on successful misses. There is no
-watcher or timestamp check. Replacing the application loader resets the cache
-and invalidates existing UIs, making resource replacement explicit. Failure
-leaves existing image state and published output intact. An application with no
-configured loader reports a clear error when preparing its first image
-component.
+timestamp check during lookup. Optional runtime hot reload is available through
+the shared background service described below. Replacing the application loader
+resets the cache and invalidates existing UIs, making resource replacement
+explicit. Failure leaves existing image state and published output intact. An
+application with no configured loader reports a clear error when preparing its
+first image component.
+
+## Optional runtime hot reload
+
+Start `ResourceReloadBuilder` explicitly to watch directory-backed images and
+catalogs; it is disabled by default without Cargo feature flags. Both resource
+kinds use native notifications, a quiet period, background
+reads/decoding/parsing, and checked worker-side replacement. First use of a
+watched uncached image is pending until its background job succeeds. Last-good
+data survives errors.
+
+Watch every directory layer, resolve loads through the original filesystem, and
+retain the session guard outside the application worker. See
+[hot reload](reload/README.md) for setup, ownership, limits, and shutdown.

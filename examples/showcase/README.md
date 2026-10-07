@@ -69,3 +69,19 @@ Catalogs can be replaced on the worker with `install_translations`; switch a
 live instance by sending `UiCommand::Present` with new indexed language
 settings. Missing translations fall back to source text. Plurals and
 locale-aware number formatting are not implemented.
+
+## Hot reload
+
+The example enables native directory watching by default. To disable it:
+
+```bash
+./t cargo run -p pixui-example-showcase -- --no-hot-reload
+```
+
+Edit `assets/images/pixui-logo.png` or this example's German PO file while the
+windows are open. Images (including native icons) and translated text/titles
+update after a short quiet period. Invalid/incomplete files keep the last good
+version until a valid save. With `--no-hot-reload`, catalogs use the embedded
+baseline. `--hot-reload` explicitly enables watching again.
+Translation export never starts a watcher, regardless of these flags.
+See [resource hot reload](../../crates/engine/src/resources/reload/README.md).

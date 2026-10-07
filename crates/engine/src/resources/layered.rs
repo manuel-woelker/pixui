@@ -18,6 +18,13 @@ impl LayeredFilesystem {
     }
 }
 impl ResourceFilesystem for LayeredFilesystem {
+    fn watch_roots(&self) -> Vec<std::path::PathBuf> {
+        self.sources
+            .iter()
+            .flat_map(|source| source.watch_roots())
+            .collect()
+    }
+
     fn open(&self, path: &ResourcePath) -> PixuiResult<Option<ResourceReader>> {
         for source in &self.sources {
             if let Some(reader) = source.open(path)? {

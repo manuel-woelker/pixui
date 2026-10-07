@@ -16,4 +16,11 @@ pub type ResourceReader = Box<dyn Read + Send>;
 /// Synchronous implementations may block; do not call from a painter/UI thread.
 pub trait ResourceFilesystem: Send + Sync {
     fn open(&self, path: &ResourcePath) -> PixuiResult<Option<ResourceReader>>;
+
+    /// Native directories mapping directly to this source's relative paths.
+    /// Used only by an explicitly started reload session. Embedded/network
+    /// sources return no roots. Nested layers may report overlapping roots.
+    fn watch_roots(&self) -> Vec<std::path::PathBuf> {
+        Vec::new()
+    }
 }

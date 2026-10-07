@@ -11,10 +11,13 @@ use pixui_gui::{
 
 fn main() -> PixuiResult<()> {
     let mut export = None;
+    let mut hot_reload = true;
     let mut renderer = RendererSelection::Auto;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
+            "--hot-reload" => hot_reload = true,
+            "--no-hot-reload" => hot_reload = false,
             "--export-translations" => {
                 export = Some(args.next().ok_or_else(|| {
                     pixui_error!("--export-translations requires an output path")
@@ -38,6 +41,9 @@ fn main() -> PixuiResult<()> {
         return Ok(());
     }
     let (application, definition) = pixui_example_showcase::setup::create()?;
+    let _reload = hot_reload
+        .then(|| pixui_example_showcase::setup::hot_reload(&application))
+        .transpose()?;
     let mut windows = Vec::new();
     for (theme, locale) in [(Theme::Light, "en"), (Theme::Dark, "de")] {
         let settings = application.presentation_language(

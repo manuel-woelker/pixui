@@ -160,3 +160,18 @@ startup sets locale and language together with `presentation_language`. Todo
 titles are shared user data and are not translated. See the
 [i18n guide](../../crates/engine/src/i18n/README.md) for catalog APIs and
 export.
+
+## Hot reload
+
+The example enables native directory watching by default. To disable it:
+
+```bash
+./t cargo run -p pixui-example-todo --bin gui -- --no-hot-reload
+```
+
+Edit `assets/images/pixui-logo.png` or this example's German PO file while the
+windows are open. Images (including native icons) and translated text/titles
+update after a short quiet period. Invalid/incomplete files keep the last good
+version until a valid save. With `--no-hot-reload`, catalogs use the embedded
+baseline. `--hot-reload` explicitly enables watching again.
+See [resource hot reload](../../crates/engine/src/resources/reload/README.md).

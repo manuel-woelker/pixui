@@ -6,7 +6,8 @@ use crate::{expression::context::ExpressionContext, resources::path::ResourcePat
 use pixui_base::{PixuiResult, PixuiString};
 
 /// Desired properties for one window. `None` explicitly clears its icon.
-/// Paths use the application's configured image loader and weak snapshot cache.
+/// Paths use the application's configured image service, including optional
+/// background hot reload and its session-owned snapshots.
 pub struct WindowProperties {
     pub title: PixuiString,
     pub icon: Option<ResourcePath>,
@@ -14,7 +15,8 @@ pub struct WindowProperties {
 
 /// Runs on the worker with application data and this instance's presentation.
 /// Errors retain the last published properties; no partially resolved update is
-/// sent. It may load an icon synchronously, independently of component painting.
+/// sent. Without hot reload, icon loading may block this worker. Watched icons
+/// resolve background-prepared snapshots, independently of component painting.
 /// Resolved after content/presentation changes and explicit redraws, including
 /// hidden windows. Animation-only and diagnostic refreshes do not reevaluate it.
 pub type WindowPropertiesResolver =

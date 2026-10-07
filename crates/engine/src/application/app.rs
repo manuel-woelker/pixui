@@ -35,6 +35,7 @@ pub struct Application {
     pub(crate) image_service: std::cell::RefCell<crate::resources::image_service::ImageService>,
     pub(crate) render_clock: crate::ui::render_clock::RenderClock,
     pub(crate) translations: crate::i18n::registry::TranslationRegistry,
+    pub(crate) resource_reload: Option<std::sync::Weak<crate::resources::reload::shared::Shared>>,
     collections: Vec<Collection>,
     pub(super) ad_hoc_collections: HashMap<TypeId, CollectionIndex>,
     slices: Vec<ApplicationSlice>,
@@ -55,8 +56,10 @@ impl Application {
     }
 
     /// Reuses a live snapshot for this path across components and windows.
-    /// A cache miss loads synchronously on this thread. The cache retains no
-    /// pixels after component states, props and outputs release their handles.
+    /// Without hot reload, cache misses load synchronously and cache ownership
+    /// is weak. A reload session queues uncached paths in the background and
+    /// retains their successful snapshots until stopped. Pending loads return
+    /// an error; successful installation invalidates UIs to retry preparation.
     pub fn load_image(
         &self,
         path: &crate::resources::path::ResourcePath,
@@ -453,5 +456,17 @@ impl Application {
     ) -> PixuiResult<&mut Arena<T>> {
         let index = self.slice(slice)?.collection_index(name)?;
         self.resolve_collection_mut(index)
+    }
+}
+
+impl Drop for Application {
+    fn drop(&mut self) {
+        if let Some(shared) = self
+            .resource_reload
+            .as_ref()
+            .and_then(std::sync::Weak::upgrade)
+        {
+            shared.stop();
+        }
     }
 }

@@ -180,18 +180,20 @@ fn keyboard_navigation_activates_buttons_and_facade_updates_named_entities() {
 #[test]
 fn translation_export_runs_without_a_display_and_is_reproducible() {
     let path = std::env::temp_dir().join(format!("pixui-showcase-{}.pot", std::process::id()));
-    let run = || {
+    let run = |flags: &[&str]| {
         let status = std::process::Command::new(env!("CARGO_BIN_EXE_pixui-example-showcase"))
             .env_remove("DISPLAY")
             .env_remove("WAYLAND_DISPLAY")
+            .args(flags)
             .args(["--export-translations", path.to_str().unwrap()])
             .status()
             .unwrap();
         assert!(status.success());
         std::fs::read_to_string(&path).unwrap()
     };
-    let first = run();
-    assert_eq!(first, run());
+    let first = run(&[]);
+    assert_eq!(first, run(&["--no-hot-reload"]));
+    assert_eq!(first, run(&["--hot-reload"]));
     assert!(first.contains("Counter: {count}"));
     assert!(first.contains("Show details"));
     assert!(first.contains("PixUI Showcase — {count}"));

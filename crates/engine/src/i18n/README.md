@@ -140,3 +140,12 @@ Plurals, grammatical selectors, localized dates/numbers, rich text, and general
 bidi/shaping are outside this implementation. A richer format such as Fluent
 would need a richer evaluator for those features, not only another adapter. See
 [the decision record](../../../../docs/decisions/DR-014%20Register%20declared%20translations%20by%20definition%20domain.md).
+
+## Optional file hot reload
+
+Use the shared [resource reload service](../resources/reload/README.md) to
+register PO paths with a domain, language, and `Arc<PoFormat>`. Native directory
+events trigger bounded background reads and parsing. The worker validates and
+installs the resulting catalog atomically. Failed edits keep the previous
+translations; hidden windows still receive updated titles. Reload is disabled by
+default and requires explicit runtime startup, with no Cargo feature flags.

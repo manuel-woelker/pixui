@@ -8,10 +8,7 @@ use image::{
     DynamicImage, ImageDecoder, ImageFormat, ImageReader, Limits, codecs::png::PngDecoder,
 };
 use pixui_base::{PixuiResult, pixui_error};
-use std::{
-    io::{Cursor, Read},
-    sync::Arc,
-};
+use std::{io::Cursor, sync::Arc};
 
 /// Per-load limits, not a budget for all images retained by the application.
 /// Decoder allocation limits are best effort in the underlying library. Encoded
@@ -78,32 +75,33 @@ impl ImageLoader {
         result.map_err(|error| error.attach(format!("load image `{}`", path.as_str())))
     }
     fn load_inner(&self, path: &ResourcePath) -> PixuiResult<Image> {
-        let reader = self
-            .0
-            .filesystem
-            .open(path)?
-            .ok_or_else(|| pixui_error!("image resource `{}` not found", path.as_str()))?;
+        let bytes = super::read::read_bounded(
+            self.0.filesystem.as_ref(),
+            path,
+            self.0.limits.max_encoded_bytes,
+        )?;
+        self.decode(&bytes)
+    }
+    pub(crate) fn filesystem(&self) -> &Arc<dyn ResourceFilesystem> {
+        &self.0.filesystem
+    }
+    pub(crate) fn encoded_limit(&self) -> usize {
+        self.0.limits.max_encoded_bytes
+    }
+    pub(crate) fn same_configuration(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+    pub(crate) fn decode(&self, bytes: &[u8]) -> PixuiResult<Image> {
         let limits = self.0.limits;
-        let mut bytes = Vec::new();
-        reader
-            .take((limits.max_encoded_bytes + 1) as u64)
-            .read_to_end(&mut bytes)
-            .map_err(|error| pixui_error!("read image `{}`: {error}", path.as_str()))?;
-        if bytes.len() > limits.max_encoded_bytes {
-            return Err(pixui_error!(
-                "image `{}` exceeds encoded byte limit",
-                path.as_str()
-            ));
-        }
         let format =
-            image::guess_format(&bytes).map_err(|error| pixui_error!("identify image: {error}"))?;
+            image::guess_format(bytes).map_err(|error| pixui_error!("identify image: {error}"))?;
         let mut decoder_limits = Limits::default();
         decoder_limits.max_image_width = Some(limits.max_pixels as u32);
         decoder_limits.max_image_height = Some(limits.max_pixels as u32);
         decoder_limits.max_alloc = Some(limits.max_decode_bytes);
         let decoder: Box<dyn ImageDecoder> = match format {
             ImageFormat::Png => {
-                let decoder = PngDecoder::with_limits(Cursor::new(&bytes), decoder_limits)
+                let decoder = PngDecoder::with_limits(Cursor::new(bytes), decoder_limits)
                     .map_err(|error| pixui_error!("read PNG header: {error}"))?;
                 if decoder
                     .is_apng()
@@ -114,7 +112,7 @@ impl ImageLoader {
                 Box::new(decoder)
             }
             ImageFormat::Jpeg => {
-                let mut reader = ImageReader::with_format(Cursor::new(&bytes), format);
+                let mut reader = ImageReader::with_format(Cursor::new(bytes), format);
                 reader.limits(decoder_limits);
                 Box::new(
                     reader

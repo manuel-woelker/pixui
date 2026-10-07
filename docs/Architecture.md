@@ -488,11 +488,11 @@ An application-owned weak path cache shares live snapshots across components and
 windows without retaining unused pixel buffers. Changing props resolves the new
 path; replacing the loader clears lookup and invalidates existing UIs. Loading
 errors preserve previous state and published output. Direct `ImageLoader::load`
-still returns a fresh snapshot. There is no automatic hot reload. Loading is
-synchronous and can block preparation; painters and native UI threads do no I/O.
-Embedded readers can be added without changing decoding. Future network fetches
-need background scheduling rather than blocking application dispatch or treating
-pending requests as absence.
+still returns a fresh snapshot. Without runtime hot reload, cache misses load
+synchronously and can block preparation; painters and native UI threads do no
+I/O. Embedded readers can be added without changing decoding. Future network
+fetches need background scheduling rather than blocking application dispatch or
+treating pending requests as absence.
 
 The todo image component displays `assets/images/pixui-logo.png`, preserving
 transparency and aspect ratio. Its `--assets` option installs an override
@@ -546,3 +546,31 @@ without painting; retained render outputs remain independent of catalog changes.
 See [internationalization](../crates/engine/src/i18n/README.md) and
 [DR-014](<decisions/DR-014 Register declared translations by definition domain.md>)
 for APIs, identity rules, workflow, and limits.
+
+## Optional resource hot reload
+
+A caller-owned `ResourceReloadSession` enables native directory watching at
+runtime; it is disabled by default and requires no Cargo feature. Directory
+and layered sources expose native roots without changing ordinary resource
+lookup. Images subscribe by requested logical path; catalog targets explicitly
+bind a path to a domain, language, and format adapter.
+
+Both use one pipeline: native event hints, per-target debounce, bounded
+background reads, image decoding or catalog parsing, then prepared updates
+through the existing application command queue. Content hashes suppress
+unchanged data; session identity, configuration checks, and revisions discard
+obsolete updates. The worker replaces image snapshots directly and
+transactionally installs catalogs, invalidating UIs and native metadata. Hidden
+windows skip painting.
+
+Only one prepared/sent payload is outstanding. Watched image paths retain their
+latest successful snapshots for the session; normal image caching stays weak.
+Old outputs keep old images/text independently. Errors and complete deletion
+preserve last-good values; directory layers retain their normal fallback rules.
+The external guard cancels and joins the loader without waiting for queue
+capacity. It must not be owned by the application worker, since the service
+holds an application sender.
+
+See [hot reload](../crates/engine/src/resources/reload/README.md) and
+[DR-015](<decisions/DR-015 Reload resources through a shared background pipeline.md>)
+for setup, lifecycle, and limits.
