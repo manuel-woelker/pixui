@@ -210,6 +210,9 @@ impl UiRegistry {
             }
             UiCommand::Present { settings, .. } => {
                 settings.validate()?;
+                application
+                    .translations()
+                    .validate_language(settings.language)?;
                 instance.settings = settings;
                 instance.dirty = true;
                 instance.window_properties_dirty = true;
@@ -494,13 +497,20 @@ fn update_window_properties(
     application: &Application,
 ) -> PixuiResult<()> {
     use super::window_properties::{ResolvedWindowProperties, WindowCommand};
-    let Some(resolve) = definition.window_properties else {
+    let context = crate::expression::context::ExpressionContext::new(application)
+        .with_language(instance.settings.language);
+    let properties = if let Some(binding) = &definition.window_expressions {
+        let values = binding
+            .expressions
+            .iter()
+            .map(|expression| crate::expression::evaluator::evaluate(&context, expression))
+            .collect::<PixuiResult<Vec<_>>>()?;
+        (binding.resolve)(&context, &instance.settings, &values)?
+    } else if let Some(resolve) = definition.window_properties {
+        resolve(&context, &instance.settings)?
+    } else {
         return Ok(());
     };
-    let properties = resolve(
-        &crate::expression::context::ExpressionContext::new(application),
-        &instance.settings,
-    )?;
     let resolved = ResolvedWindowProperties {
         title: properties.title,
         icon: properties

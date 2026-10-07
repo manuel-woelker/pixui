@@ -71,13 +71,16 @@ fn main() -> PixuiResult<()> {
         ("Todos - English / light", Theme::Light, "en", 640.0, 480.0),
         ("Todos - Deutsch / dark", Theme::Dark, "de", 420.0, 640.0),
     ] {
-        let settings = PresentationSettings {
-            theme,
-            timestamp_us: freeze_animation.then_some(0),
-            locale: locale.into(),
-            viewport: Size { width, height },
-            ..Default::default()
-        };
+        let settings = application.presentation_language(
+            PresentationSettings {
+                theme,
+                timestamp_us: freeze_animation.then_some(0),
+                locale: locale.into(),
+                viewport: Size { width, height },
+                ..Default::default()
+            },
+            locale,
+        )?;
         let (instance, outputs) = application.create_ui(definition, settings.clone())?;
         windows.push(WindowSpec {
             title: title.into(),

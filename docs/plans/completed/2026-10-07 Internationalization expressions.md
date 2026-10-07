@@ -1,6 +1,6 @@
 # Internationalization expressions
 
-Status: proposed.
+Status: completed; automated checks passed and the user confirmed the GUI works.
 
 ## Goal
 
@@ -9,7 +9,7 @@ before rendering, resolve them to application-wide indices, and evaluate them
 using each UI instance's selected language. Export a translator-friendly catalog
 without opening windows. Keep file formats separate from expression evaluation.
 
-## Proposed decisions
+## Decisions
 
 - Add an i18n expression containing a source template, named placeholder
   subexpressions, optional translation context and translator comment, and a
@@ -33,15 +33,17 @@ without opening windows. Keep file formats separate from expression evaluation.
 - Recommend GNU gettext PO/POT as the first catalog adapter. Make catalog import
   and export replaceable without putting file-format logic in the evaluator.
 
-These are proposed choices for review, not implemented capabilities.
+These choices are implemented. See the implementation notes below for
+refinements.
 
-## Current integration gaps
+## Original integration gaps
 
-`ExpressionKind` currently supports fields, collections, and named entities. The
-evaluator returns a `DynamicObject`. `ExpressionContext` carries application and
-loop-value access, but no language. `PresentationSettings.locale` is a string.
+Before this work, `ExpressionKind` supported fields, collections, and named
+entities. The evaluator returns a `DynamicObject`. `ExpressionContext` carries
+application and loop-value access, but no language.
+`PresentationSettings.locale` is a string.
 
-Most visible text currently lives in ordinary props-resolver functions. Those
+Most visible text originally lived in ordinary props-resolver functions. Those
 functions are opaque to registration: walking the live tree cannot discover
 expressions constructed inside their bodies. A declaration API is necessary;
 adding an enum variant alone would leave extraction incomplete.
@@ -74,9 +76,9 @@ let counter = ComponentPart::typed_with_expressions(
   binding that owns its expression list and passes evaluated values to a typed
   resolver. Do not introduce a general props language or field-assignment
   system.
-- The erased binding must expose declaration traversal and produce a registered
-  binding with resolved expression copies. Existing bindings are shared through
-  `Arc`; do not mutate a binding shared by multiple definitions/applications.
+- `ComponentPart` owns the declared expression list separately from its shared
+  `Arc` binding. Registration resolves those owned copies without mutating a
+  binding shared by multiple definitions/applications.
 - Add the corresponding expression-backed window-properties resolver path.
   Both paths use the same evaluator and declaration traversal.
 - Registration traverses composite children, all match arms, loop bodies, match
@@ -274,29 +276,30 @@ template. A future rich message evaluator is a separate design decision.
 
 ## Implementation checklist
 
-- [ ] Define message/language indices, declaration and catalog types, and
+- [x] Define message/language indices, declaration and catalog types, and
       template syntax/error contracts.
-- [ ] Add i18n expressions, recursive declaration traversal, compiled
+- [x] Add i18n expressions, recursive declaration traversal, compiled
   interpolation, and owned-string evaluation.
-- [ ] Add expression-backed component and window-property bindings that expose
+- [x] Add expression-backed component and window-property bindings that expose
   messages to registration.
-- [ ] Add definition-wide domains, name defaults, validation, and domain-scoped
+- [x] Add definition-wide domains, name defaults, validation, and domain-scoped
   catalog installation/export with no per-expression or subtree overrides.
-- [ ] Add transactional definition registration and application-wide
+- [x] Add transactional definition registration and application-wide
       deduplication; reserve zero and support append-only late registration.
-- [ ] Add selected language to presentation and expression context, including
+- [x] Add selected language to presentation and expression context, including
   nested loop propagation and checked configuration helpers.
-- [ ] Add catalog installation/replacement APIs and worker invalidation.
-- [ ] Add the format trait and PO/POT adapter with reproducible export.
-- [ ] Convert showcase source strings, including conditional text and title, to
+- [x] Add catalog installation/replacement APIs and worker invalidation.
+- [x] Add the format trait and PO/POT adapter with reproducible export.
+- [x] Convert showcase source strings, including conditional text and title, to
   declared expressions; load a German PO catalog. Translate UI labels rather
   than shared user data.
-- [ ] Add showcase export CLI and document translator workflow. Convert todo's
+- [x] Add showcase export CLI and document translator workflow. Convert todo's
   existing locale branches where the declaration API supports them.
-- [ ] Update architecture documentation and expression/UI API documentation.
+- [x] Update architecture documentation and expression/UI API documentation.
   Record the catalog identity and format/evaluation separation in a decision
   record if adopted.
-- [ ] Run verification and manual language-switch checks; run `./n check`.
+- [x] Add automated runtime language-switch checks and run `./n check`.
+- [x] Perform the native GUI smoke test; user confirmed it works.
 
 ## Verification
 
@@ -323,22 +326,47 @@ template. A future rich message evaluator is a separate design decision.
   runtime language switching, and last-good-frame behavior on errors.
 - Run `./n check` after the implementation and each corrective unit of work.
 
-## Open questions and limits
+## Implementation notes and remaining verification
 
-1. Confirm PO/POT as the first format and strict placeholder-name-set
-   validation.
-2. Confirm domain/source/context identity instead of mandatory developer IDs.
-   Renaming source text requires catalog updates; comments alone cannot
-   disambiguate keys.
-3. Should intentionally empty translations be supported immediately? Proposed:
-   empty PO translations mean missing in the first version.
-4. Are plural-sensitive messages needed in the first release? If yes, choose
-   plural semantics before committing to literal/argument-only templates.
-5. Should language selection replace `locale` entirely? Proposed: retain locale
-   for compatibility and future formatting, with a helper that updates both.
-6. Current character-atlas rendering does not support general shaping or bidi.
-   Translation support must not be described as complete support for every
-   writing system. Longer strings also expose current fixed-row/no-wrap limits.
+- The first adapter is `PoFormat`, backed by `ferrocat-po` 0.12.0. Additional
+  lexical validation rejects malformed quoted lines and plural entries before
+  parsing. Runtime templates remain independent of PO syntax.
+- Message and language indices carry application identity as well as a slot,
+  preventing a valid slot from another application from selecting unrelated
+  data.
+- Expression-backed bindings keep declarations on the component part; native
+  properties have an equivalent declaration path. `Expression::computed`
+  supports derived scalar arguments such as the open-todo count. Computed
+  callbacks must not hide i18n declarations.
+- Catalog replacement preserves other domain/language catalogs but currently
+  invalidates all definitions. This simple conservative policy can be narrowed
+  if profiling shows a need.
+- Template, output, aggregate argument sizes, nesting, and PO input are bounded.
+  Placeholder values use explicit locale-independent scalar formatting.
+- Showcase and todo declare their UI labels and titles, load German catalogs,
+  and retain source-language user data. Showcase exports deterministic POT files
+  without a display, image decoding, UI instances, or font rasterization.
+- Automated worker tests cover runtime language switching, catalog replacement,
+  hidden-window metadata, immutable published outputs, and last-good-frame
+  behavior. An executable integration test checks headless deterministic export.
+- Full repository checks passed during implementation. After disk cleanup left
+  stale compiler artifacts, workspace package build caches were cleared. The
+  final `./n check` passed all seven tasks.
+- The user confirmed the native GUI works on 2026-10-07, completing manual
+  verification alongside the automated worker and export tests.
+
+## Resolved questions and limits
+
+1. PO/POT is the first format, with strict placeholder-name-set validation.
+2. Domain/source/context is the catalog identity. Source edits require catalog
+   updates; comments do not disambiguate keys.
+3. Empty translations mean missing; intentionally blank translations are
+   deferred.
+4. Plural semantics are deferred. Initial count messages are count-neutral.
+5. Retain `locale` and add an explicit language index, with a helper setting
+   both.
+6. Character-atlas rendering still lacks general shaping and bidi. Longer
+   translations remain subject to fixed-row/no-wrap rendering limits.
 
 ## Sources
 

@@ -6,6 +6,7 @@ use crate::application::app::Application;
 /// Read-only inputs for expressions: application storage and an optional current value.
 /// Results borrow these inputs rather than owning or copying application data.
 pub struct ExpressionContext<'a> {
+    language: crate::i18n::indices::LanguageIndex,
     application: Option<&'a Application>,
     value: Option<&'a DynamicObject<'a>>,
 }
@@ -14,6 +15,7 @@ impl<'a> ExpressionContext<'a> {
     /// Application expressions are available; no current field context is set.
     pub fn new(application: &'a Application) -> Self {
         Self {
+            language: Default::default(),
             application: Some(application),
             value: None,
         }
@@ -22,9 +24,20 @@ impl<'a> ExpressionContext<'a> {
     /// Field expressions are available without application storage.
     pub fn from_value(value: &'a DynamicObject<'a>) -> Self {
         Self {
+            language: Default::default(),
             application: None,
             value: Some(value),
         }
+    }
+
+    /// Selects translation language while preserving application and current value.
+    pub fn with_language(mut self, language: crate::i18n::indices::LanguageIndex) -> Self {
+        self.language = language;
+        self
+    }
+
+    pub fn language(&self) -> crate::i18n::indices::LanguageIndex {
+        self.language
     }
 
     pub fn application(&self) -> PixuiResult<&'a Application> {
@@ -43,6 +56,7 @@ impl<'a> ExpressionContext<'a> {
         'a: 'b,
     {
         ExpressionContext {
+            language: self.language,
             application: self.application,
             value: Some(value),
         }

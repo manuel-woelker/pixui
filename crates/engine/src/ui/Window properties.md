@@ -72,6 +72,6 @@ desktop entries or application bundles). Receiving an icon command does not
 guarantee it appears in native decorations. This implementation does not install
 desktop entries or bundle application icons.
 
-The todo UI publishes localized titles such as `Todos — 2 open` and
-`Aufgaben — 2 offen`, and uses `images/pixui-logo.png` for its icon.
+The todo UI publishes localized titles such as `Open todos: 2` and
+`Offene Aufgaben: 2`, and uses `images/pixui-logo.png` for its icon.
 Completed-item filtering and animation toggles do not change the open count.

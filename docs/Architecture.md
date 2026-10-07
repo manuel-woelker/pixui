@@ -523,3 +523,26 @@ The todo example derives localized open-task counts for its window titles and
 shares the loaded logo snapshot between its image component and window icon.
 See [window properties](../crates/engine/src/ui/Window%20properties.md) for API,
 coalescing, lifecycle and native support details.
+
+## Internationalization
+
+UI definitions declare translatable expressions in component bindings and native
+window properties. Each definition has one translation domain. Registration
+visits all abstract branches and loop bodies, merges identical domain/source/
+context keys, and resolves application-local message indices transactionally.
+Index zero remains unresolved; indices are never persisted in catalogs.
+
+The worker owns a translation registry with dense indexed templates per
+language. Each instance's presentation selects a language index; loop expression
+contexts retain that selection. Evaluation interpolates named subexpressions
+into an owned string, falling back to source text for missing entries. Rendering
+clients receive ordinary text commands and need no catalog or language lookup.
+
+PO/POT import and export are explicit adapters over neutral catalog records.
+Domain/language installation is atomic, supports late definitions, and currently
+invalidates all UIs and native metadata. Hidden windows update their titles
+without painting; retained render outputs remain independent of catalog changes.
+
+See [internationalization](../crates/engine/src/i18n/README.md) and
+[DR-014](<decisions/DR-014 Register declared translations by definition domain.md>)
+for APIs, identity rules, workflow, and limits.

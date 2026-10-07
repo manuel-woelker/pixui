@@ -18,6 +18,11 @@ explicit update callback before read-only painting. Legacy components without
 typed bindings remain valid inert nodes. See the
 [component guide](../component_registry/README.md).
 
+Use `typed_with_expressions` for extractable i18n declarations and typed props
+from evaluated expression values. A definition owns one translation domain; each
+instance selects a language index independently of its theme. See
+[internationalization](../i18n/README.md) for catalogs, fallback, and export.
+
 Attach an activation factory with `with_activation` to produce an
 `ActionBinding`: a worker-local function that builds a fresh `ActionCall` on
 activation. Capture cached `ActionHandle`s and opaque `ObjectRef<T>` values.

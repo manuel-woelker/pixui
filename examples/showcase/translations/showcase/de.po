@@ -1,0 +1,34 @@
+msgid ""
+msgstr ""
+"Language: de\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "PixUI · Widget showcase"
+msgstr "PixUI · Komponenten"
+
+msgid "Counter: {count}"
+msgstr "Zähler: {count}"
+
+msgid "Increment counter"
+msgstr "Zähler erhöhen"
+
+msgid "Reset counter"
+msgstr "Zähler zurücksetzen"
+
+msgid "An independent checkbox"
+msgstr "Ein unabhängiges Kontrollkästchen"
+
+msgid "Show details"
+msgstr "Details anzeigen"
+
+msgid "Shared data, hover and focus · independent theme and locale"
+msgstr "Gemeinsame Daten, Hover und Fokus · eigenes Design und Sprache"
+
+msgid "Add collection row"
+msgstr "Zeile hinzufügen"
+
+msgid "Tab: focus · Enter/Space: activate · F11: performance"
+msgstr "Tab: Fokus · Enter/Leertaste: aktivieren · F11: Leistung"
+
+msgid "PixUI Showcase — {count}"
+msgstr "PixUI Komponenten — {count}"

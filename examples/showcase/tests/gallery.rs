@@ -58,11 +58,14 @@ fn widgets_update_shared_windows_conditional_content_collection_and_title() {
     let (_, other) = app
         .create_ui(
             definition,
-            PresentationSettings {
-                locale: "de".into(),
-                theme: Theme::Dark,
-                ..Default::default()
-            },
+            app.presentation_language(
+                PresentationSettings {
+                    theme: Theme::Dark,
+                    ..Default::default()
+                },
+                "de",
+            )
+            .unwrap(),
         )
         .unwrap();
     let mut current = receive(&outputs);
@@ -172,4 +175,25 @@ fn keyboard_navigation_activates_buttons_and_facade_updates_named_entities() {
         Ok(())
     })
     .unwrap();
+}
+
+#[test]
+fn translation_export_runs_without_a_display_and_is_reproducible() {
+    let path = std::env::temp_dir().join(format!("pixui-showcase-{}.pot", std::process::id()));
+    let run = || {
+        let status = std::process::Command::new(env!("CARGO_BIN_EXE_pixui-example-showcase"))
+            .env_remove("DISPLAY")
+            .env_remove("WAYLAND_DISPLAY")
+            .args(["--export-translations", path.to_str().unwrap()])
+            .status()
+            .unwrap();
+        assert!(status.success());
+        std::fs::read_to_string(&path).unwrap()
+    };
+    let first = run();
+    assert_eq!(first, run());
+    assert!(first.contains("Counter: {count}"));
+    assert!(first.contains("Show details"));
+    assert!(first.contains("PixUI Showcase — {count}"));
+    std::fs::remove_file(path).unwrap();
 }

@@ -34,6 +34,7 @@ pub struct Application {
     pub(crate) text_service: std::cell::RefCell<crate::ui::text::service::TextService>,
     pub(crate) image_service: std::cell::RefCell<crate::resources::image_service::ImageService>,
     pub(crate) render_clock: crate::ui::render_clock::RenderClock,
+    pub(crate) translations: crate::i18n::registry::TranslationRegistry,
     collections: Vec<Collection>,
     pub(super) ad_hoc_collections: HashMap<TypeId, CollectionIndex>,
     slices: Vec<ApplicationSlice>,
@@ -42,6 +43,10 @@ pub struct Application {
 }
 
 impl Application {
+    pub fn translations(&self) -> &crate::i18n::registry::TranslationRegistry {
+        &self.translations
+    }
+
     /// Selects the application resource source and clears its weak image cache.
     /// Existing windows are invalidated; old outputs retain their snapshots.
     pub fn set_image_loader(&mut self, loader: crate::resources::image_loader::ImageLoader) {
@@ -83,11 +88,15 @@ impl Application {
     /// Checks all component registrations and painters before accepting a template.
     pub fn register_ui(
         &mut self,
-        definition: crate::ui::definition::UiDefinition,
+        mut definition: crate::ui::definition::UiDefinition,
     ) -> PixuiResult<crate::ui::definition::UiDefinitionId> {
         self.components
             .validate(&definition.template, &self.painters)?;
-        self.uis.register(definition)
+        let mut translations = self.translations.clone();
+        crate::i18n::registration::register(&mut definition, &mut translations)?;
+        let id = self.uis.register(definition)?;
+        self.translations = translations;
+        Ok(id)
     }
 
     /// Starts an owner thread immediately, using a bounded queue of 128 commands.

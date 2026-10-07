@@ -46,7 +46,12 @@ impl Visitor for PrepareVisitor<'_> {
         let PartState::Component(state) = entry.state else {
             return Err(pixui_error!("component requires initialized state"));
         };
-        let props = binding.prepare(entry.context, self.settings, &mut state.state)?;
+        let values = part
+            .expressions
+            .iter()
+            .map(|expression| crate::expression::evaluator::evaluate(entry.context, expression))
+            .collect::<PixuiResult<Vec<_>>>()?;
+        let props = binding.prepare(entry.context, self.settings, &mut state.state, &values)?;
         let activate = part
             .activation
             .map(|factory| factory(entry.context, self.settings))
@@ -105,6 +110,9 @@ pub fn render_measured(
 ) -> PixuiResult<RenderedUi> {
     let started = std::time::Instant::now();
     settings.validate()?;
+    application
+        .translations()
+        .validate_language(settings.language)?;
     let timestamp_us = settings
         .timestamp_us
         .unwrap_or_else(|| application.render_clock.timestamp_us());
@@ -119,7 +127,7 @@ pub fn render_measured(
     walk(
         &mut template,
         state.root_state_mut(),
-        &ExpressionContext::new(application),
+        &ExpressionContext::new(application).with_language(settings.language),
         &mut visitor,
     )?;
     // Reborrow physical state in the same depth-first order without evaluating

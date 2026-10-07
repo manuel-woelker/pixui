@@ -34,3 +34,16 @@ pub(crate) struct ResolvedWindowProperties {
     pub title: PixuiString,
     pub icon: Option<Image>,
 }
+
+/// Explicit expression-backed native metadata. Expressions are registered with
+/// the enclosing definition's domain and evaluated in declaration order.
+pub type ExpressionWindowPropertiesResolver = for<'a> fn(
+    &ExpressionContext<'a>,
+    &PresentationSettings,
+    &[pixui_reflect::DynamicObject<'a>],
+) -> PixuiResult<WindowProperties>;
+
+pub(crate) struct WindowPropertyExpressions {
+    pub expressions: Vec<crate::expression::expression::Expression>,
+    pub resolve: ExpressionWindowPropertiesResolver,
+}

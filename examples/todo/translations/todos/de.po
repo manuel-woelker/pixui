@@ -1,0 +1,22 @@
+msgid ""
+msgstr ""
+"Language: de\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "Todos"
+msgstr "Aufgaben"
+
+msgid "Add todo"
+msgstr "Aufgabe hinzufügen"
+
+msgid "Pause animation"
+msgstr "Animation pausieren"
+
+msgid "Resume animation"
+msgstr "Animation fortsetzen"
+
+msgid "Hide completed"
+msgstr "Erledigte ausblenden"
+
+msgid "Open todos: {count}"
+msgstr "Offene Aufgaben: {count}"

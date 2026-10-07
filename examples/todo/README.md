@@ -150,3 +150,13 @@ animation redraws, useful for idle CPU comparisons and inspecting still frames.
 Press **F11** in either window to toggle its performance overlay: FPS, worker
 and renderer CPU stage timings, and referenced frame memory estimates. Idle FPS
 is zero; refreshing diagnostics does not trigger worker painting.
+
+## Translations
+
+UI labels and the count-neutral window title use declared i18n expressions in
+the `todos` domain. German text is loaded from
+[de.po](translations/todos/de.po). Presentation language is selected by index;
+startup sets locale and language together with `presentation_language`. Todo
+titles are shared user data and are not translated. See the
+[i18n guide](../../crates/engine/src/i18n/README.md) for catalog APIs and
+export.

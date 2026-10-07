@@ -7,17 +7,29 @@ use pixui_engine::{
 };
 use std::sync::Arc;
 
-/// Build the gallery with standard painters and a repository-relative asset root.
+/// Register declarations and translations without opening any filesystem resources.
 /// No native windows are created here; tests can inspect render outputs directly.
-pub fn create() -> PixuiResult<(ApplicationHandle, UiDefinitionId)> {
+pub fn register() -> PixuiResult<(ApplicationHandle, UiDefinitionId)> {
     let application = Application::new();
     crate::model::register(&application)?;
-    application.set_image_loader(ImageLoader::new(Arc::new(DirectoryFilesystem::new(
-        concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets"),
-    )?)))?;
     let components = application.register_standard_components()?;
     application.register_standard_painters()?;
     let definition =
         application.register_ui(crate::gallery::definition(&application, components)?)?;
+    let de = application.register_language("de")?;
+    let catalog = pixui_engine::i18n::format::TranslationFormat::import(
+        &pixui_engine::i18n::po::PoFormat,
+        include_str!("../translations/showcase/de.po"),
+    )?;
+    application.install_translations("showcase", de, catalog)?;
+    Ok((application, definition))
+}
+
+/// Configure filesystem resources for interactive rendering; export uses register.
+pub fn create() -> PixuiResult<(ApplicationHandle, UiDefinitionId)> {
+    let (application, definition) = register()?;
+    application.set_image_loader(ImageLoader::new(Arc::new(DirectoryFilesystem::new(
+        concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets"),
+    )?)))?;
     Ok((application, definition))
 }

@@ -37,12 +37,14 @@ pub fn definition_with_assets(
     override_root: Option<&std::path::Path>,
 ) -> PixuiResult<UiDefinition> {
     crate::logo::configure_resources(application, override_root)?;
+    crate::translations::configure(application)?;
     let logo = ComponentPart::typed(components.image, |_, _| {
         ImageProps::new("images/pixui-logo.png")
     });
     let todos = application.collection_key("todo", "todos")?;
     let slice = application.inspect(|app| Ok(app.slice_named("todo")?.id()))?;
     let hide_done = application.entity_ref::<bool>(slice, "hide_done")?;
+    let paused = application.entity_ref::<bool>(slice, "animation_paused")?;
     let completed = TodoItem::type_descriptor().field_index("completed")?;
     let row = LivePart::Component(
         ComponentPart::typed(components.checkbox, todo_row).with_activation(mark_action),
@@ -65,19 +67,58 @@ pub fn definition_with_assets(
         "todos",
         LivePart::Composite(CompositePart {
             parts: vec![
-                LivePart::Component(ComponentPart::typed(components.label, heading)),
+                LivePart::Component(ComponentPart::typed_with_expressions(
+                    components.label,
+                    vec![Expression::text("Todos")?],
+                    heading,
+                )),
                 LivePart::Component(
-                    ComponentPart::typed(components.button, add_button).with_activation(add_action),
+                    ComponentPart::typed_with_expressions(
+                        components.button,
+                        vec![Expression::text("Add todo")?],
+                        add_button,
+                    )
+                    .with_activation(add_action),
                 ),
                 LivePart::Component(ComponentPart::typed(comets, orbiting_comets::props)),
-                LivePart::Component(
-                    ComponentPart::typed(components.button, animation_button)
-                        .with_activation(animation_action),
-                ),
+                LivePart::Match(MatchPart::new(
+                    Expression::entity(paused),
+                    vec![
+                        MatchCandidate {
+                            pattern: MatchPattern::value(false),
+                            part: LivePart::Component(
+                                ComponentPart::typed_with_expressions(
+                                    components.button,
+                                    vec![Expression::text("Pause animation")?],
+                                    animation_button,
+                                )
+                                .with_activation(animation_action),
+                            ),
+                        },
+                        MatchCandidate {
+                            pattern: MatchPattern::value(true),
+                            part: LivePart::Component(
+                                ComponentPart::typed_with_expressions(
+                                    components.button,
+                                    vec![Expression::text("Resume animation")?],
+                                    animation_button,
+                                )
+                                .with_activation(animation_action),
+                            ),
+                        },
+                    ],
+                )?),
                 LivePart::Component(logo),
                 LivePart::Component(
-                    ComponentPart::typed(components.checkbox, visibility_control)
-                        .with_activation(visibility_action),
+                    ComponentPart::typed_with_expressions(
+                        components.checkbox,
+                        vec![
+                            Expression::text("Hide completed")?,
+                            Expression::entity(hide_done),
+                        ],
+                        visibility_control,
+                    )
+                    .with_activation(visibility_action),
                 ),
                 LivePart::Match(MatchPart::new(
                     Expression::entity(hide_done),
@@ -95,49 +136,60 @@ pub fn definition_with_assets(
             ],
         }),
     )
-    .with_window_properties(window_properties))
+    .with_translation_domain("todos")
+    .with_window_property_expressions(
+        vec![Expression::i18n(
+            "Open todos: {count}",
+            [("count", Expression::computed(open_count))],
+        )?],
+        window_properties,
+    ))
 }
 
 fn window_properties(
-    context: &ExpressionContext<'_>,
-    settings: &PresentationSettings,
+    _: &ExpressionContext<'_>,
+    _: &PresentationSettings,
+    values: &[pixui_reflect::DynamicObject<'_>],
 ) -> PixuiResult<pixui_engine::ui::window_properties::WindowProperties> {
-    let app = context.application()?;
-    let slice = app.slice_named("todo")?.id();
-    let todos = app
-        .collection(slice, "todos")?
-        .arena::<TodoItem>()
-        .ok_or_else(|| pixui_error!("wrong todo collection type"))?;
-    let open = todos.iter().filter(|(_, todo)| !todo.completed).count();
-    let title = if settings.locale == "de" {
-        format!("Aufgaben — {open} offen")
-    } else {
-        format!("Todos — {open} open")
-    };
     Ok(pixui_engine::ui::window_properties::WindowProperties {
-        title: title.into(),
+        title: translated(values)?.into(),
         icon: Some(pixui_engine::resources::path::ResourcePath::new(
             "images/pixui-logo.png",
         )?),
     })
 }
 
-fn animation_button(
-    context: &ExpressionContext<'_>,
-    settings: &PresentationSettings,
-) -> PixuiResult<ButtonProps> {
+fn translated(values: &[pixui_reflect::DynamicObject<'_>]) -> PixuiResult<String> {
+    values
+        .first()
+        .and_then(|value| value.downcast_ref::<String>())
+        .cloned()
+        .ok_or_else(|| pixui_error!("todo UI requires a translated string"))
+}
+
+fn open_count<'a>(
+    context: &ExpressionContext<'a>,
+) -> PixuiResult<pixui_reflect::DynamicObject<'a>> {
     let app = context.application()?;
-    let paused = *app.entity::<bool>(app.slice_named("todo")?.id(), "animation_paused")?;
+    let todos = app
+        .collection(app.slice_named("todo")?.id(), "todos")?
+        .arena::<TodoItem>()
+        .ok_or_else(|| pixui_error!("wrong todo collection type"))?;
+    Ok(pixui_reflect::DynamicObject::from_reflect(
+        todos.iter().filter(|(_, todo)| !todo.completed).count(),
+    ))
+}
+
+fn animation_button(
+    _: &ExpressionContext<'_>,
+    _: &PresentationSettings,
+    values: &[pixui_reflect::DynamicObject<'_>],
+) -> PixuiResult<ButtonProps> {
     Ok(ButtonProps {
-        label: match (settings.locale.as_str(), paused) {
-            ("de", true) => "Animation fortsetzen",
-            ("de", false) => "Animation pausieren",
-            (_, true) => "Resume animation",
-            (_, false) => "Pause animation",
-        }
-        .into(),
+        label: translated(values)?,
     })
 }
+
 fn animation_action(
     _: &ExpressionContext<'_>,
     _: &PresentationSettings,
@@ -147,24 +199,20 @@ fn animation_action(
     }))
 }
 
-fn hide_done(context: &ExpressionContext<'_>) -> PixuiResult<bool> {
-    let app = context.application()?;
-    Ok(*app.entity::<bool>(app.slice_named("todo")?.id(), "hide_done")?)
-}
 fn visibility_control(
-    context: &ExpressionContext<'_>,
-    settings: &PresentationSettings,
+    _: &ExpressionContext<'_>,
+    _: &PresentationSettings,
+    values: &[pixui_reflect::DynamicObject<'_>],
 ) -> PixuiResult<CheckboxProps> {
     Ok(CheckboxProps {
-        checked: hide_done(context)?,
-        label: if settings.locale == "de" {
-            "Erledigte ausblenden"
-        } else {
-            "Hide completed"
-        }
-        .into(),
+        label: translated(values)?,
+        checked: *values
+            .get(1)
+            .and_then(|value| value.downcast_ref::<bool>())
+            .ok_or_else(|| pixui_error!("todo visibility requires a boolean"))?,
     })
 }
+
 fn visibility_action(
     _: &ExpressionContext<'_>,
     _: &PresentationSettings,
@@ -176,39 +224,26 @@ fn visibility_action(
 }
 
 fn heading(
-    context: &ExpressionContext<'_>,
-    settings: &PresentationSettings,
+    _: &ExpressionContext<'_>,
+    _: &PresentationSettings,
+    values: &[pixui_reflect::DynamicObject<'_>],
 ) -> PixuiResult<LabelProps> {
-    hide_done(context)?;
     Ok(LabelProps {
-        text: if settings.locale == "de" {
-            "Aufgaben"
-        } else {
-            "Todos"
-        }
-        .into(),
+        text: translated(values)?,
     })
 }
 
 fn add_button(
     _: &ExpressionContext<'_>,
-    settings: &PresentationSettings,
+    _: &PresentationSettings,
+    values: &[pixui_reflect::DynamicObject<'_>],
 ) -> PixuiResult<ButtonProps> {
     Ok(ButtonProps {
-        label: if settings.locale == "de" {
-            "Aufgabe hinzufügen"
-        } else {
-            "Add todo"
-        }
-        .into(),
+        label: translated(values)?,
     })
 }
 
-fn add_action(
-    _: &ExpressionContext<'_>,
-    settings: &PresentationSettings,
-) -> PixuiResult<ActionBinding> {
-    let german = settings.locale == "de";
+fn add_action(_: &ExpressionContext<'_>, _: &PresentationSettings) -> PixuiResult<ActionBinding> {
     Ok(Box::new(move |application| {
         let slice = application.slice_named("todo")?;
         let number = application
@@ -217,11 +252,7 @@ fn add_action(
             .ok_or_else(|| pixui_error!("wrong todo collection type"))?
             .len()
             + 1;
-        let title = if german {
-            format!("Neue Aufgabe {number}")
-        } else {
-            format!("New todo {number}")
-        };
+        let title = format!("New todo {number}");
         application.action_call(slice.id(), "add_todo", vec![Box::new(title)])
     }))
 }
@@ -665,6 +696,7 @@ mod tests {
                 definition,
                 PresentationSettings {
                     theme: Theme::Dark,
+                    language: application.register_language("de").unwrap(),
                     locale: "de".into(),
                     ..Default::default()
                 },
@@ -776,6 +808,7 @@ mod tests {
                 definition,
                 PresentationSettings {
                     theme: Theme::Dark,
+                    language: application.register_language("de").unwrap(),
                     locale: "de".into(),
                     ..Default::default()
                 },
@@ -842,6 +875,7 @@ mod tests {
             .create_ui(
                 definition,
                 PresentationSettings {
+                    language: app.register_language("de").unwrap(),
                     locale: "de".into(),
                     ..Default::default()
                 },

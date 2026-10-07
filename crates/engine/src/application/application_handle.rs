@@ -112,8 +112,13 @@ impl ApplicationHandle {
         crate::ui::instance::UiInstanceId,
         crate::ui::mailbox::OutputReceiver,
     )> {
-        self.request(move |application| application.uis.create(definition, settings))?
-            .wait()
+        self.request(move |application| {
+            application
+                .translations
+                .validate_language(settings.language)?;
+            application.uis.create(definition, settings)
+        })?
+        .wait()
     }
 
     /// Native callbacks enqueue without blocking. Retain and retry a full-queue
@@ -328,7 +333,7 @@ impl ApplicationHandle {
         self.request(move |application| read(application))?.wait()
     }
 
-    fn request<T: Send + 'static>(
+    pub(super) fn request<T: Send + 'static>(
         &self,
         operation: impl FnOnce(&mut Application) -> PixuiResult<T> + Send + 'static,
     ) -> PixuiResult<ApplicationReply<T>> {

@@ -49,3 +49,23 @@ Layout currently uses the engine's constant-height vertical rows. The image
 fits within one row; this example does not introduce a separate layout system.
 Tests cover actions, keyboard activation, conditional content, resource sharing,
 and synchronized window outputs. Native appearance needs manual verification.
+
+## Translation workflow
+
+Messages are declared in the definition's `showcase` domain. German text is
+loaded from [de.po](translations/showcase/de.po), rather than locale branches in
+Rust. The selected language index is independent of locale; startup uses
+`presentation_language` to set both.
+
+Export all messages, including conditional labels and the native title, without
+opening windows or loading image/font resources:
+
+```bash
+./t cargo run -p pixui-example-showcase -- --export-translations /tmp/showcase.pot
+```
+
+Translate a copy with a PO editor or Weblate, preserving `{count}` placeholders.
+Catalogs can be replaced on the worker with `install_translations`; switch a
+live instance by sending `UiCommand::Present` with new indexed language
+settings. Missing translations fall back to source text. Plurals and
+locale-aware number formatting are not implemented.

@@ -32,6 +32,7 @@ pub struct CompositePart {
 #[derive(Clone)]
 pub struct ComponentPart {
     pub create_state: StateFactory,
+    pub(crate) expressions: Vec<Expression>,
     pub(crate) binding: Option<Arc<dyn ErasedBinding>>,
     pub(crate) activation: Option<ActivationFactory>,
 }
@@ -40,6 +41,7 @@ impl ComponentPart {
     pub fn new(create_state: StateFactory) -> Self {
         Self {
             create_state,
+            expressions: Vec::new(),
             binding: None,
             activation: None,
         }
@@ -60,6 +62,27 @@ impl ComponentPart {
         Self::typed_with_update(id, resolve, |_, _| Ok(()))
     }
 
+    /// Declare expressions in the template so registration can collect messages.
+    /// Values are evaluated once per physical component, in declaration order.
+    /// Registration resolves private copies; reusing this part is safe.
+    pub fn typed_with_expressions<C: Component>(
+        id: ComponentId<C>,
+        expressions: Vec<Expression>,
+        resolve: crate::component_registry::binding::ExpressionPropsResolver<C>,
+    ) -> Self {
+        Self {
+            create_state: |_| Ok(GenericComponentState::new(())),
+            expressions,
+            binding: Some(Arc::new(
+                crate::component_registry::binding::ExpressionBinding::<C> {
+                    address: id.address,
+                    resolve,
+                },
+            )),
+            activation: None,
+        }
+    }
+
     /// An update runs once after resolving props and before painting. It may
     /// change local state but cannot borrow application data or invoke actions.
     /// Errors stop rendering without rolling back previous state updates.
@@ -70,6 +93,7 @@ impl ComponentPart {
     ) -> Self {
         Self {
             create_state: |_| Ok(GenericComponentState::new(())),
+            expressions: Vec::new(),
             binding: Some(Arc::new(Binding::<C> {
                 address: id.address,
                 resolve,

@@ -35,7 +35,7 @@ fn title_counts_open_todos_and_logo_snapshot_is_shared_with_icon() {
     let commands = outputs.window_commands();
     assert_eq!(
         commands.try_recv().unwrap(),
-        WindowCommand::SetTitle("Todos — 2 open".into())
+        WindowCommand::SetTitle("Open todos: 2".into())
     );
     assert_eq!(
         commands.try_recv().unwrap(),
@@ -45,7 +45,7 @@ fn title_counts_open_todos_and_logo_snapshot_is_shared_with_icon() {
     app.inspect(|_| Ok(())).unwrap();
     assert_eq!(
         commands.try_recv().unwrap(),
-        WindowCommand::SetTitle("Todos — 3 open".into())
+        WindowCommand::SetTitle("Open todos: 3".into())
     );
     assert!(
         commands.try_recv().is_err(),
@@ -56,7 +56,7 @@ fn title_counts_open_todos_and_logo_snapshot_is_shared_with_icon() {
     app.inspect(|_| Ok(())).unwrap();
     assert_eq!(
         commands.try_recv().unwrap(),
-        WindowCommand::SetTitle("Todos — 2 open".into())
+        WindowCommand::SetTitle("Open todos: 2".into())
     );
     actions.toggle_hide_completed().unwrap();
     actions.toggle_animation().unwrap();

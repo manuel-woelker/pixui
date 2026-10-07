@@ -14,6 +14,9 @@ pub struct PresentationSettings {
     pub theme: Theme,
     /// Application-defined locale identifier; translation is supplied by widgets.
     pub locale: String,
+    /// Application-local translation selection. Default means source language;
+    /// locale alone does not select a catalog. Use presentation_language to set both.
+    pub language: crate::i18n::indices::LanguageIndex,
     pub viewport: Size,
     pub scale_factor: f32,
     /// Explicit rendering timeline in microseconds. None samples the application
@@ -27,6 +30,7 @@ impl Default for PresentationSettings {
         Self {
             theme: Theme::Light,
             locale: "en".into(),
+            language: Default::default(),
             viewport: Size {
                 width: 800.0,
                 height: 600.0,

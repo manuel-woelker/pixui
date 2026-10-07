@@ -13,6 +13,8 @@ two independently configured windows sharing the same application data.
 Run the [widget showcase](examples/showcase/README.md) with
 `./t cargo run -p pixui-example-showcase` to try buttons, checkboxes,
 conditional content, collection rows, images, themes, and localization together.
+See [internationalization](crates/engine/src/i18n/README.md) for declarative
+messages, definition domains, per-window languages, and PO/POT export.
 
 [`crates/reflect`](crates/reflect) provides explicit indexed field reads
 and method invocation; see its [API and assumptions](crates/reflect/README.md).

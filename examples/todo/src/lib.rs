@@ -3,3 +3,4 @@ pub mod gui_ui;
 pub mod logo;
 pub mod orbiting_comets;
 pub mod todo;
+pub mod translations;
