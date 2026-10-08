@@ -1,7 +1,6 @@
 # Component layout
 
-Status: proposed; review remaining layout scope and invalidation questions
-before implementation.
+Status: implemented; native visual verification pending.
 
 ## Goal
 
@@ -10,7 +9,7 @@ Taffy. Compute on the application worker and retain final positions, dimensions,
 clips, and hit geometry per `UiInstance`. A definition can appear in windows
 with different sizes, languages, and display scales without sharing geometry.
 
-## Recommended ownership
+## Ownership
 
 | Responsibility | Owner | Reason |
 | --- | --- | --- |
@@ -46,8 +45,7 @@ state into instances or add keyed component identity.
 
 ## Taffy integration
 
-Use Taffy in the engine crate. The current documented release is 0.14.0; verify
-and pin the chosen stable version and necessary features during implementation.
+Taffy 0.14.0 is pinned in the engine crate with default features disabled.
 Enable flexbox, content-size support, and `TaffyTree` as a private adapter.
 Enable Grid for the basic tracks and placement subset below.
 No CSS parsing, selectors, or renderer/native layout dependency.
@@ -68,7 +66,7 @@ owned render output.
 
 ## Definition and container API
 
-Propose explicit `ContainerPart` with layout style and children, plus per-leaf
+Use explicit `ContainerPart` with layout style and children, plus per-leaf
 layout overrides on `ComponentPart`. Provide convenient row/column constructors.
 Keep `CompositePart` as a transparent fragment, preserving existing grouping
 semantics. A loop inserts one physical body per item; a match inserts only its
@@ -94,7 +92,7 @@ ContainerPart::column()
     ])
 ```
 
-Recommended initial style subset: auto/logical lengths/percentages, min/max
+Implemented style subset: auto/logical lengths/percentages, min/max
 size, aspect ratio, margin, padding, row/column, gap, grow/shrink/basis, and
 start/center/end/stretch alignment. Validate finite numeric values and
 nonnegative dimensions/padding/gaps. Define percentage units unambiguously.
@@ -228,7 +226,7 @@ represent unconstrained size with a magic float or infinity.
 - Resolve props, component preparation/update, and match/loop expressions once
   before layout. Repeated measurement must not repeat those operations.
 
-Recommended initial implementations:
+Implemented measurements:
 
 - Label: natural unwrapped text advance and line height.
 - Button: label metrics plus visual inset and minimum control height.
@@ -296,14 +294,15 @@ component preparation mutations retain the existing nontransactional contract.
 
 ## Scrolling, scale, and invalidation
 
-Retain one vertical viewport scroll initially. Use a viewport-sized root and a
-natural-height content subtree; do not shrink every control to fit the window
-instead of creating scroll extent. Default controls should not flex-shrink below
-their minimums. Prototype this root/content arrangement before fixing API
-semantics for percentage heights and fill-remaining-space within scroll content.
-Taffy calculates boxes, not wheel handling, clipping commands, or scroll
-offsets. Clip horizontal overflow initially; horizontal and nested scrolling are
-deferred.
+Retain one vertical viewport scroll initially. Use a definite viewport clip and
+a natural-height root column with a viewport-height minimum; do not shrink every
+control to fit the window instead of creating scroll extent. Default controls
+should not flex-shrink below their minimums. Percentage heights are auto under
+the indefinite scrolling height, and resolve under explicitly height-constrained
+ancestors. Min-height does not make an axis definite. Fill-remaining-height
+requires an explicit definite ancestor. Taffy calculates boxes, not wheel
+handling, clipping commands, or scroll offsets. Clip horizontal overflow
+initially; horizontal and nested scrolling are deferred.
 
 Keep all geometry in logical units. Disable default integer-logical-pixel
 rounding initially, so fractional display scale does not introduce mismatches.
@@ -331,27 +330,27 @@ keep measurement and keyboard targets available.
 
 ## Implementation checklist
 
-- [ ] Prototype root scroll sizing plus
+- [x] Prototype root scroll sizing plus
   Taffy leaf measurement with the pinned version and explicit box defaults.
-- [ ] Add the dependency and engine layout module, style/constraint types,
+- [x] Add the dependency and engine layout module, style/constraint types,
   adapter, geometry snapshot, and numeric validation.
-- [ ] Add Flex containers, basic Grid support, and leaf styles; update state
+- [x] Add Flex containers, basic Grid support, and leaf styles; update state
       reconciliation, walkers, registration, i18n extraction, and exhaustive
       LivePart matches.
-- [ ] Add painter measurement dispatch and shared font/visual metrics; implement
+- [x] Add painter measurement dispatch and shared font/visual metrics; implement
   standard and example painters without measurement side effects.
-- [ ] Preserve physical hierarchy after preparation and integrate
+- [x] Preserve physical hierarchy after preparation and integrate
   prepare → measure/layout → paint → finalize → publish.
-- [ ] Replace row-derived bounds/content height with instance geometry, clips,
+- [x] Replace row-derived bounds/content height with instance geometry, clips,
   scroll extents, separate keyboard targets, hover recomputation, and compatible
   input-revision handling that includes clipping and target mappings.
-- [ ] Add layout timing to diagnostics and the F11 overlay.
-- [ ] Migrate todo/showcase to nested rows/columns and sensible intrinsic/fixed
+- [x] Add layout timing to diagnostics and the F11 overlay.
+- [x] Migrate todo/showcase to nested rows/columns and sensible intrinsic/fixed
       image/canvas sizes; include a Grid form. Retain all
       actions and default-enabled hot reload.
-- [ ] Update architecture, UI/painter API docs, and examples. Record adopted
+- [x] Update architecture, UI/painter API docs, and examples. Record adopted
   sizing ownership and container semantics in a decision record.
-- [ ] Add the tests below and run `./n check` after each work/fix unit.
+- [x] Add the tests below and run `./n check` after each work/fix unit.
 - [ ] Record native visual verification before moving the plan to completed.
 
 ## Verification
@@ -399,7 +398,7 @@ keep measurement and keyboard targets available.
 - Defer a unified visual-style/defaults system. Retain the minimum box contract:
   engine padding and painter visual insets have distinct, documented roles.
 - Keep text unwrapped and clipped; no wrapping or ellipsis in this milestone.
-- Use a viewport root with natural-height vertically scrolling content;
+- Use a viewport clip with natural-height vertically scrolling content;
   horizontal overflow clips.
 - Images default to natural logical-pixel size. Examples specify sensible sizes.
 - Defer baseline alignment and scrolling focused elements into view.
@@ -410,13 +409,59 @@ keep measurement and keyboard targets available.
 - Recompute hover after layout using the active pointer source instance.
 - Recompute layout initially; defer reuse, culling, and virtualization.
 
-## Remaining prototype issue
+## Implementation and verification record
 
-Validate percentage heights and fill-remaining-space inside natural-height
-scrolling content with the chosen Taffy version. Document definite versus
-indefinite axes before exposing builders whose behavior depends on them. The
-viewport root remains definite; the scrolling content's natural height must not
-silently become a viewport-height cap.
+- Added private Taffy Flex/Grid mapping, validated engine styles, physical
+  containers/state traversal, pure measurement dispatch, and per-instance boxes
+  and clips. Percent heights were prototyped and covered numerically: auto under
+  natural scrolling height, definite under explicitly sized ancestors.
+- Added separate keyboard targets and default ancestor clipping. Hover is
+  resolved before painting in the active pointer instance, which renders first;
+  peers receive changed shared hover in the same worker pass.
+- Compatible visual redraws retain the existing published action snapshot.
+  Compatibility includes component registration/factory identity, target order,
+  content/border geometry and clips. Content and presentation changes invalidate
+  snapshots; factories cannot rely on wall-clock passage to retarget actions.
+- Migrated todo to a Flex header and column, and showcase to fractional Grid
+  actions inside a column. Images and the comet canvas have explicit sizes.
+- Added numerical Flex/Grid fixtures, repeated-probe checks, multiline text
+  measurement/painting agreement, failure preservation/recovery, clipping and
+  offscreen keyboard tests, stationary hover across windows, and image
+  hot-reload dimension assertions. Existing action, translation, walker and
+  renderer tests remain enabled.
+- Added a shared engine-produced Flex/Grid display-list fixture at scales 1, 1.5
+  and 2 for software and femtovg. An explicit `PIXUI_REQUIRE_GPU=1` run passed
+  through femtovg/wgpu using Mesa llvmpipe GL; this validates the backend path,
+  not hardware GPU performance.
+- Updated architecture/API/example documentation, DR-016, and the draw.io
+  source; regenerated the ignored architecture SVG preview.
+- `./n check` passes after implementation units; final checks include
+  formatting, compilation, Clippy, nextest and documentation tests.
+
+### Observational performance
+
+Debug worker-only fixture at 800×600 logical pixels, scale 1, with simple block
+painters and loop bodies. Two explicit timeline samples exercise full renders;
+there is no native renderer in these measurements. Warm results from one run:
+
+| Items | Timeline (µs) | Prepare (ms) | Tree (ms) | Solve (ms) | Measure calls | Paint (ms) | Finalize (ms) |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 100 | 16,667 | 0.090 | 0.198 | 2.000 | 700 | 0.049 | 0.015 |
+| 1,000 | 0 | 0.794 | 2.320 | 19.769 | 7,000 | 0.443 | 0.101 |
+| 1,000 | 16,667 | 0.588 | 2.255 | 19.480 | 7,000 | 0.484 | 0.105 |
+
+The first 100-item preparation included embedded font initialization (~27.7 ms).
+These are debug observations, not production benchmarks or timing gates. They
+support profiling optimized builds before choosing persistent caching or
+culling.
+
+### Remaining manual verification
+
+Run both examples with software and femtovg rendering. Resize their windows,
+check English/German text, toggle filtering and animation, exercise shared
+hover/focus and scrolling, and hot-reload longer PO strings and changed image
+sizes. This native visual check has not been recorded. Keep the plan in the
+active folder until it succeeds, as required by the implementation skill.
 
 ## Sources
 

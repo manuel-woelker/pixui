@@ -1,4 +1,4 @@
-//! Prepare once, then paint into one shared builder at final fixed-row positions.
+//! Prepare once, then paint into one shared builder at final hierarchical layout positions.
 
 use super::{
     activation::ActionBinding,
@@ -17,19 +17,19 @@ use crate::{
         state::{GenericComponentState, LiveState, PartState},
         walk::{Visitor, WalkEntry, walk},
     },
-    painters::{palette::Palette, registry::PaintInput},
+    painters::{
+        palette::Palette,
+        registry::{MeasureInput, PaintInput},
+    },
 };
 use pixui_base::{PixuiResult, pixui_error};
 use std::{any::Any, time::Duration};
-
-pub const COMPONENT_HEIGHT: f32 = 36.0;
-const PADDING: f32 = 16.0;
-const SPACING: f32 = 8.0;
 
 struct PreparedComponent {
     address: ComponentAddress,
     props: Box<dyn Any + Send>,
     activate: Option<ActionBinding>,
+    activation_factory: Option<usize>,
 }
 struct PrepareVisitor<'a> {
     settings: &'a PresentationSettings,
@@ -60,6 +60,7 @@ impl Visitor for PrepareVisitor<'_> {
             address: binding.address(),
             props,
             activate,
+            activation_factory: part.activation.map(|factory| factory as usize),
         });
         Ok(())
     }
@@ -95,10 +96,12 @@ pub struct RenderedUi {
     pub scroll: f32,
     pub redraw_after: Option<Duration>,
     pub animating: bool,
+    pub(crate) hover: Option<usize>,
     pub timings: super::performance::WorkerTimings,
 }
 
-/// Like `render`, with CPU durations for preparation, painting, and text finalization.
+/// Like `render`, with CPU durations for preparation, tree construction, layout,
+/// painting, and text finalization.
 pub fn render_measured(
     template: &LivePart,
     state: &mut LiveState,
@@ -107,6 +110,29 @@ pub fn render_measured(
     scroll: f32,
     focus: Option<usize>,
     hover: Option<usize>,
+) -> PixuiResult<RenderedUi> {
+    render_with_pointer(
+        template,
+        state,
+        application,
+        settings,
+        scroll,
+        focus,
+        hover,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn render_with_pointer(
+    template: &LivePart,
+    state: &mut LiveState,
+    application: &Application,
+    settings: &PresentationSettings,
+    scroll: f32,
+    focus: Option<usize>,
+    hover: Option<usize>,
+    pointer: Option<Point>,
 ) -> PixuiResult<RenderedUi> {
     let started = std::time::Instant::now();
     settings.validate()?;
@@ -139,7 +165,9 @@ pub fn render_measured(
             PartState::Component(state) if state.state.component_address().is_some() => {
                 states.push(&state.state)
             }
-            PartState::Composite(state) => pending.extend(state.parts.iter().rev()),
+            PartState::Composite(state) | PartState::Container(state) => {
+                pending.extend(state.parts.iter().rev())
+            }
             PartState::ForLoop(state) => pending.extend(state.items.iter().rev()),
             PartState::Match(state) if state.selected.is_some() => pending.push(&state.part),
             _ => {}
@@ -148,18 +176,40 @@ pub fn render_measured(
     if states.len() != visitor.components.len() {
         return Err(pixui_error!("prepared component state count mismatch"));
     }
-    let count = visitor.components.len();
-    let width = (settings.viewport.width - 2.0 * PADDING).max(0.0);
-    let content_height =
-        2.0 * PADDING + count as f32 * COMPONENT_HEIGHT + count.saturating_sub(1) as f32 * SPACING;
-    let scroll = scroll.clamp(0.0, (content_height - settings.viewport.height).max(0.0));
+    crate::ui::text::font::FontFace::geist()?;
+    let preparation = started.elapsed();
+    let geometry = crate::layout::adapter::compute(
+        &template,
+        state.root_state(),
+        settings.viewport,
+        scroll,
+        |index, constraints| {
+            let component = &visitor.components[index];
+            application.painters().measure(
+                component.address,
+                application.components(),
+                MeasureInput {
+                    props: component.props.as_ref(),
+                    state: states[index],
+                    settings,
+                    constraints,
+                },
+            )
+        },
+    )?;
+    let hover = pointer.map_or(hover, |point| {
+        geometry
+            .leaves
+            .iter()
+            .rposition(|leaf| leaf.clip.contains(point))
+    });
+    let scroll = geometry.scroll;
     let viewport = Rect {
         x: 0.0,
         y: 0.0,
         width: settings.viewport.width,
         height: settings.viewport.height,
     };
-    let preparation = started.elapsed();
     let started = std::time::Instant::now();
     let mut display = DisplayListBuilder::default();
     display.emit(DrawCommand::FillRect {
@@ -168,7 +218,8 @@ pub fn render_measured(
     });
     display.emit(DrawCommand::PushClip { rect: viewport });
     let mut layout = LayoutState {
-        content_height,
+        content_height: geometry.content_height,
+        container_bounds: geometry.containers,
         scroll_offset: scroll,
         ..Default::default()
     };
@@ -176,14 +227,19 @@ pub fn render_measured(
         if state.component_address() != Some(component.address) {
             return Err(pixui_error!("prepared component identity mismatch"));
         }
-        let bounds = Rect {
-            x: PADDING,
-            y: PADDING + index as f32 * (COMPONENT_HEIGHT + SPACING) - scroll,
-            width,
-            height: COMPONENT_HEIGHT,
-        };
+        let geometry = &geometry.leaves[index];
+        let bounds = geometry.border;
+        let content = geometry.content;
         layout.component_bounds.push(bounds);
-        display.emit(DrawCommand::PushClip { rect: bounds });
+        layout.component_addresses.push(component.address);
+        layout
+            .activation_factories
+            .push(component.activation_factory);
+        layout.content_bounds.push(content);
+        layout.component_clips.push(geometry.clip);
+        display.emit(DrawCommand::PushClip {
+            rect: geometry.clip.intersect(content),
+        });
         application.painters().paint(
             component.address,
             application.components(),
@@ -192,24 +248,31 @@ pub fn render_measured(
                 timestamp_us,
                 state,
                 settings,
-                width,
-                height: COMPONENT_HEIGHT,
+                width: content.width,
+                height: content.height,
                 focused: focus == Some(index),
                 hovered: hover == Some(index),
                 origin: Point {
-                    x: bounds.x,
-                    y: bounds.y,
+                    x: content.x,
+                    y: content.y,
                 },
             },
             &mut display,
         )?;
         display.emit(DrawCommand::PopClip);
         if let Some(activate) = component.activate {
-            layout.hit_regions.push(HitRegion {
-                bounds: bounds.intersect(viewport),
+            let target_index = layout.focus_targets.len();
+            layout.focus_targets.push(super::instance::FocusTarget {
                 component_index: index,
                 activate,
             });
+            if geometry.clip.width > 0.0 && geometry.clip.height > 0.0 {
+                layout.hit_regions.push(HitRegion {
+                    bounds: geometry.clip,
+                    component_index: index,
+                    target_index,
+                });
+            }
         }
     }
     display.emit(DrawCommand::PopClip);
@@ -228,8 +291,12 @@ pub fn render_measured(
         scroll,
         redraw_after,
         animating,
+        hover,
         timings: super::performance::WorkerTimings {
             preparation,
+            tree_construction: geometry.construction,
+            layout: geometry.solving,
+            measurements: geometry.measurements,
             painting,
             text: started.elapsed(),
         },

@@ -89,6 +89,15 @@ impl Component for Row {
 }
 struct RowPainter;
 impl pixui_engine::painters::painter::Painter<Row> for RowPainter {
+    fn measure(
+        &self,
+        context: &pixui_engine::painters::measure::MeasureContext<'_, Row>,
+    ) -> PixuiResult<pixui_engine::ui::geometry::Size> {
+        Ok(context.constrain(pixui_engine::ui::geometry::Size {
+            width: 120.0,
+            height: 36.0,
+        }))
+    }
     fn paint(
         &self,
         context: &mut pixui_engine::painters::context::PaintContext<'_, Row>,
@@ -335,7 +344,7 @@ fn settings_updates_and_latest_output_replacement_do_not_block_worker() {
         .inspect(move |app| {
             Ok((
                 app.uis().instance(id)?.settings().scale_factor,
-                app.uis().instance(id)?.layout().hit_regions.len(),
+                app.uis().instance(id)?.layout().focus_targets.len(),
             ))
         })
         .unwrap();

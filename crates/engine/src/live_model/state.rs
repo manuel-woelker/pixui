@@ -31,6 +31,7 @@ pub enum PartState {
     Unknown,
     Component(ComponentState),
     Composite(CompositeState),
+    Container(CompositeState),
     ForLoop(ForLoopState),
     Match(MatchState),
 }

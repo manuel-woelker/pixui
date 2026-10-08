@@ -65,19 +65,7 @@ impl DisplayListBuilder {
     /// Measures normalized, unkerned text without allocating coverage. Returns
     /// widest line and total line height; no wrapping or shaping is performed.
     pub fn measure_text(&self, config: &FontConfig, text: &str) -> PixuiResult<Size> {
-        let text = normalize(text)?;
-        let width = text
-            .split('\n')
-            .map(|line| {
-                line.chars()
-                    .map(|character| config.face.0.advance(character, config.size, config.scale))
-                    .sum::<f32>()
-            })
-            .fold(0.0_f32, f32::max);
-        Ok(Size {
-            width,
-            height: text.split('\n').count() as f32 * config.metrics().line_height,
-        })
+        config.measure_text(text)
     }
 
     /// Owns one reference per distinct snapshot. Its allocation cannot be reused

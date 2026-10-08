@@ -237,13 +237,27 @@ the same component type. Explicit standard component and painter helpers remain
 independent. Activation factories create action bindings separately, so changing
 appearance preserves behavior.
 
-The worker paints fixed vertical rows with 36 logical pixels of height, 8 pixels
-of spacing, and 16 pixels of outer padding. Available width is clamped to zero.
-It clamps scrolling to the content height, translates commands into row
-positions, and clips each component and the viewport. Composites and loops add
-no boxes. There is no measurement or general layout API; oversized content is
-clipped. The renderer walks a private template copy and retains independent
-physical state.
+Definitions compose explicit Flex/Grid `ContainerPart` boxes with constant
+engine-owned styles. Components resolve props and prepare state once; pure
+`Painter::measure` callbacks provide intrinsic content sizes, with shared text
+metrics. A temporary Taffy tree represents expanded loops and selected match
+arms without reevaluating expressions. Composites, loops, and matches add no
+implicit boxes. Taffy assigns per-instance border/content rectangles in logical
+units; painters receive final content-box dimensions and draw into one builder.
+
+Containers clip by default. Drawing, hover and pointer activation share ancestor
+clips; keyboard targets retain offscreen controls separately. The implicit root
+column has 16 logical pixels of padding and 8 pixels of gap, definite width and
+natural scrolling height. Each instance clamps the shared scroll request to its
+extent. The active pointer window renders first and recomputes shared hover
+against new geometry, then peers paint that same shared result. Compatible
+redraws preserve published action targets only with matching identities, target
+order, geometry and clips. Full layout runs on every normal frame initially;
+F11 exposes tree construction and solving separately.
+
+See the [layout guide](../crates/engine/src/layout/README.md) and
+[DR-016](<decisions/DR-016 Measure with painters and layout physical containers per UI instance.md>)
+for ownership, defaults, limitations and alternatives.
 
 See the [component API guide](../crates/engine/src/component_registry/README.md)
 and

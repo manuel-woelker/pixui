@@ -85,3 +85,11 @@ version until a valid save. With `--no-hot-reload`, catalogs use the embedded
 baseline. `--hot-reload` explicitly enables watching again.
 Translation export never starts a watcher, regardless of these flags.
 See [resource hot reload](../../crates/engine/src/resources/reload/README.md).
+
+## Layout
+
+The example uses explicit layout containers and painter intrinsic measurement.
+Images have bounded logical sizes; window resizing recomputes independent
+geometry. Containers clip by default. See the
+[layout guide](../../crates/engine/src/layout/README.md). The counter actions
+use equal fractional Grid columns inside the gallery column.

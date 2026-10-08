@@ -7,9 +7,10 @@ use pixui_engine::{
         button::ButtonProps, checkbox::CheckboxProps, image::ImageProps, label::LabelProps,
     },
     expression::{context::ExpressionContext, expression::Expression},
+    layout::{container::ContainerPart, grid::Track, style::LayoutStyle},
     live_model::{
         match_part::{MatchCandidate, MatchPart, MatchPattern},
-        part::{ComponentPart, CompositePart, ForLoopPart, LivePart},
+        part::{ComponentPart, ForLoopPart, LivePart},
     },
     painters::standard::StandardComponents,
     resources::path::ResourcePath,
@@ -90,7 +91,7 @@ pub fn definition(
     let checked = app.entity_ref::<bool>(slice, "checked")?;
     let count = app.entity_ref::<u64>(slice, "count")?;
     let samples = app.collection_key("showcase", "samples")?;
-    let parts = vec![
+    let mut parts = vec![
         label(components, Expression::text("PixUI · Widget showcase")?),
         label(
             components,
@@ -122,9 +123,12 @@ pub fn definition(
                 ),
             }],
         )?),
-        LivePart::Component(ComponentPart::typed(components.image, |_, _| {
-            ImageProps::new("images/pixui-logo.png")
-        })),
+        LivePart::Component(
+            ComponentPart::typed(components.image, |_, _| {
+                ImageProps::new("images/pixui-logo.png")
+            })
+            .with_layout(LayoutStyle::fixed(72.0, 72.0)),
+        ),
         button(components, "Add collection row", add_sample)?,
         LivePart::ForLoop(ForLoopPart {
             expression: Expression::from_collection(samples),
@@ -146,17 +150,27 @@ pub fn definition(
             Expression::text("Tab: focus · Enter/Space: activate · F11: performance")?,
         ),
     ];
-    Ok(
-        UiDefinition::new("showcase", LivePart::Composite(CompositePart { parts }))
-            .with_translation_domain("showcase")
-            .with_window_property_expressions(
-                vec![Expression::i18n(
-                    "PixUI Showcase — {count}",
-                    [("count", Expression::entity(count))],
-                )?],
-                window_properties,
-            ),
-    )
+    // Align the two actions in equal-width Grid columns; the enclosing column
+    // and all painters use the same layout path.
+    let actions = ContainerPart::grid()
+        .with_columns(vec![Track::fraction(1.0), Track::fraction(1.0)])
+        .with_gap(8.0)
+        .with_children(parts.drain(2..4).collect())
+        .into();
+    parts.insert(2, actions);
+    let root = ContainerPart::column()
+        .with_gap(8.0)
+        .with_children(parts)
+        .into();
+    Ok(UiDefinition::new("showcase", root)
+        .with_translation_domain("showcase")
+        .with_window_property_expressions(
+            vec![Expression::i18n(
+                "PixUI Showcase — {count}",
+                [("count", Expression::entity(count))],
+            )?],
+            window_properties,
+        ))
 }
 
 fn binding(context: &ExpressionContext<'_>, name: &'static str) -> PixuiResult<ActionBinding> {

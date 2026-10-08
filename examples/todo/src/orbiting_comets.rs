@@ -77,6 +77,15 @@ pub fn props(
 }
 
 impl Painter<OrbitingComets> for CometPainter {
+    fn measure(
+        &self,
+        context: &pixui_engine::painters::measure::MeasureContext<'_, OrbitingComets>,
+    ) -> PixuiResult<pixui_engine::ui::geometry::Size> {
+        Ok(context.constrain(pixui_engine::ui::geometry::Size {
+            width: 320.0,
+            height: 120.0,
+        }))
+    }
     fn paint(&self, context: &mut PaintContext<'_, OrbitingComets>) -> PixuiResult<()> {
         let slot = if context.settings.theme == Theme::Dark {
             1

@@ -12,9 +12,10 @@ use pixui_engine::{
         button::ButtonProps, checkbox::CheckboxProps, image::ImageProps, label::LabelProps,
     },
     expression::{context::ExpressionContext, expression::Expression},
+    layout::{container::ContainerPart, style::LayoutStyle},
     live_model::{
         match_part::{MatchCandidate, MatchPart, MatchPattern},
-        part::{ComponentPart, CompositePart, ForLoopPart, LivePart},
+        part::{ComponentPart, ForLoopPart, LivePart},
     },
     painters::standard::StandardComponents,
     ui::{activation::ActionBinding, definition::UiDefinition, presentation::PresentationSettings},
@@ -40,7 +41,8 @@ pub fn definition_with_assets(
     crate::translations::configure(application)?;
     let logo = ComponentPart::typed(components.image, |_, _| {
         ImageProps::new("images/pixui-logo.png")
-    });
+    })
+    .with_layout(LayoutStyle::fixed(72.0, 72.0));
     let todos = application.collection_key("todo", "todos")?;
     let slice = application.inspect(|app| Ok(app.slice_named("todo")?.id()))?;
     let hide_done = application.entity_ref::<bool>(slice, "hide_done")?;
@@ -65,76 +67,77 @@ pub fn definition_with_assets(
     });
     Ok(UiDefinition::new(
         "todos",
-        LivePart::Composite(CompositePart {
-            parts: vec![
-                LivePart::Component(ComponentPart::typed_with_expressions(
-                    components.label,
-                    vec![Expression::text("Todos")?],
-                    heading,
-                )),
-                LivePart::Component(
-                    ComponentPart::typed_with_expressions(
-                        components.button,
-                        vec![Expression::text("Add todo")?],
-                        add_button,
-                    )
-                    .with_activation(add_action),
-                ),
-                LivePart::Component(ComponentPart::typed(comets, orbiting_comets::props)),
-                LivePart::Match(MatchPart::new(
-                    Expression::entity(paused),
+        layout_parts(vec![
+            LivePart::Component(ComponentPart::typed_with_expressions(
+                components.label,
+                vec![Expression::text("Todos")?],
+                heading,
+            )),
+            LivePart::Component(
+                ComponentPart::typed_with_expressions(
+                    components.button,
+                    vec![Expression::text("Add todo")?],
+                    add_button,
+                )
+                .with_activation(add_action),
+            ),
+            LivePart::Component(
+                ComponentPart::typed(comets, orbiting_comets::props)
+                    .with_layout(LayoutStyle::fixed(320.0, 120.0)),
+            ),
+            LivePart::Match(MatchPart::new(
+                Expression::entity(paused),
+                vec![
+                    MatchCandidate {
+                        pattern: MatchPattern::value(false),
+                        part: LivePart::Component(
+                            ComponentPart::typed_with_expressions(
+                                components.button,
+                                vec![Expression::text("Pause animation")?],
+                                animation_button,
+                            )
+                            .with_activation(animation_action),
+                        ),
+                    },
+                    MatchCandidate {
+                        pattern: MatchPattern::value(true),
+                        part: LivePart::Component(
+                            ComponentPart::typed_with_expressions(
+                                components.button,
+                                vec![Expression::text("Resume animation")?],
+                                animation_button,
+                            )
+                            .with_activation(animation_action),
+                        ),
+                    },
+                ],
+            )?),
+            LivePart::Component(logo),
+            LivePart::Component(
+                ComponentPart::typed_with_expressions(
+                    components.checkbox,
                     vec![
-                        MatchCandidate {
-                            pattern: MatchPattern::value(false),
-                            part: LivePart::Component(
-                                ComponentPart::typed_with_expressions(
-                                    components.button,
-                                    vec![Expression::text("Pause animation")?],
-                                    animation_button,
-                                )
-                                .with_activation(animation_action),
-                            ),
-                        },
-                        MatchCandidate {
-                            pattern: MatchPattern::value(true),
-                            part: LivePart::Component(
-                                ComponentPart::typed_with_expressions(
-                                    components.button,
-                                    vec![Expression::text("Resume animation")?],
-                                    animation_button,
-                                )
-                                .with_activation(animation_action),
-                            ),
-                        },
+                        Expression::text("Hide completed")?,
+                        Expression::entity(hide_done),
                     ],
-                )?),
-                LivePart::Component(logo),
-                LivePart::Component(
-                    ComponentPart::typed_with_expressions(
-                        components.checkbox,
-                        vec![
-                            Expression::text("Hide completed")?,
-                            Expression::entity(hide_done),
-                        ],
-                        visibility_control,
-                    )
-                    .with_activation(visibility_action),
-                ),
-                LivePart::Match(MatchPart::new(
-                    Expression::entity(hide_done),
-                    vec![
-                        MatchCandidate {
-                            pattern: MatchPattern::value(false),
-                            part: all,
-                        },
-                        MatchCandidate {
-                            pattern: MatchPattern::value(true),
-                            part: incomplete,
-                        },
-                    ],
-                )?),
-            ],
-        }),
+                    visibility_control,
+                )
+                .with_activation(visibility_action),
+            ),
+            LivePart::Match(MatchPart::new(
+                Expression::entity(hide_done),
+                vec![
+                    MatchCandidate {
+                        pattern: MatchPattern::value(false),
+                        part: all,
+                    },
+                    MatchCandidate {
+                        pattern: MatchPattern::value(true),
+                        part: incomplete,
+                    },
+                ],
+            )?),
+        ]),
     )
     .with_translation_domain("todos")
     .with_window_property_expressions(
@@ -144,6 +147,19 @@ pub fn definition_with_assets(
         )?],
         window_properties,
     ))
+}
+
+/// Explicit composition preserves physical component order for interactions.
+fn layout_parts(mut parts: Vec<LivePart>) -> LivePart {
+    let header = ContainerPart::row()
+        .with_gap(12.0)
+        .with_children(parts.drain(..2).collect())
+        .into();
+    parts.insert(0, header);
+    ContainerPart::column()
+        .with_gap(8.0)
+        .with_children(parts)
+        .into()
 }
 
 fn window_properties(

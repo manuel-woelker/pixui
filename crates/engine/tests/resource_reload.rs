@@ -60,19 +60,24 @@ impl Drop for Directory {
     }
 }
 fn png(red: u8) -> Vec<u8> {
+    png_sized(1, 1, red)
+}
+fn png_sized(width: u32, height: u32, red: u8) -> Vec<u8> {
     let mut bytes = Vec::new();
     {
-        let mut encoder = png::Encoder::new(&mut bytes, 1, 1);
+        let mut encoder = png::Encoder::new(&mut bytes, width, height);
         encoder.set_color(png::ColorType::Rgba);
         encoder.set_depth(png::BitDepth::Eight);
+        let pixels: Vec<_> = (0..width * height).flat_map(|_| [red, 0, 0, 128]).collect();
         encoder
             .write_header()
             .unwrap()
-            .write_image_data(&[red, 0, 0, 128])
+            .write_image_data(&pixels)
             .unwrap();
     }
     bytes
 }
+
 fn catalog(text: &str) -> String {
     format!("msgid \"Save\"\nmsgstr \"{text}\"\n")
 }
@@ -229,11 +234,37 @@ fn images_and_po_reload_together_and_preserve_old_outputs() {
     }
     let old = output(&outputs[0], "Speichern", 10);
     output(&outputs[1], "Speichern", 10);
-    dir.write("next.png", png(20));
+    let first_instance = instances[0];
+    let old_height = app
+        .inspect(move |app| {
+            Ok(app
+                .uis()
+                .instance(first_instance)?
+                .layout()
+                .component_bounds[1]
+                .height)
+        })
+        .unwrap();
+    dir.write("next.png", png_sized(2, 1, 20));
     std::fs::rename(dir.0.join("next.png"), dir.0.join("logo.png")).unwrap();
     dir.write("next.po", catalog("Sichern"));
     std::fs::rename(dir.0.join("next.po"), dir.0.join("de.po")).unwrap();
     let new = output(&outputs[0], "Sichern", 20);
+    assert_eq!(new.display_list.images.iter().next().unwrap().width(), 2);
+    let new_height = app
+        .inspect(move |app| {
+            Ok(app
+                .uis()
+                .instance(first_instance)?
+                .layout()
+                .component_bounds[1]
+                .height)
+        })
+        .unwrap();
+    assert!(
+        new_height < old_height,
+        "changed image aspect ratio must relayout"
+    );
     output(&outputs[1], "Sichern", 20);
     assert_eq!(red(old.display_list.images.iter().next().unwrap()), 10);
     assert!(!Image::ptr_eq(

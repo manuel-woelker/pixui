@@ -32,6 +32,15 @@ pub(crate) fn register(
                         .map(|part| (part, depth + 1)),
                 );
             }
+            LivePart::Container(container) => {
+                pending.extend(
+                    container
+                        .children
+                        .iter_mut()
+                        .rev()
+                        .map(|part| (part, depth + 1)),
+                );
+            }
             LivePart::ForLoop(part) => {
                 registry.resolve(domain, &mut part.expression, 0)?;
                 pending.push((&mut part.body, depth + 1));

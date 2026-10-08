@@ -24,6 +24,15 @@ impl Component for ClockComponent {
 }
 struct ClockPainter;
 impl Painter<ClockComponent> for ClockPainter {
+    fn measure(
+        &self,
+        context: &pixui_engine::painters::measure::MeasureContext<'_, ClockComponent>,
+    ) -> PixuiResult<pixui_engine::ui::geometry::Size> {
+        Ok(context.constrain(pixui_engine::ui::geometry::Size {
+            width: 120.0,
+            height: 36.0,
+        }))
+    }
     fn paint(&self, context: &mut PaintContext<'_, ClockComponent>) -> PixuiResult<()> {
         context.text(
             Point::default(),

@@ -66,18 +66,24 @@ append fill, stroke, text, and clip commands. `with_clip` balances its own clip
 on ordinary errors. Directly emitted clips must also balance within the
 component.
 
-Draw relative to `(0, 0)`. Every component currently receives 36 logical pixels
-of height and the viewport width minus 32 pixels of outer padding, clamped to
-zero. Rows have 8 pixels of spacing. The renderer clamps scrolling after
-preparation. Paint contexts translate commands as they enter the shared builder
-and enforce local clip balance; the renderer clips each component and the
-viewport. There is no measurement or general layout API; oversized content is
-clipped.
+Draw relative to the allocated content box's `(0, 0)`. `Painter::measure`
+reports intrinsic content size through a read-only `MeasureContext`; convenient
+text metrics share painting's font and scale policy. Measurement may run many
+times and must not mutate state, emit commands, schedule work or perform I/O.
+Preparation and updates still run once per physical component.
+
+Definitions use explicit Flex/Grid containers and constant border-box styles.
+The layout solver assigns final per-instance dimensions; padding reduces the
+content box supplied to painting. Containers clip by default. See the
+[layout guide](../layout/README.md) for composition, sizing and scroll
+semantics. Paint contexts translate commands into the shared builder and enforce
+local clip balance. Errors discard partial geometry and commands.
 
 Painting must preserve interaction and should be deterministic for its inputs.
 Use the separate update callback for local transitions. Attach actions through
 `ComponentPart::with_activation`; painters do not invoke actions. Interactive
-hitboxes are the allocated row intersected with the viewport.
+hitboxes are allocated border boxes intersected with ancestor clips and the
+viewport. Keyboard targets are separate and include offscreen controls.
 
 One painter per component per application is supported. Different applications
 can register different painters; instances in one application share painters.

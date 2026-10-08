@@ -13,5 +13,8 @@ pub type ActionBinding = Box<dyn Fn(&Application) -> PixuiResult<ActionCall> + S
 
 /// Resolves the activation once per physical component per render, independently
 /// of its typed props and painter. No application borrows may escape.
+/// Bindings are published snapshots: compatible visual redraws may retain the
+/// previous binding. Retargeting requires content or presentation invalidation;
+/// factories must not rely on the passage of wall-clock time to retarget input.
 pub type ActivationFactory =
     for<'a> fn(&ExpressionContext<'a>, &PresentationSettings) -> PixuiResult<ActionBinding>;

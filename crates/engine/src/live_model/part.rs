@@ -19,6 +19,7 @@ pub type StateFactory = for<'a> fn(&DynamicObject<'a>) -> PixuiResult<GenericCom
 #[derive(Clone)]
 pub enum LivePart {
     Composite(CompositePart),
+    Container(crate::layout::container::ContainerPart),
     Component(ComponentPart),
     ForLoop(ForLoopPart),
     Match(super::match_part::MatchPart),
@@ -32,6 +33,7 @@ pub struct CompositePart {
 #[derive(Clone)]
 pub struct ComponentPart {
     pub create_state: StateFactory,
+    pub layout: crate::layout::style::LayoutStyle,
     pub(crate) expressions: Vec<Expression>,
     pub(crate) binding: Option<Arc<dyn ErasedBinding>>,
     pub(crate) activation: Option<ActivationFactory>,
@@ -41,6 +43,7 @@ impl ComponentPart {
     pub fn new(create_state: StateFactory) -> Self {
         Self {
             create_state,
+            layout: Default::default(),
             expressions: Vec::new(),
             binding: None,
             activation: None,
@@ -72,6 +75,7 @@ impl ComponentPart {
     ) -> Self {
         Self {
             create_state: |_| Ok(GenericComponentState::new(())),
+            layout: Default::default(),
             expressions,
             binding: Some(Arc::new(
                 crate::component_registry::binding::ExpressionBinding::<C> {
@@ -93,6 +97,7 @@ impl ComponentPart {
     ) -> Self {
         Self {
             create_state: |_| Ok(GenericComponentState::new(())),
+            layout: Default::default(),
             expressions: Vec::new(),
             binding: Some(Arc::new(Binding::<C> {
                 address: id.address,
@@ -108,6 +113,12 @@ impl ComponentPart {
     /// and hit testing remain the renderer's responsibility.
     pub fn with_activation(mut self, activation: ActivationFactory) -> Self {
         self.activation = Some(activation);
+        self
+    }
+
+    /// Constant border-box constraints for this physical leaf.
+    pub fn with_layout(mut self, layout: crate::layout::style::LayoutStyle) -> Self {
+        self.layout = layout;
         self
     }
 
@@ -128,4 +139,10 @@ pub struct ForLoopPart {
     pub expression: Expression,
     /// Reused for every element, with that element as the walking context.
     pub body: Box<LivePart>,
+}
+
+impl From<ComponentPart> for LivePart {
+    fn from(part: ComponentPart) -> Self {
+        Self::Component(part)
+    }
 }

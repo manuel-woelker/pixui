@@ -10,6 +10,12 @@ use pixui_engine::{
 pub struct CustomButtonPainter;
 
 impl Painter<ButtonComponent> for CustomButtonPainter {
+    fn measure(
+        &self,
+        context: &pixui_engine::painters::measure::MeasureContext<'_, ButtonComponent>,
+    ) -> PixuiResult<pixui_engine::ui::geometry::Size> {
+        ButtonPainter.measure(context)
+    }
     fn paint(&self, context: &mut PaintContext<'_, ButtonComponent>) -> PixuiResult<()> {
         ButtonPainter.paint(context)?;
         context.fill_rect(

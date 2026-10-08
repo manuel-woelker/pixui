@@ -10,6 +10,24 @@ use pixui_base::{PixuiResult, pixui_error};
 /// while preserving aspect ratio. No background is painted through transparency.
 pub struct ImagePainter;
 impl Painter<ImageComponent> for ImagePainter {
+    fn measure(
+        &self,
+        context: &crate::painters::measure::MeasureContext<'_, ImageComponent>,
+    ) -> PixuiResult<crate::ui::geometry::Size> {
+        let image = context
+            .state
+            .image()
+            .ok_or_else(|| pixui_error!("image component has not been prepared"))?;
+        let ratio = image.width() as f32 / image.height() as f32;
+        let width = context.constraints.width.unwrap_or_else(|| {
+            context
+                .constraints
+                .height
+                .map_or(image.width() as f32, |h| h * ratio)
+        });
+        let height = context.constraints.height.unwrap_or(width / ratio);
+        Ok(crate::ui::geometry::Size { width, height })
+    }
     fn paint(&self, context: &mut PaintContext<'_, ImageComponent>) -> PixuiResult<()> {
         let image = context
             .state

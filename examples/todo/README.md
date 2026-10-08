@@ -175,3 +175,12 @@ update after a short quiet period. Invalid/incomplete files keep the last good
 version until a valid save. With `--no-hot-reload`, catalogs use the embedded
 baseline. `--hot-reload` explicitly enables watching again.
 See [resource hot reload](../../crates/engine/src/resources/reload/README.md).
+
+## Layout
+
+The example uses explicit layout containers and painter intrinsic measurement.
+Images have bounded logical sizes; window resizing recomputes independent
+geometry. Containers clip by default. See the
+[layout guide](../../crates/engine/src/layout/README.md). The header uses a Flex
+row inside a column; the animated canvas has an explicit 320 by 120
+logical-pixel allocation.

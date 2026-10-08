@@ -34,7 +34,7 @@
         <mxCell id="11" value="UI / component / painter registries&lt;br&gt;&lt;br&gt;UiDefinition: reusable LivePart template&lt;br&gt;UiInstance: LiveState + PresentationSettings&lt;br&gt;LayoutState / hit regions / bindings&lt;br&gt;Focus / hover / scroll / revision" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B87537;fontSize=15;spacing=10;" parent="5" vertex="1">
           <mxGeometry x="25" y="225" width="480" height="170" as="geometry" />
         </mxCell>
-        <mxCell id="12" value="Prepare → paint into shared builder&lt;br&gt;&lt;br&gt;Default state + typed props / read-only state&lt;br&gt;Borrow collection elements during the walk&lt;br&gt;36px rows / clips / indexed Arc resources&lt;br&gt;Batch glyphs → immutable font atlases" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B87537;fontSize=15;spacing=10;" parent="5" vertex="1">
+        <mxCell id="12" value="Prepare → layout → shared paint builder&lt;br&gt;&lt;br&gt;Default state + typed props / read-only state&lt;br&gt;Borrow collection elements during the walk&lt;br&gt;Taffy Flex / Grid / clips / Arc resources&lt;br&gt;Batch glyphs → immutable font atlases" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B87537;fontSize=15;spacing=10;" parent="5" vertex="1">
           <mxGeometry x="25" y="455" width="480" height="145" as="geometry" />
         </mxCell>
         <mxCell id="7" value="Bounded MPSC command queue&lt;br&gt;&lt;br&gt;Actions, UI input, settings,&lt;br&gt;registration, inspection, close" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D8EAF2;strokeColor=#457B9D;fontSize=14;spacing=10;" parent="1" vertex="1">

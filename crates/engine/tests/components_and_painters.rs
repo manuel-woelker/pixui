@@ -59,6 +59,15 @@ struct CustomPainter {
     color: Cell<Color>,
 }
 impl<C: Component<Props = Props, State = State>> Painter<C> for CustomPainter {
+    fn measure(
+        &self,
+        context: &pixui_engine::painters::measure::MeasureContext<'_, C>,
+    ) -> PixuiResult<Size> {
+        Ok(context.constrain(Size {
+            width: 120.0,
+            height: 36.0,
+        }))
+    }
     fn paint(&self, context: &mut PaintContext<'_, C>) -> PixuiResult<()> {
         if context.props.fail {
             return Err(pixui_error!("custom painter failure"));
@@ -227,10 +236,7 @@ fn default_state_persists_props_refresh_and_updates_run_once_before_painting() {
     assert!(first.commands.iter().any(
         |command| matches!(command, DrawCommand::DrawText { text, .. } if text.starts_with("7 1 "))
     ));
-    assert_eq!(
-        geometry.component_bounds[0].height,
-        renderer::COMPONENT_HEIGHT
-    );
+    assert_eq!(geometry.component_bounds[0].height, 36.0);
     let settings = PresentationSettings {
         locale: "9".into(),
         viewport: Size {
@@ -476,6 +482,15 @@ fn shared_image_table_spans_multiple_component_painters() {
         image: Image,
     }
     impl Painter<Picture> for PicturePainter {
+        fn measure(
+            &self,
+            context: &pixui_engine::painters::measure::MeasureContext<'_, Picture>,
+        ) -> PixuiResult<pixui_engine::ui::geometry::Size> {
+            Ok(context.constrain(pixui_engine::ui::geometry::Size {
+                width: 120.0,
+                height: 36.0,
+            }))
+        }
         fn paint(&self, ctx: &mut PaintContext<'_, Picture>) -> PixuiResult<()> {
             ctx.image(&self.image, ctx.bounds());
             ctx.image(
@@ -539,6 +554,15 @@ fn shared_builder_guards_renderer_clips_even_when_painter_tries_to_rebalance() {
     }
     struct BadPainter(bool);
     impl Painter<BadClip> for BadPainter {
+        fn measure(
+            &self,
+            context: &pixui_engine::painters::measure::MeasureContext<'_, BadClip>,
+        ) -> PixuiResult<pixui_engine::ui::geometry::Size> {
+            Ok(context.constrain(pixui_engine::ui::geometry::Size {
+                width: 120.0,
+                height: 36.0,
+            }))
+        }
         fn paint(&self, ctx: &mut PaintContext<'_, BadClip>) -> PixuiResult<()> {
             if self.0 {
                 ctx.emit(DrawCommand::PopClip);

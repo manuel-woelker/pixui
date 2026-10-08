@@ -33,6 +33,15 @@ impl Component for Node {
 }
 struct CountingPainter(Arc<AtomicUsize>);
 impl Painter<Node> for CountingPainter {
+    fn measure(
+        &self,
+        context: &pixui_engine::painters::measure::MeasureContext<'_, Node>,
+    ) -> PixuiResult<pixui_engine::ui::geometry::Size> {
+        Ok(context.constrain(pixui_engine::ui::geometry::Size {
+            width: 120.0,
+            height: 36.0,
+        }))
+    }
     fn paint(&self, context: &mut PaintContext<'_, Node>) -> PixuiResult<()> {
         self.0.fetch_add(1, Ordering::SeqCst);
         context.fill_rect(context.bounds(), Color(1, 2, 3));

@@ -34,6 +34,7 @@ pub struct UiRegistry {
     definitions: HashMap<UiDefinitionId, UiDefinition>,
     names: HashMap<String, UiDefinitionId>,
     instances: HashMap<UiInstanceId, UiInstance>,
+    hover_sources: HashMap<UiDefinitionId, UiInstanceId>,
 }
 
 impl UiRegistry {
@@ -90,6 +91,8 @@ impl UiRegistry {
                 error: None,
                 animation_request: None,
                 visible: true,
+                pointer_position: None,
+                painted_hover: None,
                 overlay: Default::default(),
                 last_render: None,
                 diagnostics_dirty: false,
@@ -107,8 +110,9 @@ impl UiRegistry {
     pub fn close(&mut self, id: UiInstanceId) -> PixuiResult<()> {
         self.instances
             .remove(&id)
-            .map(|_| ())
-            .ok_or_else(|| pixui_error!("unknown UI instance"))
+            .ok_or_else(|| pixui_error!("unknown UI instance"))?;
+        self.refresh_hover();
+        Ok(())
     }
 
     /// Content changes invalidate positional focus/hover. Scroll is retained and
@@ -221,6 +225,7 @@ impl UiRegistry {
             UiCommand::Input { .. } => unreachable!(),
             UiCommand::Close { .. } => unreachable!(),
         }
+        self.refresh_hover();
         Ok(None)
     }
 
@@ -266,21 +271,30 @@ impl UiRegistry {
         let mut geometry_changed = false;
         let mut action = None;
         match intent {
-            InputIntent::ClearHover => state.hover = None,
+            InputIntent::ClearHover => {
+                instance.pointer_position = None;
+                if self.hover_sources.get(&definition) == Some(&id) {
+                    self.hover_sources.remove(&definition);
+                    state.hover = None;
+                }
+            }
             InputIntent::Hover(point) => {
-                let viewport = super::geometry::Rect {
-                    x: 0.0,
-                    y: 0.0,
-                    width: instance.settings.viewport.width,
-                    height: instance.settings.viewport.height,
-                };
+                instance.pointer_position = Some(point);
+                self.hover_sources.insert(definition, id);
                 state.hover = instance
                     .layout
-                    .component_bounds
+                    .component_clips
                     .iter()
-                    .rposition(|bounds| bounds.intersect(viewport).contains(point));
+                    .rposition(|bounds| bounds.contains(point));
             }
             InputIntent::Activate(point) => {
+                instance.pointer_position = Some(point);
+                self.hover_sources.insert(definition, id);
+                state.hover = instance
+                    .layout
+                    .component_clips
+                    .iter()
+                    .rposition(|bounds| bounds.contains(point));
                 let region = instance
                     .layout
                     .hit_regions
@@ -289,13 +303,15 @@ impl UiRegistry {
                     .find(|region| region.bounds.contains(point));
                 state.focus = region.map(|region| region.component_index);
                 action = region
-                    .map(|region| (region.activate)(application))
+                    .map(|region| {
+                        (instance.layout.focus_targets[region.target_index].activate)(application)
+                    })
                     .transpose()?;
             }
             InputIntent::ActivateFocused => {
                 let region = instance
                     .layout
-                    .hit_regions
+                    .focus_targets
                     .iter()
                     .find(|region| Some(region.component_index) == state.focus);
                 action = region
@@ -303,7 +319,7 @@ impl UiRegistry {
                     .transpose()?;
             }
             InputIntent::FocusNext { backwards } => {
-                let regions = &instance.layout.hit_regions;
+                let regions = &instance.layout.focus_targets;
                 let current = regions
                     .iter()
                     .position(|region| Some(region.component_index) == state.focus);
@@ -362,8 +378,17 @@ impl UiRegistry {
     pub fn render_dirty(&mut self, application: &Application) {
         self.instances
             .retain(|_, instance| instance.outputs.connected());
+        self.refresh_hover();
         let now = Instant::now();
-        for (id, instance) in &mut self.instances {
+        // Render active pointer sources first so peers paint the newly resolved
+        // shared hover in the same pass, rather than publishing a second frame.
+        let mut ids: Vec<_> = self.instances.keys().copied().collect();
+        ids.sort_by_key(|id| {
+            let instance = &self.instances[id];
+            self.hover_sources.get(&instance.definition) != Some(id)
+        });
+        for id in &ids {
+            let instance = self.instances.get_mut(id).expect("retained instance");
             if instance.window_properties_dirty {
                 instance.window_properties_dirty = false;
                 let definition = &self.definitions[&instance.definition];
@@ -400,7 +425,7 @@ impl UiRegistry {
                 continue;
             };
             let definition = &self.definitions[&instance.definition];
-            let result = renderer::render_measured(
+            let result = renderer::render_with_pointer(
                 &definition.template,
                 &mut instance.state,
                 application,
@@ -408,6 +433,11 @@ impl UiRegistry {
                 definition.state.scroll,
                 definition.state.focus,
                 definition.state.hover,
+                if self.hover_sources.get(&instance.definition) == Some(id) {
+                    instance.pointer_position
+                } else {
+                    None
+                },
             );
             match result {
                 Ok(renderer::RenderedUi {
@@ -417,6 +447,7 @@ impl UiRegistry {
                     redraw_after,
                     timings,
                     animating,
+                    hover,
                 }) => {
                     let mut output = RenderOutput {
                         instance_id: *id,
@@ -436,22 +467,24 @@ impl UiRegistry {
                     // Visual-only redraws retain their existing action targets.
                     // Older presented revisions remain usable while geometry and
                     // content identity are unchanged, avoiding animated click races.
-                    let same_geometry = layout.component_bounds == instance.layout.component_bounds
-                        && layout
-                            .hit_regions
-                            .iter()
-                            .map(|region| region.bounds)
-                            .eq(instance
-                                .layout
-                                .hit_regions
-                                .iter()
-                                .map(|region| region.bounds));
+                    let same_geometry = layout.compatible_with(&instance.layout);
                     if instance.redraw_only && !instance.geometry_stale && same_geometry {
-                        layout.hit_regions = std::mem::take(&mut instance.layout.hit_regions);
+                        // Explicitly keep the published target snapshot for a
+                        // compatible visual redraw. Content invalidation and
+                        // presentation changes always install fresh bindings.
+                        layout.focus_targets = std::mem::take(&mut instance.layout.focus_targets);
                     } else {
                         instance.compatible_revision = RenderRevision(revision);
                     }
                     instance.redraw_only = false;
+                    instance.painted_hover = hover;
+                    if self.hover_sources.get(&instance.definition) == Some(id) {
+                        self.definitions
+                            .get_mut(&instance.definition)
+                            .expect("registered definition")
+                            .state
+                            .hover = hover;
+                    }
                     instance.layout = layout;
                     instance.geometry_stale = false;
                     instance.error = None;
@@ -460,6 +493,58 @@ impl UiRegistry {
                     instance.outputs.publish(output);
                 }
                 Err(error) => instance.error = Some(format!("{error:?}")),
+            }
+            if self.hover_sources.get(&instance.definition) == Some(id) {
+                self.refresh_hover();
+            }
+        }
+        self.refresh_hover();
+    }
+
+    /// Only the most recently active pointer source can update shared hover.
+    /// Peers retain independent geometry without fighting over pointer state.
+    fn refresh_hover(&mut self) {
+        let sources: Vec<_> = self
+            .hover_sources
+            .iter()
+            .map(|(definition, instance)| (*definition, *instance))
+            .collect();
+        for (definition, id) in sources {
+            let source = self
+                .instances
+                .get(&id)
+                .filter(|instance| instance.visible && instance.outputs.connected());
+            let hover = source.and_then(|instance| {
+                instance.pointer_position.and_then(|point| {
+                    instance
+                        .layout
+                        .component_clips
+                        .iter()
+                        .rposition(|bounds| bounds.contains(point))
+                })
+            });
+            if source.is_none() {
+                self.hover_sources.remove(&definition);
+            }
+            let state = &mut self
+                .definitions
+                .get_mut(&definition)
+                .expect("registered definition")
+                .state;
+            state.hover = hover;
+            {
+                for peer in self
+                    .instances
+                    .values_mut()
+                    .filter(|peer| peer.definition == definition)
+                {
+                    if peer.painted_hover != hover {
+                        if !peer.dirty {
+                            peer.redraw_only = true;
+                        }
+                        peer.dirty = true;
+                    }
+                }
             }
         }
     }

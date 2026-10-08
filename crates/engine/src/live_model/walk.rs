@@ -56,6 +56,15 @@ pub fn walk<V: Visitor>(
             (LivePart::Composite(composite), PartState::Composite(state)) => {
                 stack.extend(composite.parts.iter_mut().zip(state.parts.iter_mut()).rev());
             }
+            (LivePart::Container(container), PartState::Container(state)) => {
+                stack.extend(
+                    container
+                        .children
+                        .iter_mut()
+                        .zip(state.parts.iter_mut())
+                        .rev(),
+                );
+            }
             (LivePart::Component(_), PartState::Component(_)) => {}
             (LivePart::Match(match_part), PartState::Match(state)) => {
                 let selected = match_part.select(&evaluate(context, &match_part.expression)?)?;
@@ -121,6 +130,17 @@ fn reconcile(
                 .parts
                 .resize_with(composite.parts.len(), || PartState::Unknown);
         }
+        LivePart::Container(container) => {
+            if !matches!(state, PartState::Container(_)) {
+                *state = PartState::Container(CompositeState::default());
+            }
+            let PartState::Container(state) = state else {
+                unreachable!()
+            };
+            state
+                .parts
+                .resize_with(container.children.len(), || PartState::Unknown);
+        }
         LivePart::Match(part) => {
             part.validate()?;
             if !matches!(state, PartState::Match(_)) {
@@ -161,6 +181,7 @@ mod tests {
                 LivePart::Composite(part) => {
                     writeln!(self.output, "Composite({} children)", part.parts.len()).unwrap();
                 }
+                LivePart::Container(_) => self.output.push_str("Container\n"),
                 LivePart::Component(_) => self.output.push_str("Component\n"),
                 LivePart::ForLoop(_) => self.output.push_str("ForLoop\n"),
                 LivePart::Match(_) => self.output.push_str("Match\n"),
@@ -274,6 +295,7 @@ mod tests {
             };
             let kind = match entry.part {
                 LivePart::Composite(_) => "Composite",
+                LivePart::Container(_) => "Container",
                 LivePart::Component(_) => "Component",
                 LivePart::ForLoop(_) => "ForLoop",
                 LivePart::Match(_) => "Match",

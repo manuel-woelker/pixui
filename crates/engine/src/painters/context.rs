@@ -124,6 +124,14 @@ impl<C: Component> PaintContext<'_, C> {
     pub fn font_metrics(&self, size: f32) -> PixuiResult<FontMetrics> {
         Ok(self.font_config(size)?.metrics())
     }
+    /// Centers an explicit multiline text block, without introducing wrapping.
+    /// Each additional baseline advances by the same line height as drawing.
+    pub fn centered_text_baseline(&self, text: &str, size: f32) -> PixuiResult<f32> {
+        let config = self.font_config(size)?;
+        let metrics = config.metrics();
+        let height = config.measure_text(text)?.height;
+        Ok(metrics.centered_baseline(self.height) - (height - metrics.line_height) / 2.0)
+    }
     pub fn measure_text(&self, text: &str, size: f32) -> PixuiResult<Size> {
         self.display.measure_text(&self.font_config(size)?, text)
     }

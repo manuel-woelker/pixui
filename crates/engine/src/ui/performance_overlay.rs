@@ -81,6 +81,8 @@ impl PerformanceOverlay {
         );
         for (label, duration) in [
             ("Prepare:", worker.preparation),
+            ("Layout tree:", worker.tree_construction),
+            ("Layout:", worker.layout),
             ("Paint:", worker.painting),
             ("Text / finalize:", worker.text),
         ] {

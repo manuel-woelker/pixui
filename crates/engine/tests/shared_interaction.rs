@@ -35,6 +35,15 @@ impl Component for Node {
 }
 struct NodePainter;
 impl Painter<Node> for NodePainter {
+    fn measure(
+        &self,
+        context: &pixui_engine::painters::measure::MeasureContext<'_, Node>,
+    ) -> PixuiResult<pixui_engine::ui::geometry::Size> {
+        Ok(context.constrain(pixui_engine::ui::geometry::Size {
+            width: 120.0,
+            height: 36.0,
+        }))
+    }
     fn paint(&self, context: &mut PaintContext<'_, Node>) -> PixuiResult<()> {
         context.fill_rect(
             context.bounds(),
@@ -178,6 +187,8 @@ fn every_component_can_hover_and_focus_is_shared_but_other_definitions_are_isola
         visible: false,
     })
     .unwrap();
+    // Hiding the active pointer source clears shared hover immediately.
+    assert_eq!(colors(&output(&a))[2], Color(0, 0, 0));
     let revision = app
         .inspect(move |app| Ok(app.uis().instance(first)?.revision()))
         .unwrap();

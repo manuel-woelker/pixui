@@ -38,37 +38,42 @@ until keyed reconciliation is implemented.
 ## Shared interaction
 
 `UiRegistry::definition(id)?.state()` exposes shared focus, hover and requested
-scrolling. Hover hit testing uses all prepared component bounds, not just action
-hit regions. The engine supplies `PaintContext::hovered` to every painter;
-components without activation can still draw a hover effect. Focus traversal
-visits only components with activation. Both refer to component order, including
-noninteractive components, so an action hit-region index is not a component
-index.
+scrolling. Hover hit testing uses all prepared component bounds intersected with
+ancestor clips and the viewport, not just action hit regions. The engine
+supplies `PaintContext::hovered` to every painter; components without activation
+can still draw a hover effect. Focus traversal visits all components with
+activation, including offscreen controls, through a separate keyboard target
+list. Both refer to component order, including noninteractive components, so an
+action hit-region index is not a component index.
 
-The latest processed pointer input wins across windows; leaving a window clears
-shared hover. Interaction does not affect other definitions. Hidden instances
-retain pending updates and reflect shared state when shown. Scroll changes
-invalidate geometry for all peers; each clamps the shared requested offset to
-its viewport without changing the shared value during rendering. Focus and hover
-changes retain compatible input revisions while geometry is unchanged.
+The latest processed pointer input selects the hover source window. Retained
+pointer position is retested after layout. Leaving, hiding, or closing that
+source clears shared hover; an inactive peer cannot clear it. Interaction does
+not affect other definitions. Hidden instances retain pending updates and
+reflect shared state when shown. Scroll changes invalidate geometry for all
+peers; each clamps the shared requested offset to its viewport without changing
+the shared value during rendering. Focus and hover changes retain compatible
+input revisions while geometry is unchanged.
 
 Component identity currently follows prepared tree positions. Instances sharing
 a definition must retain corresponding component order; independent conditional
 structures need stable component keys before sharing interaction safely. Content
 invalidation clears positional focus and hover. Closing a window preserves
-shared state for other or future instances.
+shared focus and scrolling; closing the active pointer source clears hover.
 
 ## Outputs and input
 
-The renderer prepares typed props and paints constant-height rows, translates
-and clips local commands, and generates a complete `RenderOutput`. Every row is
-36 logical pixels high; text overflow is clipped. Its `DisplayList` contains
-ordered rectangle, stroke, text, image, and clipping commands in logical
-pixels. Text references immutable indexed grayscale font atlases prepared in a
-worker batch. Embedded Geist supplies Latin glyphs, real metrics, and coverage
-antialiasing. Complex shaping, bidi, kerning, and system fallback remain outside
-the initial scope. See [text drawing](Text.md) for baseline placement, font
-acquisition, cache limits, and DPI behavior.
+The renderer prepares typed props once, builds a physical Flex/Grid tree,
+measures through painters, solves layout, and paints into a shared builder.
+Containers clip by default; text remains unwrapped and clipped. See the
+[layout guide](../layout/README.md) for sizing, scrolling, and box contracts. A
+complete `RenderOutput` and matching input geometry are published together. Its
+`DisplayList` contains ordered rectangle, stroke, text, image, and clipping
+commands in logical pixels. Text references immutable indexed grayscale font
+atlases prepared in a worker batch. Embedded Geist supplies Latin glyphs, real
+metrics, and coverage antialiasing. Complex shaping, bidi, kerning, and system
+fallback remain outside the initial scope. See [text drawing](Text.md) for
+baseline placement, font acquisition, cache limits, and DPI behavior.
 
 Named entities use `Expression::entity(object_ref)` for direct reflected value
 access, without a singleton collection loop. Resolve slice-local names during

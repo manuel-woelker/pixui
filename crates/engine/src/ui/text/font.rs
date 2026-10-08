@@ -79,6 +79,24 @@ impl FontConfig {
         self.face.0.line_metrics(self.size, self.scale)
     }
 
+    /// Widest normalized unkerned line and total explicit-line height. No
+    /// wrapping, shaping, display-list mutation, or coverage allocation occurs.
+    pub fn measure_text(&self, text: &str) -> PixuiResult<crate::ui::geometry::Size> {
+        let text = normalize(text)?;
+        let width = text
+            .split('\n')
+            .map(|line| {
+                line.chars()
+                    .map(|character| self.face.0.advance(character, self.size, self.scale))
+                    .sum::<f32>()
+            })
+            .fold(0.0_f32, f32::max);
+        Ok(crate::ui::geometry::Size {
+            width,
+            height: text.split('\n').count() as f32 * self.metrics().line_height,
+        })
+    }
+
     pub(crate) fn key(&self) -> FontKey {
         FontKey(
             self.face.identity(),

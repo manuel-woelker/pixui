@@ -5,9 +5,24 @@ use crate::{
 };
 use pixui_base::PixuiResult;
 
+const TEXT_X: f32 = 32.0;
+const TRAILING_INSET: f32 = 8.0;
+const MIN_HEIGHT: f32 = 32.0;
+const TEXT_SIZE: f32 = 16.0;
+
 #[derive(Default)]
 pub struct CheckboxPainter;
 impl Painter<CheckboxComponent> for CheckboxPainter {
+    fn measure(
+        &self,
+        context: &crate::painters::measure::MeasureContext<'_, CheckboxComponent>,
+    ) -> PixuiResult<crate::ui::geometry::Size> {
+        let text = context.measure_text(&context.props.label, TEXT_SIZE)?;
+        Ok(context.constrain(crate::ui::geometry::Size {
+            width: text.width + TEXT_X + TRAILING_INSET,
+            height: text.height.max(MIN_HEIGHT),
+        }))
+    }
     fn paint(&self, context: &mut PaintContext<'_, CheckboxComponent>) -> PixuiResult<()> {
         let palette = Palette::for_theme(context.settings.theme);
         context.fill_rect(context.bounds(), palette.control);
@@ -34,13 +49,11 @@ impl Painter<CheckboxComponent> for CheckboxPainter {
         }
         context.text(
             Point {
-                x: 32.0,
-                y: context
-                    .font_metrics(16.0)?
-                    .centered_baseline(context.height),
+                x: TEXT_X,
+                y: context.centered_text_baseline(&context.props.label, TEXT_SIZE)?,
             },
             &context.props.label,
-            16.0,
+            TEXT_SIZE,
             palette.foreground,
         )?;
         Ok(())

@@ -27,7 +27,14 @@ pub(crate) struct PaintInput<'a> {
     pub timestamp_us: u64,
 }
 
+pub(crate) struct MeasureInput<'a> {
+    pub props: &'a dyn Any,
+    pub state: &'a GenericComponentState,
+    pub settings: &'a PresentationSettings,
+    pub constraints: super::measure::MeasureConstraints,
+}
 trait ErasedPainter: Send {
+    fn measure(&self, input: MeasureInput<'_>) -> PixuiResult<crate::ui::geometry::Size>;
     fn paint(&self, input: PaintInput<'_>, display: &mut DisplayListBuilder) -> PixuiResult<()>;
 }
 
@@ -36,6 +43,30 @@ struct Adapter<C: Component, P: Painter<C>> {
     marker: std::marker::PhantomData<fn() -> C>,
 }
 impl<C: Component, P: Painter<C>> ErasedPainter for Adapter<C, P> {
+    fn measure(&self, input: MeasureInput<'_>) -> PixuiResult<crate::ui::geometry::Size> {
+        let props = input
+            .props
+            .downcast_ref::<C::Props>()
+            .ok_or_else(|| pixui_error!("measurement props type mismatch"))?;
+        let state = input
+            .state
+            .downcast_ref::<C::State>()
+            .ok_or_else(|| pixui_error!("measurement state type mismatch"))?;
+        let size = self.painter.measure(&super::measure::MeasureContext {
+            props,
+            state,
+            settings: input.settings,
+            constraints: input.constraints,
+        })?;
+        if !size.width.is_finite()
+            || !size.height.is_finite()
+            || size.width < 0.0
+            || size.height < 0.0
+        {
+            return Err(pixui_error!("painter returned invalid measured size"));
+        }
+        Ok(size)
+    }
     fn paint(&self, input: PaintInput<'_>, display: &mut DisplayListBuilder) -> PixuiResult<()> {
         let props = input.props.downcast_ref::<C::Props>().ok_or_else(|| {
             pixui_error!(
@@ -136,6 +167,20 @@ impl PainterRegistry {
             ));
         }
         Ok(())
+    }
+
+    pub(crate) fn measure(
+        &self,
+        address: ComponentAddress,
+        components: &ComponentRegistry,
+        input: MeasureInput<'_>,
+    ) -> PixuiResult<crate::ui::geometry::Size> {
+        self.require(address, components.resolve(address)?)?;
+        self.entries[address.index]
+            .as_ref()
+            .expect("painter checked")
+            .1
+            .measure(input)
     }
 
     pub(crate) fn paint(

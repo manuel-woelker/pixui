@@ -116,12 +116,17 @@ impl ComponentRegistry {
         while let Some(part) = pending.pop() {
             match part {
                 LivePart::Composite(composite) => pending.extend(&composite.parts),
+                LivePart::Container(container) => {
+                    container.to_taffy()?;
+                    pending.extend(&container.children);
+                }
                 LivePart::ForLoop(part) => pending.push(&part.body),
                 LivePart::Match(part) => {
                     part.validate()?;
                     pending.extend(part.candidates.iter().map(|candidate| &candidate.part));
                 }
                 LivePart::Component(part) => {
+                    part.layout.to_taffy()?;
                     if let Some(address) = part.component_address() {
                         let descriptor = self.resolve(address)?;
                         painters.require(address, descriptor)?;

@@ -6,6 +6,10 @@ use std::{collections::HashSet, mem::size_of, time::Duration};
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct WorkerTimings {
     pub preparation: Duration,
+    pub tree_construction: Duration,
+    /// Solver probes plus geometry/clip extraction and scroll transforms.
+    pub layout: Duration,
+    pub measurements: usize,
     pub painting: Duration,
     pub text: Duration,
 }

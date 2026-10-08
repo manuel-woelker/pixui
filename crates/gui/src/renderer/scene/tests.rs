@@ -407,3 +407,91 @@ fn rgba_alpha_matches_software_without_double_premultiplication() {
         }
     }
 }
+
+/// Build commands with the actual engine layout path, then feed the identical
+/// display list to both backends. Fixed clipping must survive the translation.
+#[test]
+fn gpu_and_software_draw_engine_flex_and_grid_layouts_with_the_same_clips() {
+    use pixui_base::PixuiResult;
+    use pixui_engine::{
+        application::app::Application,
+        layout::{container::ContainerPart, grid::Track, style::LayoutStyle},
+        live_model::{component::Component, part::ComponentPart, state::LiveState},
+        painters::{context::PaintContext, measure::MeasureContext, painter::Painter},
+        ui::{geometry::Size, presentation::PresentationSettings, renderer},
+    };
+    struct Tile;
+    impl Component for Tile {
+        type Props = ();
+        type State = ();
+    }
+    struct TilePainter;
+    impl Painter<Tile> for TilePainter {
+        fn measure(&self, context: &MeasureContext<'_, Tile>) -> PixuiResult<Size> {
+            Ok(context.constrain(Size {
+                width: 40.0,
+                height: 20.0,
+            }))
+        }
+        fn paint(&self, context: &mut PaintContext<'_, Tile>) -> PixuiResult<()> {
+            context.fill_rect(context.bounds(), Color(20, 180, 40));
+            Ok(())
+        }
+    }
+    let mut app = Application::default();
+    let id = app.register_component::<Tile>("tile").unwrap();
+    app.register_painter::<Tile>(TilePainter).unwrap();
+    let gpu = gpu();
+    let mut scene = gpu
+        .as_ref()
+        .map(|gpu| Scene::new(gpu.device.clone(), gpu.queue.clone(), DEFAULT_CACHE_BYTES).unwrap());
+    for grid in [false, true] {
+        let container = if grid {
+            ContainerPart::grid().with_columns(vec![Track::fraction(1.0)])
+        } else {
+            ContainerPart::column()
+        };
+        let root = container
+            .with_layout(LayoutStyle::fixed(16.0, 16.0))
+            .with_children(vec![
+                ComponentPart::typed(id, |_, _| Ok(()))
+                    .with_layout(LayoutStyle::fixed(40.0, 20.0))
+                    .into(),
+            ])
+            .into();
+        let display = renderer::render(
+            &root,
+            &mut LiveState::new(),
+            &app,
+            &PresentationSettings {
+                viewport: Size {
+                    width: 64.0,
+                    height: 64.0,
+                },
+                ..Default::default()
+            },
+            0.0,
+            None,
+            None,
+        )
+        .unwrap()
+        .0;
+        for scale in [1.0, 1.5, 2.0] {
+            let cpu = crate::painter::paint(&display, 64, 64, scale).unwrap();
+            let inside = (20.0 * scale) as usize;
+            let outside = (34.0 * scale) as usize;
+            assert_eq!(cpu[inside * 64 + inside], 0x14b428);
+            if outside < 64 {
+                assert_ne!(cpu[inside * 64 + outside], 0x14b428);
+            }
+            if let (Some(gpu), Some(scene)) = (&gpu, &mut scene) {
+                let pixels = render(scene, gpu, &display, scale);
+                for (rgba, pixel) in pixels.as_chunks::<4>().0.iter().zip(cpu) {
+                    assert!((i16::from(rgba[0]) - ((pixel >> 16) & 255) as i16).abs() <= 3);
+                    assert!((i16::from(rgba[1]) - ((pixel >> 8) & 255) as i16).abs() <= 3);
+                    assert!((i16::from(rgba[2]) - (pixel & 255) as i16).abs() <= 3);
+                }
+            }
+        }
+    }
+}

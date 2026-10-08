@@ -3,6 +3,7 @@ pub mod checkbox;
 pub mod context;
 pub mod image;
 pub mod label;
+pub mod measure;
 pub mod painter;
 pub mod palette;
 pub mod registry;

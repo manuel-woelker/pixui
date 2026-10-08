@@ -14,6 +14,12 @@ pub struct HitRegion {
     pub bounds: Rect,
     /// Component position in the prepared tree, including noninteractive nodes.
     pub component_index: usize,
+    pub(crate) target_index: usize,
+}
+
+/// Keyboard targets include clipped and offscreen components in physical preorder.
+pub struct FocusTarget {
+    pub component_index: usize,
     pub(crate) activate: ActionBinding,
 }
 
@@ -23,9 +29,44 @@ pub struct HitRegion {
 pub struct LayoutState {
     pub component_bounds: Vec<Rect>,
     pub hit_regions: Vec<HitRegion>,
+    pub focus_targets: Vec<FocusTarget>,
+    pub content_bounds: Vec<Rect>,
+    pub component_clips: Vec<Rect>,
+    pub container_bounds: Vec<Rect>,
+    pub(crate) component_addresses: Vec<crate::component_registry::component_id::ComponentAddress>,
+    pub(crate) activation_factories: Vec<Option<usize>>,
     pub content_height: f32,
     /// Derived geometry: shared requested scroll clamped for this viewport.
     pub scroll_offset: f32,
+}
+
+impl LayoutState {
+    /// Geometry and registration compatibility for retaining the already
+    /// published action snapshot. Content/presentation invalidation separately
+    /// forbids reuse; closures cannot be compared for captured-value equality.
+    pub(crate) fn compatible_with(&self, previous: &Self) -> bool {
+        self.component_bounds == previous.component_bounds
+            && self.content_bounds == previous.content_bounds
+            && self.component_clips == previous.component_clips
+            && self.component_addresses == previous.component_addresses
+            && self.activation_factories == previous.activation_factories
+            && self
+                .focus_targets
+                .iter()
+                .map(|target| target.component_index)
+                .eq(previous
+                    .focus_targets
+                    .iter()
+                    .map(|target| target.component_index))
+            && self
+                .hit_regions
+                .iter()
+                .map(|region| (region.bounds, region.component_index, region.target_index))
+                .eq(previous
+                    .hit_regions
+                    .iter()
+                    .map(|region| (region.bounds, region.component_index, region.target_index)))
+    }
 }
 
 /// All geometry and interaction live on the application worker. Layout belongs
@@ -49,6 +90,8 @@ pub struct UiInstance {
     pub(crate) error: Option<String>,
     pub(crate) animation_request: Option<u64>,
     pub(crate) visible: bool,
+    pub(crate) painted_hover: Option<usize>,
+    pub(crate) pointer_position: Option<super::geometry::Point>,
     pub(crate) overlay: super::performance_overlay::PerformanceOverlay,
     /// Unadorned last successful render, reused for diagnostic-only refreshes.
     pub(crate) last_render: Option<super::display_list::RenderOutput>,
