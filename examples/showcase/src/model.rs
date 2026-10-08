@@ -1,5 +1,5 @@
 //! Shared gallery data and actions, independent of native windows.
-use pixui_base::{Arena, PixuiResult};
+use pixui_base::{Arena, PixuiResult, pixui_error};
 use pixui_engine::application::{
     action::slice_actions, application_handle::ApplicationHandle,
     application_slice::ApplicationSlice, collection::Collection, entity_mut::EntityMut,
@@ -17,6 +17,16 @@ pub mod data {
 pub mod actions {
     use super::*;
     use data::Sample;
+
+    /// Select a gallery page in every presentation, preserving demo data.
+    #[action]
+    pub fn select(mut selected: EntityMut<u64>, page: u64) -> PixuiResult<()> {
+        if page >= 5 {
+            return Err(pixui_error!("unknown showcase page"));
+        }
+        *selected = page;
+        Ok(())
+    }
 
     /// Increase the shared counter in both windows.
     #[action]
@@ -59,6 +69,7 @@ pub fn register(application: &ApplicationHandle) -> PixuiResult<()> {
         application.register_collection(Collection::new_reflected::<data::Sample>("samples"))?;
     slice.bind_collection("samples", samples)?;
     slice.bind("count", 0_u64)?;
+    slice.bind("selected", 0_u64)?;
     slice.bind("checked", false)?;
     slice.bind("details", true)?;
     let id = application.add_slice(slice)?;

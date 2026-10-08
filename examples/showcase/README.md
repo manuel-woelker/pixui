@@ -16,6 +16,10 @@ GPU initialization errors instead of falling back to software.
 
 ## Try it
 
+Choose a component category in the left pane; the right pane shows only that
+example. The title spans both columns. The selected category is shared across
+both windows. Switching pages preserves counters, flags, and rows.
+
 - **Buttons:** increment and reset a shared counter. Both windows and their
   native titles update together.
 - **Checkboxes:** toggle an independent boolean and show/hide an explanatory
@@ -45,8 +49,10 @@ Runtime window icons on Wayland require compositor support for
 - [gallery tests](tests/gallery.rs): real worker rendering and input dispatch
   without native windows.
 
-Layout currently uses the engine's constant-height vertical rows. The image
-fits within one row; this example does not introduce a separate layout system.
+Layout uses a header above a two-column Grid: a 200-pixel navigation pane and
+a flexible detail pane. Both panes align at the top. Navigation buttons fill the
+fixed sidebar in every language. Usage hints sit in a full-width footer at the
+bottom of the window; overflowing content remains scrollable.
 Tests cover actions, keyboard activation, conditional content, resource sharing,
 and synchronized window outputs. Native appearance needs manual verification.
 
@@ -91,5 +97,6 @@ See [resource hot reload](../../crates/engine/src/resources/reload/README.md).
 The example uses explicit layout containers and painter intrinsic measurement.
 Images have bounded logical sizes; window resizing recomputes independent
 geometry. Containers clip by default. See the
-[layout guide](../../crates/engine/src/layout/README.md). The counter actions
-use equal fractional Grid columns inside the gallery column.
+[layout guide](../../crates/engine/src/layout/README.md). The header and footer
+span both panes. Counter actions use a nested Flex row; images are shown only on
+the Images page.

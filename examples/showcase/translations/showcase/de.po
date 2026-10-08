@@ -32,3 +32,21 @@ msgstr "Tab: Fokus · Enter/Leertaste: aktivieren · F11: Leistung"
 
 msgid "PixUI Showcase — {count}"
 msgstr "PixUI Komponenten — {count}"
+
+msgid "Components"
+msgstr "Komponenten"
+
+msgid "Buttons"
+msgstr "Schaltflächen"
+
+msgid "Checkboxes"
+msgstr "Kontrollkästchen"
+
+msgid "Images"
+msgstr "Bilder"
+
+msgid "Collections"
+msgstr "Sammlungen"
+
+msgid "Text and translations"
+msgstr "Text und Übersetzungen"
