@@ -1,9 +1,10 @@
+use super::identity::{ComponentPath, ItemKey, PathSegment};
 use crate::expression::{context::ExpressionContext, evaluator::evaluate};
 use crate::live_model::{
     part::LivePart,
     state::{ComponentState, CompositeState, ForLoopState, MatchState, PartState},
 };
-use pixui_base::PixuiResult;
+use pixui_base::{PixuiResult, pixui_error};
 use pixui_reflect::DynamicObject;
 
 pub struct Walk {}
@@ -12,6 +13,8 @@ pub struct WalkEntry<'part, 'context> {
     pub part: &'part mut LivePart,
     /// Persistent state for this physical node, initialized before visitation.
     pub state: &'part mut PartState,
+    /// Structural occurrence identity in this traversal.
+    pub path: ComponentPath,
     /// Expression inputs: optional application and current root or loop element.
     pub context: &'context ExpressionContext<'context>,
 }
@@ -23,8 +26,9 @@ pub trait Visitor {
 /// Walks the template and updates its physical state in depth-first sequence order.
 ///
 /// Unknown and mismatched state variants are initialized when reached. Composite
-/// children and loop items retain state by position; newly added entries start
-/// Unknown and removed entries are dropped. Each loop item has an independent body
+/// children retain state by position. Keyed loop items retain state by key; other
+/// loop items retain state by position. New entries start Unknown; removed entries
+/// are dropped. Each loop item has an independent body
 /// state, even though all items reuse the same mutable template body.
 /// Loop expressions can select application collections or fields of the current
 /// value. Nested loops replace that value while retaining application access.
@@ -32,8 +36,9 @@ pub trait Visitor {
 /// Visitors see initialized state. Template edits are reconciled again after the
 /// visit, before descent. Loop item counts are reconciled after resolving the
 /// sequence. Errors stop traversal without rollback; unvisited entries can remain
-/// Unknown. Reordering items does not preserve their identity: keyed reconciliation
-/// is not implemented. Loop nesting remains recursive, while composites and matches use a stack.
+/// Unknown. Collection loops use generational arena keys automatically. Other
+/// loops can provide immutable keys or retain positional identity. Loop nesting
+/// remains recursive, while composites and matches use a stack.
 /// Match visitors see the previous selection; selection is refreshed once after
 /// visiting, before descending with the unchanged context. Only the active arm
 /// retains state. Switching or losing selection drops its previous subtree.
@@ -43,18 +48,39 @@ pub fn walk<V: Visitor>(
     context: &ExpressionContext<'_>,
     visitor: &mut V,
 ) -> PixuiResult<()> {
-    let mut stack = vec![(root, root_state)];
-    while let Some((part, state)) = stack.pop() {
+    walk_at(root, root_state, context, visitor, ComponentPath::default())
+}
+
+fn walk_at<V: Visitor>(
+    root: &mut LivePart,
+    root_state: &mut PartState,
+    context: &ExpressionContext<'_>,
+    visitor: &mut V,
+    root_path: ComponentPath,
+) -> PixuiResult<()> {
+    let mut stack = vec![(root, root_state, root_path)];
+    while let Some((part, state, path)) = stack.pop() {
         reconcile(part, state, context)?;
         visitor.visit(&mut WalkEntry {
             part,
             state,
             context,
+            path: path.clone(),
         })?;
         reconcile(part, state, context)?;
         match (part, state) {
             (LivePart::Composite(composite), PartState::Composite(state)) => {
-                stack.extend(composite.parts.iter_mut().zip(state.parts.iter_mut()).rev());
+                stack.extend(
+                    composite
+                        .parts
+                        .iter_mut()
+                        .zip(state.parts.iter_mut())
+                        .enumerate()
+                        .rev()
+                        .map(|(index, (part, state))| {
+                            (part, state, path.child(PathSegment::Child(index)))
+                        }),
+                );
             }
             (LivePart::Container(container), PartState::Container(state)) => {
                 stack.extend(
@@ -62,7 +88,11 @@ pub fn walk<V: Visitor>(
                         .children
                         .iter_mut()
                         .zip(state.parts.iter_mut())
-                        .rev(),
+                        .enumerate()
+                        .rev()
+                        .map(|(index, (part, state))| {
+                            (part, state, path.child(PathSegment::Child(index)))
+                        }),
                 );
             }
             (LivePart::Component(_), PartState::Component(_)) => {}
@@ -73,27 +103,91 @@ pub fn walk<V: Visitor>(
                     state.selected = selected;
                 }
                 if let Some(index) = selected {
-                    stack.push((&mut match_part.candidates[index].part, &mut state.part));
+                    stack.push((
+                        &mut match_part.candidates[index].part,
+                        &mut state.part,
+                        path.child(PathSegment::MatchArm(index)),
+                    ));
                 }
             }
 
             (LivePart::ForLoop(for_loop), PartState::ForLoop(state)) => {
                 let sequence = evaluate(context, &for_loop.expression)?;
-                state
-                    .items
-                    .resize_with(sequence.len()?, || PartState::Unknown);
-                for (item, item_state) in sequence.iter()?.zip(state.items.iter_mut()) {
-                    walk(
+                let items = sequence.iter()?.collect::<Vec<_>>();
+                let keys = if let Some(key) = for_loop.key {
+                    Some(
+                        items
+                            .iter()
+                            .map(|item| key(&context.with_value(item)))
+                            .collect::<PixuiResult<Vec<_>>>()?,
+                    )
+                } else if let crate::expression::expression::ExpressionKind::Collection(index) =
+                    for_loop.expression.kind()
+                {
+                    Some(
+                        context
+                            .application()?
+                            .resolve_collection(*index)?
+                            .sequence_keys()?
+                            .into_iter()
+                            .map(ItemKey::Arena)
+                            .collect(),
+                    )
+                } else {
+                    None
+                };
+                reconcile_items(state, keys, items.len())?;
+                for (index, (item, item_state)) in
+                    items.iter().zip(state.items.iter_mut()).enumerate()
+                {
+                    let segment = match &state.keys {
+                        Some(keys) => PathSegment::LoopKey(keys[index].clone()),
+                        None => PathSegment::LoopItem(index),
+                    };
+                    walk_at(
                         &mut for_loop.body,
                         item_state,
-                        &context.with_value(&item),
+                        &context.with_value(item),
                         visitor,
+                        path.child(segment),
                     )?;
                 }
             }
             _ => unreachable!("state reconciled with template"),
         }
     }
+    Ok(())
+}
+
+/// Validate keys before moving state, so duplicate failures retain the old entries.
+fn reconcile_items(
+    state: &mut ForLoopState,
+    keys: Option<Vec<ItemKey>>,
+    len: usize,
+) -> PixuiResult<()> {
+    if let Some(keys) = &keys
+        && (keys.len() != len || keys.iter().collect::<std::collections::HashSet<_>>().len() != len)
+    {
+        return Err(pixui_error!("duplicate or mismatched loop item keys"));
+    }
+    match (&state.keys, &keys) {
+        (Some(_), Some(_)) => {
+            let previous_keys = state.keys.take().expect("keyed state");
+            let mut previous: std::collections::HashMap<_, _> = previous_keys
+                .into_iter()
+                .zip(std::mem::take(&mut state.items))
+                .collect();
+            state.items = keys
+                .as_ref()
+                .expect("keyed loop")
+                .iter()
+                .map(|key| previous.remove(key).unwrap_or_default())
+                .collect();
+        }
+        (None, None) => state.items.resize_with(len, || PartState::Unknown),
+        _ => state.items = (0..len).map(|_| PartState::Unknown).collect(),
+    }
+    state.keys = keys;
     Ok(())
 }
 
@@ -248,6 +342,7 @@ mod tests {
 
     fn for_loop(field_index: usize, body: LivePart) -> LivePart {
         LivePart::ForLoop(ForLoopPart {
+            key: None,
             expression: Expression::field(FieldIndex(field_index)),
             body: Box::new(body),
         })

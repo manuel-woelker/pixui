@@ -128,6 +128,7 @@ fn first_arm_wins_and_switching_or_losing_selection_discards_state() {
 #[test]
 fn loops_match_independently_and_preserve_item_context() {
     let mut root = LivePart::ForLoop(ForLoopPart {
+        key: None,
         expression: Expression::field(model::Root::type_descriptor().field_index("items").unwrap()),
         body: Box::new(conditional(vec![MatchPattern::value(false)])),
     });
@@ -327,6 +328,7 @@ fn nested_matches_keep_context_and_loop_inside_match_is_walked() {
         1
     );
     let loop_part = LivePart::ForLoop(ForLoopPart {
+        key: None,
         expression: Expression::field(model::Root::type_descriptor().field_index("items").unwrap()),
         body: Box::new(conditional(vec![MatchPattern::Wildcard])),
     });

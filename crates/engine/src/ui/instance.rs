@@ -4,23 +4,26 @@ use super::{
     activation::ActionBinding, definition::UiDefinitionId, display_list::RenderRevision,
     geometry::Rect, mailbox::OutputSender, presentation::PresentationSettings,
 };
-use crate::live_model::state::LiveState;
+use crate::live_model::{identity::ComponentPath, state::LiveState};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct UiInstanceId(pub(crate) u64);
 
-/// Clipped logical bounds and a worker-local activation binding.
+/// A clipped pointer region referencing the published component arrays.
 pub struct HitRegion {
     pub bounds: Rect,
     /// Component position in the prepared tree, including noninteractive nodes.
     pub component_index: usize,
-    pub(crate) target_index: usize,
 }
 
-/// Keyboard targets include clipped and offscreen components in physical preorder.
+/// Eligible focus targets in physical preorder. Includes offscreen components,
+/// but excludes fully clipped descendants of non-scrolling containers.
 pub struct FocusTarget {
     pub component_index: usize,
-    pub(crate) activate: ActionBinding,
+    pub path: ComponentPath,
+    pub sequential: bool,
+    /// Ancestor-clipped geometry without the viewport's vertical clip.
+    pub bounds: Rect,
 }
 
 /// Geometry from the last successful render. Component bounds follow physical
@@ -28,6 +31,13 @@ pub struct FocusTarget {
 #[derive(Default)]
 pub struct LayoutState {
     pub component_bounds: Vec<Rect>,
+    /// Structural identity parallel to the flattened component geometry.
+    pub component_paths: Vec<ComponentPath>,
+    /// Index lookup in this successful preparation, never a persistent identity.
+    pub component_indices: std::collections::HashMap<ComponentPath, usize>,
+    pub(crate) activations: Vec<Option<ActionBinding>>,
+    /// Focusable pointer regions, independent of activation hit regions.
+    pub focus_regions: Vec<HitRegion>,
     pub hit_regions: Vec<HitRegion>,
     pub focus_targets: Vec<FocusTarget>,
     pub content_bounds: Vec<Rect>,
@@ -45,7 +55,8 @@ impl LayoutState {
     /// published action snapshot. Content/presentation invalidation separately
     /// forbids reuse; closures cannot be compared for captured-value equality.
     pub(crate) fn compatible_with(&self, previous: &Self) -> bool {
-        self.component_bounds == previous.component_bounds
+        self.component_paths == previous.component_paths
+            && self.component_bounds == previous.component_bounds
             && self.content_bounds == previous.content_bounds
             && self.component_clips == previous.component_clips
             && self.component_addresses == previous.component_addresses
@@ -53,19 +64,27 @@ impl LayoutState {
             && self
                 .focus_targets
                 .iter()
-                .map(|target| target.component_index)
+                .map(|target| (&target.path, target.sequential))
                 .eq(previous
                     .focus_targets
                     .iter()
-                    .map(|target| target.component_index))
+                    .map(|target| (&target.path, target.sequential)))
+            && self
+                .focus_regions
+                .iter()
+                .map(|region| (region.bounds, region.component_index))
+                .eq(previous
+                    .focus_regions
+                    .iter()
+                    .map(|region| (region.bounds, region.component_index)))
             && self
                 .hit_regions
                 .iter()
-                .map(|region| (region.bounds, region.component_index, region.target_index))
+                .map(|region| (region.bounds, region.component_index))
                 .eq(previous
                     .hit_regions
                     .iter()
-                    .map(|region| (region.bounds, region.component_index, region.target_index)))
+                    .map(|region| (region.bounds, region.component_index)))
     }
 }
 
@@ -90,7 +109,8 @@ pub struct UiInstance {
     pub(crate) error: Option<String>,
     pub(crate) animation_request: Option<u64>,
     pub(crate) visible: bool,
-    pub(crate) painted_hover: Option<usize>,
+    pub(crate) painted_focus: Option<super::focus::ComponentInstanceId>,
+    pub(crate) painted_hover: Option<super::focus::ComponentInstanceId>,
     pub(crate) pointer_position: Option<super::geometry::Point>,
     pub(crate) overlay: super::performance_overlay::PerformanceOverlay,
     /// Unadorned last successful render, reused for diagnostic-only refreshes.
@@ -99,6 +119,22 @@ pub struct UiInstance {
 }
 
 impl UiInstance {
+    /// Scope a published component's structural path to its definition.
+    pub fn component_id(
+        &self,
+        index: usize,
+    ) -> pixui_base::PixuiResult<super::focus::ComponentInstanceId> {
+        let path = self
+            .layout
+            .component_paths
+            .get(index)
+            .ok_or_else(|| pixui_base::pixui_error!("unknown component index"))?;
+        Ok(super::focus::ComponentInstanceId {
+            definition: self.definition,
+            path: path.clone(),
+        })
+    }
+
     /// Whether worker rendering is enabled. Headless instances start visible.
     pub fn visible(&self) -> bool {
         self.visible

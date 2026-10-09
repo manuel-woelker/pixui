@@ -58,9 +58,11 @@ pub struct CompositeState {
 
 /// One state entry for the complete loop body per live sequence element.
 /// New entries start Unknown; removing entries drops their owned state.
-/// Positions are not stable item identities when a sequence is reordered.
+/// Keys retain item identity on reorder; unkeyed loops keep positional state.
 #[derive(Default)]
 pub struct ForLoopState {
+    /// Some for keyed loops, in the same order as items.
+    pub keys: Option<Vec<super::identity::ItemKey>>,
     pub items: Vec<PartState>,
 }
 

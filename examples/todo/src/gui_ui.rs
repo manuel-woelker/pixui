@@ -52,10 +52,12 @@ pub fn definition_with_assets(
         ComponentPart::typed(components.checkbox, todo_row).with_activation(mark_action),
     );
     let all = LivePart::ForLoop(ForLoopPart {
+        key: None,
         expression: Expression::from_collection(todos),
         body: Box::new(row.clone()),
     });
     let incomplete = LivePart::ForLoop(ForLoopPart {
+        key: None,
         expression: Expression::from_collection(todos),
         body: Box::new(LivePart::Match(MatchPart::new(
             Expression::field(completed),

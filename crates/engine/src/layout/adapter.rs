@@ -12,6 +12,7 @@ pub(crate) struct Geometry {
     pub border: Rect,
     pub content: Rect,
     pub clip: Rect,
+    pub navigation_clip: Rect,
 }
 pub(crate) struct LayoutResult {
     pub leaves: Vec<Geometry>,
@@ -119,7 +120,20 @@ pub(crate) fn compute(
         width: viewport.width,
         height: viewport.height,
     };
-    collect(&tree, root, 0.0, -scroll, clip, &mut result)?;
+    collect(
+        &tree,
+        root,
+        0.0,
+        -scroll,
+        clip,
+        Rect {
+            x: 0.0,
+            y: -scroll,
+            width: viewport.width,
+            height: content_height,
+        },
+        &mut result,
+    )?;
     result.solving = started.elapsed();
     Ok(result)
 }
@@ -183,12 +197,14 @@ fn build(
     }
     Ok(())
 }
+#[allow(clippy::too_many_arguments)]
 fn collect(
     tree: &TaffyTree<usize>,
     node: NodeId,
     x: f32,
     y: f32,
     ancestor_clip: Rect,
+    navigation_clip: Rect,
     output: &mut LayoutResult,
 ) -> PixuiResult<()> {
     let layout = tree.layout(node).map_err(failure)?;
@@ -205,6 +221,7 @@ fn collect(
         return Err(pixui_error!("layout produced nonfinite geometry"));
     }
     let clip = ancestor_clip.intersect(border);
+    let navigation_clip = navigation_clip.intersect(border);
     if tree.get_node_context(node).is_some() {
         let content = Rect {
             x: border.x + layout.padding.left,
@@ -216,11 +233,20 @@ fn collect(
             border,
             content,
             clip,
+            navigation_clip,
         });
     } else {
         output.containers.push(border);
         for child in tree.children(node).map_err(failure)? {
-            collect(tree, child, border.x, border.y, clip, output)?;
+            collect(
+                tree,
+                child,
+                border.x,
+                border.y,
+                clip,
+                navigation_clip,
+                output,
+            )?;
         }
     }
     Ok(())

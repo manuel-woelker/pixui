@@ -31,7 +31,9 @@ both windows. Switching pages preserves counters, flags, and rows.
 - **Presentation:** compare themes and localized widget labels side by side.
   Sample row values are shared application data and are not translated.
 - **Interaction:** hover over controls, use Tab/Shift+Tab to move focus, and
-  Enter/Space to activate. Hover, focus, and scroll state are shared.
+  Enter/Space to activate. Hover, focus, and scroll state are shared. Actions
+  retain focus. The Text page includes a focusable button without activation
+  to demonstrate that keyboard focus does not require an action.
 - **Diagnostics:** press F11 for the performance overlay. The gallery is idle
   when unchanged; it does not request continuous animation.
 

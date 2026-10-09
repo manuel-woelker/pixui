@@ -72,9 +72,9 @@ normalization, without a display-list sink. Text does not wrap or ellipsize.
   targets use the border box (including padding, excluding margin), intersected
   with ancestor clips and the viewport. Hover applies to all components using
   these same clipped border boxes.
-- Keyboard targets retain all interactive physical components, including fully
-  clipped ones. Focus traversal and activation do not depend on pointer
-  visibility.
+- Keyboard targets include eligible offscreen components, which scroll into
+  view on focus. Fully clipped descendants of fixed containers are excluded.
+  Focus eligibility is independent of activation and pointer visibility.
 
 Preparation, expressions, and state updates run once before solving. A temporary
 physical hierarchy uses the recorded loop counts and selected match arms.
@@ -99,8 +99,9 @@ Geometry uses unrounded logical floats for both painting and input. Instance
 snapshots contain border/content boxes, effective clips, container bounds,
 pointer regions and separate keyboard targets. Compatible visual redraws keep
 published action bindings only while geometry, clips, component registrations,
-activation factories, and target ordering match. Content invalidation and
-presentation changes install fresh targets and reject old input revisions.
+activation factories, structural occurrence IDs, eligibility, and target
+ordering match. Content invalidation and presentation changes install fresh
+targets and reject old input revisions.
 
 The most recently active pointer instance supplies shared hover. Its retained
 pointer position is tested against new geometry before painting; peers redraw

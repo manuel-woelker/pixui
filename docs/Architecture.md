@@ -163,8 +163,10 @@ access and uses a sequence element as the current value inside each loop.
 reached, and loops maintain one independent body state per element. Registered
 components create owned, sendable payloads through their state type's `Default`
 implementation. Legacy unregistered nodes retain state factories for
-non-rendering visitors. Walks retain state by position, resize child lists, and
-drop removed state. Stable item identity across reordering is not implemented.
+non-rendering visitors. Composite children retain state by position. Collection
+loops retain state by complete arena keys, including generation; other loops
+can supply immutable item keys or retain positional state. Removed state is
+dropped, and duplicate explicit keys fail preparation.
 Visitors receive initialized state and can update it; template edits are
 reconciled before descent. Traversal preserves child and element order; errors
 stop it without rolling back earlier updates, leaving unvisited entries
@@ -197,8 +199,8 @@ Multiple instances of the same definition share application collections and
 interaction state. Component state, presentation settings and geometry remain
 per instance. The engine detects hover for all prepared components and passes
 shared hover to every painter through `PaintContext::hovered`, including
-components without actions. Hover and focus currently identify prepared
-component positions; instances must retain corresponding component order. Shared
+components without actions. Hover and focus identify structural occurrences,
+scoped to the definition, independently of flattened component order. Shared
 scrolling is clamped per viewport for drawing without modifying the shared
 requested offset. The initial native host maps one instance to one window.
 Native winit windows and renderer-owned graphics surfaces belong to the process
@@ -210,6 +212,27 @@ creation returns the instance ID and its output receiver. Registration rejects
 empty or duplicate names. IDs are process-local and never reused. Closing an
 instance invalidates its ID; dropping its output consumer also releases it on
 the next worker rendering pass.
+
+### Component identity and focus
+
+The walker assigns a `ComponentPath` made of typed child, loop-item/key and
+match-arm segments. `ComponentInstanceId` scopes it to a definition; it is
+distinct from the registered type's `ComponentId<C>`. Per-instance layouts
+retain paths and their current flat indices for geometry and hit testing.
+
+Focus eligibility is resolved separately from activation. Tab/Shift+Tab follow
+physical preorder, wrap, and reveal offscreen targets through the shared scroll
+request. Fully clipped descendants of fixed containers are excluded. Pointer
+press and checked `UiCommand::Focus` requests can focus direct-only targets;
+button release retains activation behavior.
+
+Focus remains shared by definition. A source instance governs successful
+reconciliation; peers can paint no focus when their active trees differ without
+erasing it. Hidden sources defer validation; closing a source chooses the oldest
+remaining instance. Failed renders preserve published geometry and logical
+focus. Stable IDs never authorize stale pointer coordinates or bindings.
+See the [focus API](../crates/engine/src/ui/Focus.md) and
+[DR-017](<decisions/DR-017 Identify component occurrences by structural paths and loop keys.md>).
 
 ### Components, painters, and display lists
 
@@ -342,8 +365,10 @@ See the [image guide](../crates/engine/src/ui/Images.md) and
 ### Updates and communication
 
 Any dispatched action invalidates all instances, including an action that
-returns an error after mutating data. Content invalidation clears focus and
-hover in each definition because loop reconciliation is positional. Settings
+returns an error after mutating data. Content invalidation preserves focus
+identity while marking geometry stale. Successful preparation of the latest
+focus source clears missing or ineligible targets. Hover is recomputed from
+source pointer geometry. Settings
 changes invalidate one instance; shared interaction changes invalidate every
 instance of that definition. The worker renders dirty instances
 after batches of at most 32 commands. Inspection flushes preceding rendering
@@ -431,7 +456,8 @@ Selection preserves the surrounding loop value and application context.
 
 `MatchState` retains one active child. Changing or losing selection drops the
 previous subtree; returning initializes fresh component state through `Default`.
-Candidate identity is positional, like current composites and loops.
+Candidate identity uses its template arm index. Switching away clears focus
+inside that arm; returning does not restore focus.
 See [DR-008](<decisions/DR-008 Retain only the active match subtree.md>) for the
 lifecycle rationale. All
 candidate templates are validated at registration, including inactive branches.

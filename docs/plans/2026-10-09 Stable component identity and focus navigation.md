@@ -1,6 +1,6 @@
 # Stable component identity and focus navigation
 
-Status: proposed.
+Status: implemented; native showcase verification pending.
 
 ## Goal
 
@@ -9,7 +9,7 @@ for focusable components independently of activation. This is groundwork for a
 controlled text input: typing must not lose focus on every change callback.
 Text editing and clipboard integration belong in a subsequent plan.
 
-## Current behavior
+## Starting behavior
 
 - `UiDefinitionState` stores focus and hover as flattened component indices.
   All instances of a definition share them; geometry remains per instance.
@@ -143,66 +143,71 @@ focus. Document this policy and test render-order independence.
 
 ## Implementation checklist
 
-- [ ] Add documented path segments, item keys and scoped occurrence IDs in named
+- [x] Add documented path segments, item keys and scoped occurrence IDs in named
   modules; distinguish them clearly from component registry IDs.
-- [ ] Extend walker traversal context with occurrence paths, including stack and
+- [x] Extend walker traversal context with occurrence paths, including stack and
   recursive loop descent. Preserve existing visitor order and error behavior.
-- [ ] Add optional loop key resolution and keyed physical-state reconciliation.
+- [x] Add optional loop key resolution and keyed physical-state reconciliation.
   Document positional semantics for unkeyed loops and reject duplicate keys.
-- [ ] Carry occurrence IDs through preparation/layout. Add lookup tables and
+- [x] Carry occurrence IDs through preparation/layout. Add lookup tables and
   include IDs/eligibility in published-layout compatibility checks.
-- [ ] Introduce explicit focus behavior; separate focus targets/regions from
+- [x] Introduce explicit focus behavior; separate focus targets/regions from
   activation bindings and regions. Maintain default button/checkbox behavior.
-- [ ] Migrate shared focus, hover, painted-hover tracking and painter resolution
+- [x] Migrate shared focus, hover, painted-hover tracking and painter resolution
   to IDs; replace unconditional focus clearing with successful reconciliation.
-- [ ] Implement source-aware reconciliation, pointer focus, sequential
+- [x] Implement source-aware reconciliation, pointer focus, sequential
       navigation, checked programmatic focus and scroll-to-focus behavior.
-- [ ] Update examples/tests that currently rely on actions clearing focus.
-- [ ] Update UI/layout documentation and Architecture.md for identity ownership,
+- [x] Update examples/tests that currently rely on actions clearing focus.
+- [x] Update UI/layout documentation and Architecture.md for identity ownership,
       preparation/publication and shared focus; record significant decisions if
       needed.
-- [ ] Run `./n check` after each completed unit and resolve introduced failures.
+- [x] Run `./n check` after each completed unit and resolve introduced failures.
 
 ## Verification
 
-- [ ] Path tests: nested containers, composites, loops and matches have distinct
+- [x] Path tests: nested containers, composites, loops and matches have distinct
   IDs; growing an earlier branch leaves later IDs unchanged; definition scoping
   prevents cross-definition focus requests.
-- [ ] Keyed loops: insertion, deletion, reorder, nested keys, duplicate
+- [x] Keyed loops: insertion, deletion, reorder, nested keys, duplicate
       rejection, removed/recreated entities and retained component state.
       Unkeyed tests explicitly demonstrate positional semantics.
-- [ ] Focus survives ordinary actions, prop updates, resize, translation changes
+- [x] Focus survives ordinary actions, prop updates, resize, translation changes
   and visual redraws. Removing/disabling a target or switching arms clears it
   without focusing a different component at the previous flat index.
-- [ ] Nonactivatable focus targets, pointer-only targets, focus opt-out, forward
+- [x] Nonactivatable focus targets, pointer-only targets, focus opt-out, forward
   and backward wrap, empty lists, pointer press/release and click outside.
-- [ ] Offscreen focus scrolls into view; permanently clipped targets are
+- [x] Offscreen focus scrolls into view; permanently clipped targets are
       skipped.
-- [ ] Two windows share focus despite different geometry. Different active
+- [x] Two windows share focus despite different geometry. Different active
       trees, failed preparation, hidden sources and source closure obey the
       documented policy independently of render order.
-- [ ] Stale revisions and dirty geometry still reject discrete input; compatible
+- [x] Stale revisions and dirty geometry still reject discrete input; compatible
   redraws preserve safe bindings without confusing moved identities.
 - [ ] Native showcase verification: Tab, Shift+Tab, click, action-triggered
       updates, conditional pages, scrolling and two-window focus. Add a
       nonactivating focusable showcase target to exercise the input groundwork
       without implementing editing.
 
-## Decisions and open questions
+## Implementation choices
 
-Recommended defaults are the rules above. Confirm before implementation:
-
-1. Is positional identity an acceptable documented fallback for unkeyed loops?
-   Keyed loops are necessary wherever focus should follow a movable entity.
-2. Is definition-wide logical focus still desired when windows have different
-   conditional trees? The source-aware policy keeps the established ownership
-   but is more complex than per-instance focus.
-3. Should Tab wrap? Retain the current behavior initially; traversal between
-   native windows and nested focus scopes can be added separately.
-4. Which existing collection views can expose stable entity keys directly?
-   Investigate before selecting a collection-key adapter API; avoid requiring
-   application authors to invent identifiers when arena identities already
-   exist.
+- Retained shared logical focus and wrapping Tab navigation, using the proposed
+  source-aware reconciliation policy.
+- Unkeyed sequences explicitly retain positional identity. Keyed loops reconcile
+  state and paths together; duplicate keys fail before moving loop payloads.
+- Collection expressions automatically use complete packed arena keys, including
+  arena ID and generation. Explicit resolvers override this default.
+- Published layouts store unscoped paths for direct index lookup; shared state
+  and focus requests use definition-scoped occurrence IDs.
+- Programmatic requests use `UiCommand::Focus` through the existing dispatch
+  channel. They require a successfully prepared eligible target and current
+  geometry; no new mutable application-state access API is needed.
+- Default button release also selects its focus target, preserving existing
+  programmatic release-only click behavior. Pointer press now focuses
+  immediately.
+- A bounded second rendering sweep updates peers dirtied by source
+  reconciliation. Hidden instances remain skipped; failed preparation is not
+  retried by that sweep.
+- No new text-input plan or editing implementation was started in this unit.
 
 Out of scope: text editing, clipboard/IME, undo, accessibility integration,
 spatial navigation, nested focus scopes, custom tab order and arbitrary live

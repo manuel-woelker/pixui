@@ -33,6 +33,8 @@ pub struct CompositePart {
 #[derive(Clone)]
 pub struct ComponentPart {
     pub create_state: StateFactory,
+    pub(crate) focus: crate::ui::focus::FocusBehavior,
+    pub(crate) focus_resolver: Option<crate::ui::focus::FocusResolver>,
     pub layout: crate::layout::style::LayoutStyle,
     pub(crate) expressions: Vec<Expression>,
     pub(crate) binding: Option<Arc<dyn ErasedBinding>>,
@@ -42,6 +44,8 @@ pub struct ComponentPart {
 impl ComponentPart {
     pub fn new(create_state: StateFactory) -> Self {
         Self {
+            focus: Default::default(),
+            focus_resolver: None,
             create_state,
             layout: Default::default(),
             expressions: Vec::new(),
@@ -74,6 +78,8 @@ impl ComponentPart {
         resolve: crate::component_registry::binding::ExpressionPropsResolver<C>,
     ) -> Self {
         Self {
+            focus: Default::default(),
+            focus_resolver: None,
             create_state: |_| Ok(GenericComponentState::new(())),
             layout: Default::default(),
             expressions,
@@ -96,6 +102,8 @@ impl ComponentPart {
         update: ComponentUpdate<C>,
     ) -> Self {
         Self {
+            focus: Default::default(),
+            focus_resolver: None,
             create_state: |_| Ok(GenericComponentState::new(())),
             layout: Default::default(),
             expressions: Vec::new(),
@@ -122,6 +130,19 @@ impl ComponentPart {
         self
     }
 
+    /// Sets focus participation independently of activation.
+    pub fn with_focus(mut self, behavior: crate::ui::focus::FocusBehavior) -> Self {
+        self.focus = behavior;
+        self.focus_resolver = None;
+        self
+    }
+
+    /// Resolves eligibility from application data each render.
+    pub fn with_focus_resolver(mut self, resolve: crate::ui::focus::FocusResolver) -> Self {
+        self.focus_resolver = Some(resolve);
+        self
+    }
+
     pub(crate) fn component_address(&self) -> Option<ComponentAddress> {
         self.binding.as_ref().map(|binding| binding.address())
     }
@@ -135,10 +156,33 @@ impl Default for ComponentPart {
 
 #[derive(Clone)]
 pub struct ForLoopPart {
+    /// Optional immutable item key, resolved in the loop element's context.
+    /// Collection expressions use full arena keys automatically when omitted.
+    /// Other sequences retain positional identity unless this resolver is set.
+    pub key: Option<super::identity::ItemKeyResolver>,
     /// Evaluated in the enclosing context; the result must be a sequence.
     pub expression: Expression,
     /// Reused for every element, with that element as the walking context.
     pub body: Box<LivePart>,
+}
+
+impl ForLoopPart {
+    /// A sequence loop. Collection expressions reconcile by arena identity;
+    /// other sequences reconcile by index unless `with_key` is used.
+    pub fn new(expression: Expression, body: LivePart) -> Self {
+        Self {
+            expression,
+            body: Box::new(body),
+            key: None,
+        }
+    }
+
+    /// Overrides default loop identity with an immutable item key. Duplicate
+    /// keys fail traversal before existing loop payloads are moved.
+    pub fn with_key(mut self, key: super::identity::ItemKeyResolver) -> Self {
+        self.key = Some(key);
+        self
+    }
 }
 
 impl From<ComponentPart> for LivePart {

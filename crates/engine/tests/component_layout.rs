@@ -289,6 +289,7 @@ fn loops_matches_and_fragments_splice_grid_items_without_phantom_gaps() {
         .with_children(vec![
             LivePart::Composite(CompositePart { parts: vec![] }),
             LivePart::ForLoop(ForLoopPart {
+                key: None,
                 expression: sequence,
                 body: Box::new(body),
             }),
@@ -483,6 +484,7 @@ fn representative_loop_layout_cost_is_observable_without_timing_thresholds() {
         let root = ContainerPart::column()
             .with_gap(2.0)
             .with_children(vec![LivePart::ForLoop(ForLoopPart {
+                key: None,
                 expression,
                 body: Box::new(leaf(id, LayoutStyle::default())),
             })])

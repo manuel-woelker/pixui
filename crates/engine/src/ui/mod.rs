@@ -2,6 +2,7 @@ pub mod activation;
 pub mod definition;
 pub mod display_list;
 pub mod display_list_builder;
+pub mod focus;
 pub mod geometry;
 pub mod image;
 pub mod input;

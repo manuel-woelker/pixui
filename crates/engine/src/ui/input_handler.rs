@@ -11,6 +11,7 @@ pub(super) enum InputIntent {
     Hover(Point),
     ClearHover,
     Activate(Point),
+    Focus(Point),
     ActivateFocused,
     FocusNext { backwards: bool },
     Scroll(f32),
@@ -18,7 +19,7 @@ pub(super) enum InputIntent {
     Ignore,
 }
 
-/// Left-button release activates; key releases and repeats never activate or
+/// Left-button press focuses and release activates; key releases and repeats never activate or
 /// toggle diagnostics. Line scrolling currently uses forty logical pixels/line.
 /// Text, IME, other buttons and other keys have no default behavior yet.
 pub(super) fn interpret(input: UiInput) -> PixuiResult<InputIntent> {
@@ -35,8 +36,11 @@ pub(super) fn interpret(input: UiInput) -> PixuiResult<InputIntent> {
             ..
         } => {
             validate_point(position)?;
-            if button == MouseButton::Left && state == ButtonState::Released {
-                InputIntent::Activate(position)
+            if button == MouseButton::Left {
+                match state {
+                    ButtonState::Pressed => InputIntent::Focus(position),
+                    ButtonState::Released => InputIntent::Activate(position),
+                }
             } else {
                 InputIntent::Ignore
             }
@@ -147,6 +151,10 @@ mod tests {
                 assert_eq!(
                     matches!(intent, InputIntent::Activate(_)),
                     button == MouseButton::Left && state == ButtonState::Released
+                );
+                assert_eq!(
+                    matches!(intent, InputIntent::Focus(_)),
+                    button == MouseButton::Left && state == ButtonState::Pressed
                 );
             }
         }

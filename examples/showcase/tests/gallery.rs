@@ -239,7 +239,7 @@ fn keyboard_navigation_activates_buttons_and_facade_updates_named_entities() {
     let selected = receive(&outputs);
     assert!(has_text(&selected, "Buttons"));
     let mut focused = selected;
-    for _ in 0..2 {
+    for _ in 0..1 {
         app.ui_command(UiCommand::Input {
             instance,
             revision: focused.revision,
@@ -299,4 +299,42 @@ fn translation_export_runs_without_a_display_and_is_reproducible() {
     assert!(first.contains("Show details"));
     assert!(first.contains("PixUI Showcase — {count}"));
     std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn text_page_has_a_focus_target_without_an_activation() {
+    let (app, definition) = setup::create().unwrap();
+    let (instance, outputs) = app.create_ui(definition, Default::default()).unwrap();
+    receive(&outputs);
+    ShowcaseActions::bind(&app).unwrap().select(4).unwrap();
+    let text_page = receive(&outputs);
+    assert!(has_text(&text_page, "Focus without activation"));
+    let target = app
+        .inspect(move |app| {
+            let instance = app.uis().instance(instance)?;
+            let target = instance.layout().focus_targets.last().unwrap();
+            instance.component_id(target.component_index)
+        })
+        .unwrap();
+    app.ui_command(UiCommand::Focus {
+        instance,
+        target: Some(target.clone()),
+    })
+    .unwrap();
+    let focused = receive(&outputs);
+    app.ui_command(UiCommand::Input {
+        instance,
+        revision: focused.revision,
+        input: UiInput::Keyboard(KeyboardEvent::named("Enter")),
+    })
+    .unwrap();
+    app.inspect(move |app| {
+        assert_eq!(
+            app.uis().definition(definition)?.state().focus,
+            Some(target)
+        );
+        Ok(())
+    })
+    .unwrap();
+    assert!(outputs.try_recv().is_err());
 }

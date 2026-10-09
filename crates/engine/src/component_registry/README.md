@@ -48,7 +48,9 @@ Erased adapters check types before borrowing; errors describe the expected type.
 The walker creates state using `State::default()` at first reach. It preserves
 state for the same registered component at the same physical position and resets
 it on component identity changes. Each instance and loop element owns its state.
-Loop reconciliation is positional; reordered items can inherit positional state.
+Collection loops reconcile by generational arena keys. Explicitly keyed loops
+retain state by key across reorder; other loops retain positional state. See
+[focus identity](../ui/Focus.md) for the identity contract.
 
 The worker owns both registries and all physical state. The application handle
 still contains only its cloneable sender. Props resolvers and update callbacks

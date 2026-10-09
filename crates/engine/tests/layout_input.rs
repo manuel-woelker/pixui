@@ -113,7 +113,7 @@ fn clipped_pointer_targets_and_offscreen_keyboard_targets_are_separate() {
     let mut output = receive(&outputs);
     app.inspect(move |app| {
         let layout = app.uis().instance(id)?.layout();
-        assert_eq!(layout.focus_targets.len(), 3);
+        assert_eq!(layout.focus_targets.len(), 2);
         assert_eq!(layout.hit_regions.len(), 2);
         assert_eq!(layout.hit_regions[0].bounds.width, 80.0);
         assert_eq!(layout.hit_regions[1].bounds.height, 10.0);
@@ -128,11 +128,11 @@ fn clipped_pointer_targets_and_offscreen_keyboard_targets_are_separate() {
     })
     .unwrap();
     assert_eq!(
-        app.inspect(move |app| Ok(app.uis().definition(definition)?.state().hover))
+        app.inspect(move |app| Ok(app.uis().definition(definition)?.state().hover.clone()))
             .unwrap(),
         None
     );
-    for index in 0..3 {
+    for index in 0..2 {
         app.ui_command(UiCommand::Input {
             instance: id,
             revision: output.revision,
@@ -142,7 +142,7 @@ fn clipped_pointer_targets_and_offscreen_keyboard_targets_are_separate() {
         output = receive(&outputs);
         assert_eq!(color(&output, index), Color(0, 255, 0));
     }
-    // The fully clipped third control can still be activated with the keyboard.
+    // The fully clipped third control is skipped by keyboard navigation.
     app.ui_command(UiCommand::Input {
         instance: id,
         revision: output.revision,
@@ -232,7 +232,7 @@ fn stationary_hover_recomputes_after_resize_and_peer_relayout_cannot_steal_it() 
         .is_err()
     );
     assert_eq!(
-        app.inspect(move |app| Ok(app.uis().definition(definition)?.state().hover))
+        app.inspect(move |app| Ok(app.uis().definition(definition)?.state().hover.clone()))
             .unwrap(),
         None
     );

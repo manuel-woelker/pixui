@@ -5,13 +5,12 @@ use crate::live_model::part::LivePart;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct UiDefinitionId(pub(crate) u64);
 
-/// Shared interaction state. Component indices refer to prepared component order,
-/// including noninteractive components. All windows of a definition share it.
-/// Content changes clear positional focus/hover. The most recent input wins.
+/// Shared interaction state uses structural occurrence identities. All windows
+/// of a definition share it; successful source preparation reconciles focus.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct UiDefinitionState {
-    pub focus: Option<usize>,
-    pub hover: Option<usize>,
+    pub focus: Option<super::focus::ComponentInstanceId>,
+    pub hover: Option<super::focus::ComponentInstanceId>,
     /// Requested logical scroll offset. Each window clamps it to its own extent.
     pub scroll: f32,
 }

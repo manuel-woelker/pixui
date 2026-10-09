@@ -23,6 +23,7 @@ pub struct Collection {
     item_type_id: TypeId,
     item_type_name: &'static str,
     sequence_view: Option<SequenceView>,
+    sequence_keys: Option<fn(&dyn Any) -> Vec<u64>>,
 }
 
 impl Collection {
@@ -36,6 +37,7 @@ impl Collection {
             item_type_id: TypeId::of::<T>(),
             item_type_name: type_name::<T>(),
             sequence_view: None,
+            sequence_keys: None,
         }
     }
 
@@ -49,7 +51,22 @@ impl Collection {
                 .ok_or_else(|| pixui_error!("collection arena has an unexpected type"))?;
             Ok(DynamicObject::from_arena(arena))
         });
+        collection.sequence_keys = Some(|value| {
+            value
+                .downcast_ref::<Arena<T>>()
+                .expect("collection arena type")
+                .iter()
+                .map(|(key, _)| key.bits())
+                .collect()
+        });
         collection
+    }
+
+    /// Keys in exactly the same order as the reflected sequence view.
+    pub(crate) fn sequence_keys(&self) -> PixuiResult<Vec<u64>> {
+        self.sequence_keys
+            .map(|keys| keys(self.arena.as_ref()))
+            .ok_or_else(|| pixui_error!("collection has no reflected sequence access"))
     }
 
     /// Borrows live items as a shared sequence, skipping vacant arena slots.

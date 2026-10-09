@@ -135,6 +135,12 @@ pub enum UiCommand {
         revision: RenderRevision,
         input: UiInput,
     },
+    /// Checked worker-side logical focus request. None clears focus. The target
+    /// must belong to this instance's definition and be eligible in its layout.
+    Focus {
+        instance: UiInstanceId,
+        target: Option<super::focus::ComponentInstanceId>,
+    },
     Present {
         instance: UiInstanceId,
         settings: PresentationSettings,
@@ -173,6 +179,7 @@ impl UiCommand {
     pub fn instance(&self) -> UiInstanceId {
         match self {
             Self::Input { instance, .. }
+            | Self::Focus { instance, .. }
             | Self::Present { instance, .. }
             | Self::Redraw { instance }
             | Self::AnimationFrame { instance, .. }

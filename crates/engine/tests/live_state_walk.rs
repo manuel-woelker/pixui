@@ -49,6 +49,7 @@ fn composite(parts: Vec<LivePart>) -> LivePart {
 
 fn for_loop(index: usize, body: LivePart) -> LivePart {
     LivePart::ForLoop(ForLoopPart {
+        key: None,
         expression: Expression::field(FieldIndex(index)),
         body: Box::new(body),
     })
@@ -447,10 +448,12 @@ fn collection_loop_expressions_preserve_application_access_inside_nested_loops()
         component(),
     );
     let nested_collection = LivePart::ForLoop(ForLoopPart {
+        key: None,
         expression: Expression::collection(application.collection_key("data", "extras").unwrap()),
         body: Box::new(component()),
     });
     let mut tree = LivePart::ForLoop(ForLoopPart {
+        key: None,
         expression: Expression::collection(application.collection_key("data", "groups").unwrap()),
         body: Box::new(composite(vec![nested_field, nested_collection])),
     });
@@ -484,6 +487,7 @@ fn collection_loop_expressions_preserve_application_access_inside_nested_loops()
 fn loop_reports_missing_expression_inputs_without_creating_body_state() {
     use pixui_engine::application::{app::Application, collection::Collection};
     let mut tree = LivePart::ForLoop(ForLoopPart {
+        key: None,
         expression: Expression::collection(
             Application::default()
                 .register_collection(Collection::new::<i32>("foreign"))

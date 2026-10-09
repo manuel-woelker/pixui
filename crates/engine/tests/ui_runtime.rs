@@ -164,6 +164,7 @@ fn setup(
     app.register_painter::<Row>(RowPainter).unwrap();
     let component = ComponentPart::typed(component_id, row).with_activation(row_action);
     let template = LivePart::ForLoop(ForLoopPart {
+        key: None,
         expression: Expression::from_collection(app.collection_key("test", "items").unwrap()),
         body: Box::new(LivePart::Component(component)),
     });
@@ -249,11 +250,13 @@ fn instances_have_independent_persistent_state_and_shared_data() {
     assert_eq!(state_ids(&app, first)[0], ids_a[0]);
     assert_eq!(state_ids(&app, second)[0], ids_b[0]);
     assert_eq!(state_ids(&app, first).len(), 2);
+    let retained_a = state_ids(&app, first)[1];
+    let retained_b = state_ids(&app, second)[1];
     actions.remove_first().unwrap();
     output(&a);
     output(&b);
-    assert_eq!(state_ids(&app, first), ids_a); // Explicit positional reconciliation.
-    assert_eq!(state_ids(&app, second), ids_b);
+    assert_eq!(state_ids(&app, first), vec![retained_a]); // Collection identity follows the survivor.
+    assert_eq!(state_ids(&app, second), vec![retained_b]);
     assert!(click(&app, &before_a).is_err());
 }
 
@@ -725,7 +728,7 @@ fn raw_mouse_transitions_and_keyboard_navigation_are_interpreted_on_worker() {
         .unwrap();
     let initial = output(&receiver);
     for (button, state) in [
-        (MouseButton::Left, ButtonState::Pressed),
+        (MouseButton::Right, ButtonState::Pressed),
         (MouseButton::Right, ButtonState::Released),
     ] {
         app.ui_command(UiCommand::Input {
@@ -757,7 +760,10 @@ fn raw_mouse_transitions_and_keyboard_navigation_are_interpreted_on_worker() {
     .unwrap();
     let backwards = output(&receiver);
     app.inspect(move |app| {
-        assert_eq!(app.uis().definition(definition)?.state().focus, Some(1));
+        assert_eq!(
+            app.uis().definition(definition)?.state().focus,
+            Some(app.uis().instance(id)?.component_id(1)?)
+        );
         Ok(())
     })
     .unwrap();
@@ -769,7 +775,10 @@ fn raw_mouse_transitions_and_keyboard_navigation_are_interpreted_on_worker() {
     .unwrap();
     let forwards = output(&receiver);
     app.inspect(move |app| {
-        assert_eq!(app.uis().definition(definition)?.state().focus, Some(0));
+        assert_eq!(
+            app.uis().definition(definition)?.state().focus,
+            Some(app.uis().instance(id)?.component_id(0)?)
+        );
         Ok(())
     })
     .unwrap();

@@ -26,6 +26,8 @@ use pixui_base::{PixuiResult, pixui_error};
 use std::{any::Any, time::Duration};
 
 struct PreparedComponent {
+    path: crate::live_model::identity::ComponentPath,
+    focus: super::focus::FocusBehavior,
     address: ComponentAddress,
     props: Box<dyn Any + Send>,
     activate: Option<ActionBinding>,
@@ -57,6 +59,13 @@ impl Visitor for PrepareVisitor<'_> {
             .map(|factory| factory(entry.context, self.settings))
             .transpose()?;
         self.components.push(PreparedComponent {
+            path: entry.path.clone(),
+            focus: part
+                .focus_resolver
+                .map(|resolve| resolve(entry.context, self.settings))
+                .transpose()?
+                .unwrap_or(part.focus)
+                .resolved(activate.is_some()),
             address: binding.address(),
             props,
             activate,
@@ -77,8 +86,8 @@ pub fn render(
     application: &Application,
     settings: &PresentationSettings,
     scroll: f32,
-    focus: Option<usize>,
-    hover: Option<usize>,
+    focus: Option<&crate::live_model::identity::ComponentPath>,
+    hover: Option<&crate::live_model::identity::ComponentPath>,
 ) -> PixuiResult<(DisplayList, LayoutState, f32, Option<Duration>)> {
     let rendered = render_measured(template, state, application, settings, scroll, focus, hover)?;
     Ok((
@@ -96,7 +105,8 @@ pub struct RenderedUi {
     pub scroll: f32,
     pub redraw_after: Option<Duration>,
     pub animating: bool,
-    pub(crate) hover: Option<usize>,
+    pub(crate) hover: Option<crate::live_model::identity::ComponentPath>,
+    pub(crate) focus: Option<crate::live_model::identity::ComponentPath>,
     pub timings: super::performance::WorkerTimings,
 }
 
@@ -108,8 +118,8 @@ pub fn render_measured(
     application: &Application,
     settings: &PresentationSettings,
     scroll: f32,
-    focus: Option<usize>,
-    hover: Option<usize>,
+    focus: Option<&crate::live_model::identity::ComponentPath>,
+    hover: Option<&crate::live_model::identity::ComponentPath>,
 ) -> PixuiResult<RenderedUi> {
     render_with_pointer(
         template,
@@ -130,8 +140,8 @@ pub(crate) fn render_with_pointer(
     application: &Application,
     settings: &PresentationSettings,
     scroll: f32,
-    focus: Option<usize>,
-    hover: Option<usize>,
+    focus: Option<&crate::live_model::identity::ComponentPath>,
+    hover: Option<&crate::live_model::identity::ComponentPath>,
     pointer: Option<Point>,
 ) -> PixuiResult<RenderedUi> {
     let started = std::time::Instant::now();
@@ -197,12 +207,30 @@ pub(crate) fn render_with_pointer(
             )
         },
     )?;
-    let hover = pointer.map_or(hover, |point| {
-        geometry
-            .leaves
-            .iter()
-            .rposition(|leaf| leaf.clip.contains(point))
-    });
+    let hover = pointer.map_or_else(
+        || hover.cloned(),
+        |point| {
+            geometry
+                .leaves
+                .iter()
+                .rposition(|leaf| leaf.clip.contains(point))
+                .map(|index| visitor.components[index].path.clone())
+        },
+    );
+    let focus = focus
+        .filter(|path| {
+            visitor
+                .components
+                .iter()
+                .zip(&geometry.leaves)
+                .any(|(component, leaf)| {
+                    &component.path == *path
+                        && component.focus != super::focus::FocusBehavior::None
+                        && leaf.navigation_clip.width > 0.0
+                        && leaf.navigation_clip.height > 0.0
+                })
+        })
+        .cloned();
     let scroll = geometry.scroll;
     let viewport = Rect {
         x: 0.0,
@@ -231,6 +259,10 @@ pub(crate) fn render_with_pointer(
         let bounds = geometry.border;
         let content = geometry.content;
         layout.component_bounds.push(bounds);
+        layout
+            .component_indices
+            .insert(component.path.clone(), index);
+        layout.component_paths.push(component.path.clone());
         layout.component_addresses.push(component.address);
         layout
             .activation_factories
@@ -250,8 +282,8 @@ pub(crate) fn render_with_pointer(
                 settings,
                 width: content.width,
                 height: content.height,
-                focused: focus == Some(index),
-                hovered: hover == Some(index),
+                focused: focus.as_ref() == Some(&component.path),
+                hovered: hover.as_ref() == Some(&component.path),
                 origin: Point {
                     x: content.x,
                     y: content.y,
@@ -260,20 +292,30 @@ pub(crate) fn render_with_pointer(
             &mut display,
         )?;
         display.emit(DrawCommand::PopClip);
-        if let Some(activate) = component.activate {
-            let target_index = layout.focus_targets.len();
+        if component.focus != super::focus::FocusBehavior::None
+            && geometry.navigation_clip.width > 0.0
+            && geometry.navigation_clip.height > 0.0
+        {
             layout.focus_targets.push(super::instance::FocusTarget {
                 component_index: index,
-                activate,
+                path: component.path,
+                sequential: component.focus == super::focus::FocusBehavior::Sequential,
+                bounds: geometry.navigation_clip,
             });
             if geometry.clip.width > 0.0 && geometry.clip.height > 0.0 {
-                layout.hit_regions.push(HitRegion {
+                layout.focus_regions.push(HitRegion {
                     bounds: geometry.clip,
                     component_index: index,
-                    target_index,
                 });
             }
         }
+        if component.activate.is_some() && geometry.clip.width > 0.0 && geometry.clip.height > 0.0 {
+            layout.hit_regions.push(HitRegion {
+                bounds: geometry.clip,
+                component_index: index,
+            });
+        }
+        layout.activations.push(component.activate);
     }
     display.emit(DrawCommand::PopClip);
     let painting = started.elapsed();
@@ -292,6 +334,7 @@ pub(crate) fn render_with_pointer(
         redraw_after,
         animating,
         hover,
+        focus,
         timings: super::performance::WorkerTimings {
             preparation,
             tree_construction: geometry.construction,

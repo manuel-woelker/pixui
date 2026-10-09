@@ -50,3 +50,6 @@ msgstr "Sammlungen"
 
 msgid "Text and translations"
 msgstr "Text und Übersetzungen"
+
+msgid "Focus without activation"
+msgstr "Fokus ohne Aktivierung"

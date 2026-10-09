@@ -180,8 +180,20 @@ fn every_component_can_hover_and_focus_is_shared_but_other_definitions_are_isola
     let state = app
         .inspect(move |app| Ok(app.uis().definition(definition)?.state().clone()))
         .unwrap();
-    assert_eq!(state.hover, Some(2));
-    assert_eq!(state.focus, Some(1));
+    assert_eq!(
+        state.hover,
+        Some(
+            app.inspect(move |app| app.uis().instance(first)?.component_id(2))
+                .unwrap()
+        )
+    );
+    assert_eq!(
+        state.focus,
+        Some(
+            app.inspect(move |app| app.uis().instance(first)?.component_id(1))
+                .unwrap()
+        )
+    );
     app.ui_command(UiCommand::Visibility {
         instance: second,
         visible: false,

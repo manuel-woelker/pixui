@@ -291,6 +291,7 @@ fn extraction_visits_hidden_arms_empty_loops_and_nested_titles_and_rolls_back_fa
                 .unwrap(),
             ),
             LivePart::ForLoop(ForLoopPart {
+                key: None,
                 expression: Expression::from_collection(rows),
                 body: Box::new(label(row)),
             }),
@@ -370,6 +371,7 @@ fn loop_fields_retain_language_and_empty_catalog_falls_back() {
         .register_ui(UiDefinition::new(
             "rows",
             LivePart::ForLoop(ForLoopPart {
+                key: None,
                 expression: Expression::from_collection(
                     app.collection_key("test", "rows").unwrap(),
                 ),

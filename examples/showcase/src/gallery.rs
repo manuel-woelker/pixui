@@ -151,6 +151,7 @@ pub fn definition(
         label(components, Expression::text("Collections")?),
         button(components, "Add collection row", add_sample)?,
         LivePart::ForLoop(ForLoopPart {
+            key: None,
             expression: Expression::from_collection(samples),
             body: Box::new(
                 ComponentPart::typed(components.label, |context, _| {
@@ -176,6 +177,17 @@ pub fn definition(
             components,
             Expression::i18n("Counter: {count}", [("count", Expression::entity(count))])?,
         ),
+        ComponentPart::typed_with_expressions(
+            components.button,
+            vec![Expression::text("Focus without activation")?],
+            |_, _, values| {
+                Ok(ButtonProps {
+                    label: text(values, 0)?,
+                })
+            },
+        )
+        .with_focus(pixui_engine::ui::focus::FocusBehavior::Sequential)
+        .into(),
     ]);
     let navigation = ContainerPart::column()
         .with_layout(LayoutStyle {

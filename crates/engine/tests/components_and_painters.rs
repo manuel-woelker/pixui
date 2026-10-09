@@ -173,6 +173,7 @@ fn missing_painters_and_foreign_handles_fail_before_empty_loops_are_evaluated() 
     let mut app = Application::default();
     let a = app.register_component::<A>("a").unwrap();
     let template = LivePart::ForLoop(ForLoopPart {
+        key: None,
         expression: Expression::field(pixui_reflect::FieldIndex(999)),
         body: Box::new(LivePart::Component(ComponentPart::typed(a, props))),
     });

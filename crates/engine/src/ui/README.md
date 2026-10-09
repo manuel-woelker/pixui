@@ -32,8 +32,8 @@ callbacks on that application's worker.
 
 Rendering walks a private copy of the definition template and retains only the
 instance's `LiveState`. This protects definitions from the legacy mutable walker
-API. Loop state follows positions; content invalidation clears focus and hover
-until keyed reconciliation is implemented.
+API. Collection loops reconcile by complete generational arena keys. Other
+loops keep positional state unless an explicit item-key resolver is provided.
 
 ## Shared interaction
 
@@ -41,25 +41,26 @@ until keyed reconciliation is implemented.
 scrolling. Hover hit testing uses all prepared component bounds intersected with
 ancestor clips and the viewport, not just action hit regions. The engine
 supplies `PaintContext::hovered` to every painter; components without activation
-can still draw a hover effect. Focus traversal visits all components with
-activation, including offscreen controls, through a separate keyboard target
-list. Both refer to component order, including noninteractive components, so an
-action hit-region index is not a component index.
+can still draw a hover effect. Focus and hover use structural occurrence IDs,
+independent of flattened drawing indices. Focus participation is separate from
+activation: inert controls can opt into sequential or direct focus, and actions
+can opt out. See [focus identity and navigation](Focus.md) for the public API.
 
-The latest processed pointer input selects the hover source window. Retained
-pointer position is retested after layout. Leaving, hiding, or closing that
-source clears shared hover; an inactive peer cannot clear it. Interaction does
-not affect other definitions. Hidden instances retain pending updates and
-reflect shared state when shown. Scroll changes invalidate geometry for all
-peers; each clamps the shared requested offset to its viewport without changing
-the shared value during rendering. Focus and hover changes retain compatible
-input revisions while geometry is unchanged.
+The latest pointer input selects the hover source window. Retained pointer
+position is retested after layout. Leaving, hiding, or closing that source
+clears shared hover; an inactive peer cannot clear it. Focus survives actions,
+resizing and native blur. Only successful preparation of the latest focus source
+clears a removed or ineligible target. A peer with a different active tree
+cannot clear it. Hidden sources defer reconciliation until shown; new focus
+input supersedes them. Closing the source chooses the oldest remaining instance
+deterministically, or clears focus if none remain.
 
-Component identity currently follows prepared tree positions. Instances sharing
-a definition must retain corresponding component order; independent conditional
-structures need stable component keys before sharing interaction safely. Content
-invalidation clears positional focus and hover. Closing a window preserves
-shared focus and scrolling; closing the active pointer source clears hover.
+Scroll changes invalidate geometry for all peers; each clamps the shared
+requested offset to its viewport. Tab visits sequentially eligible targets in
+physical preorder, wraps, and scrolls offscreen targets into view. Fully clipped
+descendants of non-scrolling containers are skipped. Direct targets are
+reachable by pointer or checked `UiCommand::Focus` requests. Compatible visual
+redraws retain safe input revisions; content changes still reject old input.
 
 ## Outputs and input
 
@@ -97,13 +98,13 @@ window focus and IME events. Named keys and physical codes use the documented
 winit names; native unidentified key codes remain opaque strings. No winit types
 or native window resources enter the engine.
 
-The application's default input policy activates on left-button release,
-traverses focus with Tab (backwards with Shift+Tab), activates focus with Enter
-or Space, and converts each vertical wheel line to forty logical pixels. Key
-releases, repeats and synthetic keyboard transitions do not activate or toggle
-shortcuts. Other buttons/keys, text, IME and native focus transitions are
-forwarded but currently have no default behavior. There is no component event
-propagation, pointer capture or text editing yet.
+The application's default input policy focuses on left-button press and
+activates on release, traverses focus with Tab (backwards with Shift+Tab),
+activates focus with Enter or Space, and converts each vertical wheel line to
+forty logical pixels. Key releases, repeats and synthetic keyboard transitions
+do not activate or toggle shortcuts. Other buttons/keys, text, IME and native
+focus transitions are forwarded but currently have no default behavior. There is
+no component event propagation, pointer capture or text editing yet.
 
 The worker rejects geometry-dependent stale input and discards superseded
 pointer motion. Unhandled raw events and F11 do not need compatible geometry;
