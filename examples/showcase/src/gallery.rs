@@ -5,6 +5,7 @@ use pixui_engine::{
     application::application_handle::ApplicationHandle,
     components::{
         button::ButtonProps, checkbox::CheckboxProps, image::ImageProps, label::LabelProps,
+        text_input::TextInputProps,
     },
     expression::{context::ExpressionContext, expression::Expression},
     layout::{
@@ -177,6 +178,15 @@ pub fn definition(
             components,
             Expression::i18n("Counter: {count}", [("count", Expression::entity(count))])?,
         ),
+        label(components, Expression::text("Controlled text")?),
+        input::<0>(app, slice, components, "text")?,
+        label(components, Expression::text("Normalized to uppercase")?),
+        input::<1>(app, slice, components, "uppercase")?,
+        label(
+            components,
+            Expression::text("At most 12 characters; longer edits are rejected")?,
+        ),
+        input::<2>(app, slice, components, "limited")?,
         ComponentPart::typed_with_expressions(
             components.button,
             vec![Expression::text("Focus without activation")?],
@@ -343,4 +353,44 @@ fn window_properties(
         title: text(values, 0)?.into(),
         icon: Some(ResourcePath::new("images/pixui-logo.png")?),
     })
+}
+
+fn input<const MODE: u8>(
+    app: &ApplicationHandle,
+    slice: pixui_engine::application::application_slice::SliceId,
+    components: StandardComponents,
+    name: &str,
+) -> PixuiResult<LivePart> {
+    Ok(ComponentPart::typed_with_expressions(
+        components.text_input,
+        vec![Expression::entity(app.entity_ref::<String>(slice, name)?)],
+        |_, _, values| {
+            Ok(TextInputProps {
+                content: text(values, 0)?,
+            })
+        },
+    )
+    .with_change(change::<MODE>)
+    .with_layout(LayoutStyle {
+        width: Length::Percent(1.0),
+        min_width: Length::Pixels(0.0),
+        ..Default::default()
+    })
+    .into())
+}
+fn change<const MODE: u8>(
+    context: &ExpressionContext<'_>,
+    _: &PresentationSettings,
+) -> PixuiResult<pixui_engine::ui::text_input::binding::ChangeBinding> {
+    let action = context
+        .application()?
+        .slice_named("showcase")?
+        .action_handle_named(match MODE {
+            1 => "edit_uppercase",
+            2 => "edit_limited",
+            _ => "edit_text",
+        })?;
+    Ok(Box::new(move |_, content| {
+        action.call(vec![Box::new(content)])
+    }))
 }

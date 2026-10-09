@@ -40,7 +40,7 @@ Use `ComponentPart::with_focus` or `with_focus_resolver`:
 
 | Behavior | Pointer/explicit focus | Tab | Default |
 | --- | --- | --- | --- |
-| Automatic | With activation | With activation | Yes |
+| Automatic | With activation or text input | With activation or text input | Yes |
 | Sequential | Yes | Yes | No |
 | Direct | Yes | No | No |
 | None | No | No | No |
@@ -48,13 +48,13 @@ Use `ComponentPart::with_focus` or `with_focus_resolver`:
 The resolver runs after props preparation, independently of painting. It can
 disable focus from application data. Focus eligibility does not disable pointer
 activation: an explicitly nonfocusable action still has an activation region.
-There is no text-event handler yet.
+Text inputs handle editing independently of activation.
 
 Tab/Shift+Tab follow physical preorder, wrap and start at the appropriate end
 when no sequential target is selected. Direct targets are skipped. Offscreen
 targets scroll into view; fully clipped descendants of non-scrolling containers
-are excluded. Partly visible targets remain eligible. Arrow keys are reserved
-for future component behavior.
+are excluded. Partly visible targets remain eligible. Focused text inputs use
+arrow keys for caret navigation.
 
 Pointer press selects focus; button release activates and also supports existing
 release-only programmatic clicks. Empty-space clicks clear focus. Enter/Space
@@ -80,7 +80,9 @@ The application supplies `application`, `instance`, `component_index`, and the
 `UiCommand` import. Sending `target: None` clears focus. Foreign-definition,
 removed, ineligible or dirty-geometry targets return an error. Resolving an ID
 from a noninteractive component does not grant it focus eligibility.
-Stable IDs never bypass presented-revision checks for keyboard or pointer input.
+Stable IDs alone never bypass revision checks. Text input uses a separately
+validated editing session for ordered edits; ordinary pointer/button input
+retains presented-geometry checks.
 
 ## Shared ownership and failure behavior
 
@@ -101,4 +103,5 @@ geometry; pointer leave, hide and close clear its source.
 
 The implementation uses vector paths and ordinary maps. It provides no arbitrary
 live-template mutation guarantee, custom tab order, focus scopes, accessibility
-bridge, spatial navigation, or text editing.
+bridge or spatial navigation. See [controlled text input](<Text input.md>) for
+selection ownership and editing sessions.

@@ -28,6 +28,10 @@ both windows. Switching pages preserves counters, flags, and rows.
   Add enough rows to try mouse-wheel scrolling.
 - **Images:** the core image component loads the repository logo through the
   filesystem abstraction. The native window icon shares the same snapshot.
+- **Text and translations:** three controlled fields demonstrate accepted text,
+  uppercase normalization and rejection beyond 12 characters. Selection is
+  shared between windows; clipboard and IME ownership belong to the active
+  source.
 - **Presentation:** compare themes and localized widget labels side by side.
   Sample row values are shared application data and are not translated.
 - **Interaction:** hover over controls, use Tab/Shift+Tab to move focus, and

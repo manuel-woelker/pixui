@@ -21,7 +21,7 @@ pub(super) enum InputIntent {
 
 /// Left-button press focuses and release activates; key releases and repeats never activate or
 /// toggle diagnostics. Line scrolling currently uses forty logical pixels/line.
-/// Text, IME, other buttons and other keys have no default behavior yet.
+/// Focused text input is handled before this generic activation policy.
 pub(super) fn interpret(input: UiInput) -> PixuiResult<InputIntent> {
     let intent = match input {
         UiInput::PointerMoved(point) => {

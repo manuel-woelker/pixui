@@ -16,6 +16,7 @@ use pixui_base::{PixuiResult, pixui_error};
 use std::any::Any;
 
 pub(crate) struct PaintInput<'a> {
+    pub text_edit: Option<&'a crate::ui::text_input::geometry::TextEditSnapshot>,
     pub props: &'a dyn Any,
     pub state: &'a GenericComponentState,
     pub settings: &'a PresentationSettings,
@@ -34,6 +35,10 @@ pub(crate) struct MeasureInput<'a> {
     pub constraints: super::measure::MeasureConstraints,
 }
 trait ErasedPainter: Send {
+    fn text_input_geometry(
+        &self,
+        input: MeasureInput<'_>,
+    ) -> PixuiResult<Option<crate::ui::text_input::geometry::TextInputGeometry>>;
     fn measure(&self, input: MeasureInput<'_>) -> PixuiResult<crate::ui::geometry::Size>;
     fn paint(&self, input: PaintInput<'_>, display: &mut DisplayListBuilder) -> PixuiResult<()>;
 }
@@ -67,6 +72,24 @@ impl<C: Component, P: Painter<C>> ErasedPainter for Adapter<C, P> {
         }
         Ok(size)
     }
+    fn text_input_geometry(
+        &self,
+        input: MeasureInput<'_>,
+    ) -> PixuiResult<Option<crate::ui::text_input::geometry::TextInputGeometry>> {
+        self.painter
+            .text_input_geometry(&super::measure::MeasureContext {
+                props: input
+                    .props
+                    .downcast_ref::<C::Props>()
+                    .ok_or_else(|| pixui_error!("input geometry props mismatch"))?,
+                state: input
+                    .state
+                    .downcast_ref::<C::State>()
+                    .ok_or_else(|| pixui_error!("input geometry state mismatch"))?,
+                settings: input.settings,
+                constraints: input.constraints,
+            })
+    }
     fn paint(&self, input: PaintInput<'_>, display: &mut DisplayListBuilder) -> PixuiResult<()> {
         let props = input.props.downcast_ref::<C::Props>().ok_or_else(|| {
             pixui_error!(
@@ -83,6 +106,7 @@ impl<C: Component, P: Painter<C>> ErasedPainter for Adapter<C, P> {
             )
         })?;
         let mut context = PaintContext {
+            text_edit: input.text_edit,
             props,
             state,
             settings: input.settings,
@@ -169,6 +193,20 @@ impl PainterRegistry {
         Ok(())
     }
 
+    pub(crate) fn text_input_geometry(
+        &self,
+        address: ComponentAddress,
+        components: &ComponentRegistry,
+        input: MeasureInput<'_>,
+    ) -> PixuiResult<Option<crate::ui::text_input::geometry::TextInputGeometry>> {
+        self.require(address, components.resolve(address)?)?;
+        self.entries[address.index]
+            .as_ref()
+            .expect("validated painter")
+            .1
+            .text_input_geometry(input)
+    }
+
     pub(crate) fn measure(
         &self,
         address: ComponentAddress,
@@ -217,6 +255,7 @@ mod tests {
         let settings = PresentationSettings::default();
         let state = GenericComponentState::new(ButtonState::default());
         let input = |props, state| PaintInput {
+            text_edit: None,
             props,
             state,
             settings: &settings,

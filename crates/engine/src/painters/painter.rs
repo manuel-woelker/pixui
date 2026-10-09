@@ -14,5 +14,13 @@ pub trait Painter<C: Component>: Send + 'static {
         &self,
         context: &super::measure::MeasureContext<'_, C>,
     ) -> PixuiResult<crate::ui::geometry::Size>;
+    /// Editable painters provide caret geometry using the same font as paint.
+    /// Other components return None. This probe has the same purity as measure.
+    fn text_input_geometry(
+        &self,
+        _context: &super::measure::MeasureContext<'_, C>,
+    ) -> PixuiResult<Option<crate::ui::text_input::geometry::TextInputGeometry>> {
+        Ok(None)
+    }
     fn paint(&self, context: &mut PaintContext<'_, C>) -> PixuiResult<()>;
 }

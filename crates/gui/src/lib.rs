@@ -1,3 +1,4 @@
+pub mod clipboard;
 mod drawing_activity;
 pub mod host;
 mod native_input;

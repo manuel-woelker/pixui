@@ -50,6 +50,9 @@ fn main() -> PixuiResult<()> {
     actions.add_todo("Try dark mode / Dunkelmodus ausprobieren")?;
     let components = application.register_standard_components()?;
     if std::env::args().any(|arg| arg == "--custom-painter") {
+        application.register_painter::<pixui_engine::components::text_input::TextInputComponent>(
+            pixui_engine::painters::text_input::TextInputPainter,
+        )?;
         application.register_painter::<pixui_engine::components::button::ButtonComponent>(
             CustomButtonPainter,
         )?;

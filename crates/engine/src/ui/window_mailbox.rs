@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex};
 type Waker = Arc<dyn Fn() + Send + Sync>;
 #[derive(Default)]
 struct Pending {
+    text_input: Option<WindowCommand>,
     title: Option<WindowCommand>,
     icon: Option<WindowCommand>,
     closed: bool,
@@ -29,6 +30,7 @@ impl WindowCommandSender {
         let waker = {
             let mut pending = self.0.lock().expect("window command mailbox lock");
             match command {
+                WindowCommand::SetTextInput(_) => pending.text_input = Some(command),
                 WindowCommand::SetTitle(_) => pending.title = Some(command),
                 WindowCommand::SetIcon(_) => pending.icon = Some(command),
             }
@@ -61,7 +63,12 @@ impl WindowCommandReceiver {
     }
     pub fn try_recv(&self) -> Result<WindowCommand, TryRecvError> {
         let mut pending = self.0.lock().expect("window command mailbox lock");
-        if let Some(command) = pending.title.take().or_else(|| pending.icon.take()) {
+        if let Some(command) = pending
+            .title
+            .take()
+            .or_else(|| pending.icon.take())
+            .or_else(|| pending.text_input.take())
+        {
             Ok(command)
         } else if pending.closed {
             Err(TryRecvError::Disconnected)

@@ -15,6 +15,7 @@ use pixui_base::PixuiResult;
 
 #[derive(Clone, Copy, Debug)]
 pub struct StandardComponents {
+    pub text_input: ComponentId<crate::components::text_input::TextInputComponent>,
     pub button: ComponentId<ButtonComponent>,
     pub label: ComponentId<LabelComponent>,
     pub image: ComponentId<ImageComponent>,
@@ -25,6 +26,7 @@ pub struct StandardComponents {
 /// registrations; configure a fresh application and call this helper once.
 pub fn register_components(registry: &mut ComponentRegistry) -> PixuiResult<StandardComponents> {
     Ok(StandardComponents {
+        text_input: registry.register("text_input")?,
         button: registry.register("button")?,
         label: registry.register("label")?,
         checkbox: registry.register("checkbox")?,
@@ -38,6 +40,10 @@ pub fn register_painters(
     registry: &mut PainterRegistry,
     components: &ComponentRegistry,
 ) -> PixuiResult<()> {
+    registry.register::<crate::components::text_input::TextInputComponent>(
+        components,
+        super::text_input::TextInputPainter,
+    )?;
     registry.register::<ButtonComponent>(components, ButtonPainter)?;
     registry.register::<LabelComponent>(components, LabelPainter)?;
     registry.register::<CheckboxComponent>(components, CheckboxPainter)?;

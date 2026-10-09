@@ -1,6 +1,6 @@
 # Controlled text input
 
-Status: proposed.
+Status: completed.
 
 ## Goal and initial scope
 
@@ -15,7 +15,7 @@ editing is required even where the current font cannot display a character.
 
 Prerequisite:
 [stable component identity and focus navigation](<2026-10-09 Stable component identity and focus navigation.md>).
-The implementation exists; its native verification is still pending.
+The implementation and native verification are complete.
 
 ## Controlled contract
 
@@ -109,12 +109,14 @@ the next edit. Start with a preparation/render barrier after each editing action
 if needed; optimize targeted preparation only after correctness is tested. There
 is no need to wait for native presentation between characters.
 
-Finalize the host/session handshake before implementation: publish session
-metadata with the focused input, attach it to editing events, and buffer initial
-text events during a pending pointer-focus handshake if necessary. Preserve
-ordered delivery and cancellation; do not apply an old session's buffered text
-to a newly focused field. Document handling of programmatic focus and batched
-click-then-type events explicitly.
+The host receives latest `WindowCommand::SetTextInput` metadata and stamps
+`UiCommand::TextInput` with its opaque editing token. Ordered click/Tab/native
+focus handshakes allow tokenless input only against that session's originating
+presented revision. Programmatic focus has no tokenless origin. No buffering or
+blocking reply is needed; subsequent metadata supplies the token. IME retains a
+separate native token during keyboard handshakes. Captured selection motion uses
+its gesture session while horizontal scroll changes; unrelated content or
+presentation invalidation cancels capture.
 
 ## Editing behavior
 
@@ -213,81 +215,95 @@ Keep temporary preedit separate from `content`; only commits propose changes.
 Cancel composition on focus loss/transfer, target removal or external content
 replacement. Guard keyboard-text versus IME-commit duplication.
 
-Strict initial interpretation of “always show content”: do not replace rendered
-content with inline preedit. Native composition UI may show the tentative
-string; inline preedit would require an explicit documented exception to this
-contract. Confirm this choice below before implementing composition
-presentation.
+Chosen interpretation of “always show content”: preedit never replaces rendered
+props. Native composition UI may show tentative text. Inline preedit remains a
+follow-up requiring an explicit exception to the controlled display contract.
 
 ## Implementation checklist
 
-- [ ] Resolve the open scope/session questions below and record choices here.
-- [ ] Add documented core input props/state, standard registration and a painter
+- [x] Resolve the open scope/session questions below and record choices here.
+- [x] Add documented core input props/state, standard registration and a painter
   with bounded intrinsic size, clipping and authoritative-content validation.
-- [ ] Add change bindings and narrow input routing; publish safe editing-session
+- [x] Add change bindings and narrow input routing; publish safe editing-session
   metadata and define batch/render barriers before handling content edits.
-- [ ] Implement a pure editing reducer, Unicode boundaries, selection
+- [x] Implement a pure editing reducer, Unicode boundaries, selection
       reconciliation and shared editing-state lifecycle keyed by stable
       occurrence IDs.
-- [ ] Add shared text-position measurement and per-instance caret/selection
+- [x] Add shared text-position measurement and per-instance caret/selection
       geometry, horizontal scrolling and pointer selection capture.
-- [ ] Add ordered native effect requests/replies and injectable clipboard
+- [x] Add ordered native effect requests/replies and injectable clipboard
       access, including cancellation, bounds and asynchronous cut/paste
       validation.
-- [ ] Integrate IME commits, composition lifecycle and native caret placement;
+- [x] Integrate IME commits, composition lifecycle and native caret placement;
   retain generic shortcut/activation behavior for other components.
-- [ ] Implement selection/caret painting and idle-aware blinking from master
+- [x] Implement selection/caret painting and idle-aware blinking from master
       time.
-- [ ] Add a controlled showcase field and todo-entry field with change actions;
+- [x] Add a controlled showcase field and todo-entry field with change actions;
   demonstrate accepted, normalized and rejected values in the showcase.
-- [ ] Update architecture, UI/input/text documentation and significant decision
+- [x] Update architecture, UI/input/text documentation and significant decision
       records; document the controlled contract, ownership and rendering
       limitations.
-- [ ] Run `./n check` after each completed unit and resolve introduced failures.
+- [x] Run `./n check` after each completed unit and resolve introduced failures.
 
 ## Verification checklist
 
-- [ ] Reducer: empty text, selection direction, bounds, grapheme/word movement,
+- [x] Reducer: empty text, selection direction, bounds, grapheme/word movement,
   deletion, insertion, combining marks, emoji sequences and multibyte text.
-- [ ] Controlled callbacks: full proposed values, no-op suppression, acceptance,
+- [x] Controlled callbacks: full proposed values, no-op suppression, acceptance,
   normalization, rejection/errors and external replacement reconciliation.
-- [ ] Rapid typing against one presented frame, repeats, click-then-type
+- [x] Rapid typing against one presented frame, repeats, click-then-type
       batches, interleaved actions and session changes never lose or retarget
       text.
-- [ ] Clipboard: copy without a change callback, cut write failure, paste
+- [x] Clipboard: copy without a change callback, cut write failure, paste
       failure, non-text/empty/oversized data, normalization, delayed replies and
       cancellation.
-- [ ] Pointer placement/drag, Shift selection, clipping, horizontal scroll,
+- [x] Pointer placement/drag, Shift selection, clipping, horizontal scroll,
       resizing, scale changes and different font fallback widths agree with
       painted text.
-- [ ] Stable focus through edits, keyed reorder, arm removal and slot reuse;
+- [x] Stable focus through edits, keyed reorder, arm removal and slot reuse;
   shared selection in two windows with independent geometry and native activity.
-- [ ] IME: preedit causes no change, commits insert once, cancellation and
+- [x] IME: preedit causes no change, commits insert once, cancellation and
       external updates are safe, candidate geometry follows the active source
       window.
-- [ ] Software/GPU display lists render selection and caret consistently; frozen
+- [x] Software/GPU display lists render selection and caret consistently; frozen
   timestamps make blink tests deterministic, and idle/hidden inputs do not spin.
-- [ ] Native showcase/todo checks: type, select, copy/cut/paste, platform
+- [x] Native showcase/todo checks: type, select, copy/cut/paste, platform
       shortcuts, focus changes, two windows, resize, hide/show and an IME where
       available.
 
-## Open questions and recommended defaults
+## Recorded choices and verification
 
-1. **Single-line first?** Recommended. Multiline needs vertical caret geometry,
-   line navigation, wrapping and scroll policy beyond this initial component.
-2. **Inline IME preedit?** Strict content-only rendering is proposed initially.
-   If inline composition is desired, explicitly allow a transient composition
-   overlay while keeping committed text fully controlled.
-3. **Shared selection?** Recommended to match definition-wide focus. Only native
-   composition ownership and presentation geometry belong to the source window.
-4. **Session handshake and initial input buffering:** select the smallest
-   protocol that proves ordered click-then-type and rapid typing work while
-   preventing stale events from reaching another focused input. This is a
-   correctness gate.
-5. **Input limits and native libraries:** choose a documented bounded byte
-   limit, Unicode boundary library and clipboard backend during implementation.
-   Confirm supported platforms and test the Linux display protocols used by
-   examples.
+1. **Single-line:** implemented. Enter is consumed, with submission and
+   multiline behavior deferred.
+2. **Composition:** native composition UI only. Preedit is separate from props;
+   only commits propose changes.
+3. **Shared selection:** stored by structural path within the definition;
+   measured caret stops and horizontal scroll stay per instance.
+4. **Session handshake:** opaque session metadata plus a revision-scoped initial
+   native focus handshake. Programmatic focus requires the published token.
+   Worker barriers refresh authoritative props before and after edits. Batched
+   queued edits, stale tokens, Tab and programmatic-focus races have tests.
+5. **Limits/libraries:** 1 MiB of UTF-8 per committed value/insertion;
+   `unicode-segmentation` 1.13.3 and arboard 3.6.1 with Wayland data-control.
+   Clipboard I/O runs on an injectable native executor thread. Worker pending
+   requests, per-instance effects, executor requests and replies are bounded to
+   16. OS clipboard reads can allocate before the byte check.
+
+Automated coverage includes the pure reducer/geometry tests, worker integration
+suite, injected clipboard executor, example action/layout regressions and a
+software/GPU input fixture. `./n check` passed after implementation units.
+The input renderer test also passed with `PIXUI_REQUIRE_GPU=1`, requiring an
+actual adapter rather than silently skipping GPU verification.
+
+Implementation and automated verification are complete. The user reported
+successful manual validation on 2026-10-09 and requested moving the finished
+plans to completed.
+
+API and ownership documentation:
+[Text input](<../../../crates/engine/src/ui/Text input.md>). Architecture and
+[DR-018](<../../decisions/DR-018 Keep text input controlled with shared selection and editing sessions.md>)
+record the design and its costs. The todo draft remains populated after adding;
+clearing it and Enter-to-submit can be added with a dedicated submission action.
 
 Submission callbacks, validation styling, placeholders and accessibility support
 are follow-ups. Do not imply that this first native input has an accessibility

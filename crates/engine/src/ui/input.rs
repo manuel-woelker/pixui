@@ -141,6 +141,19 @@ pub enum UiCommand {
         instance: UiInstanceId,
         target: Option<super::focus::ComponentInstanceId>,
     },
+    /// Ordered editing input. A session authorizes keyboard edits independently
+    /// of content-driven render revisions. None is the initial focus handshake.
+    TextInput {
+        instance: UiInstanceId,
+        revision: RenderRevision,
+        session: Option<super::text_input::protocol::EditingSessionId>,
+        input: Box<UiInput>,
+    },
+    HostAttached {
+        instance: UiInstanceId,
+        clipboard: bool,
+    },
+    Clipboard(super::text_input::protocol::ClipboardReply),
     Present {
         instance: UiInstanceId,
         settings: PresentationSettings,
@@ -178,7 +191,10 @@ pub enum UiCommand {
 impl UiCommand {
     pub fn instance(&self) -> UiInstanceId {
         match self {
+            Self::Clipboard(reply) => reply.instance,
             Self::Input { instance, .. }
+            | Self::TextInput { instance, .. }
+            | Self::HostAttached { instance, .. }
             | Self::Focus { instance, .. }
             | Self::Present { instance, .. }
             | Self::Redraw { instance }

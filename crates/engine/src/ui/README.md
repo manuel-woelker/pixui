@@ -102,9 +102,11 @@ The application's default input policy focuses on left-button press and
 activates on release, traverses focus with Tab (backwards with Shift+Tab),
 activates focus with Enter or Space, and converts each vertical wheel line to
 forty logical pixels. Key releases, repeats and synthetic keyboard transitions
-do not activate or toggle shortcuts. Other buttons/keys, text, IME and native
-focus transitions are forwarded but currently have no default behavior. There is
-no component event propagation, pointer capture or text editing yet.
+do not activate or toggle shortcuts. Focused controlled inputs handle text,
+selection, clipboard and IME commits before generic activation. Native focus
+transfers editing ownership between instances. Selection capture is specific to
+text inputs; there is no general event propagation framework. See
+[controlled text input](<Text input.md>).
 
 The worker rejects geometry-dependent stale input and discards superseded
 pointer motion. Unhandled raw events and F11 do not need compatible geometry;
@@ -121,8 +123,10 @@ ID and disconnects output delivery; late commands return errors.
 Any dispatched action invalidates all instances, including a handler that
 returns an error after changing data. Presentation and interaction changes
 invalidate their own instance. Rendering happens after at most 32 queued
-commands. Inspection first flushes rendering for preceding commands; ordinary
-action replies acknowledge execution and do not wait for presentation.
+commands. Session-based text input additionally prepares before and after edits
+to keep rapid proposals based on current authoritative props. Inspection first
+flushes rendering for preceding commands; ordinary action replies acknowledge
+execution and do not wait for presentation.
 
 Rendering failure retains the last good output, revision, and layout and records
 `UiInstance::last_error`. Component initialization already performed is not

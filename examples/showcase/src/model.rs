@@ -18,6 +18,28 @@ pub mod actions {
     use super::*;
     use data::Sample;
 
+    /// Accept the proposed text unchanged.
+    #[action]
+    pub fn edit_text(mut text: EntityMut<String>, content: String) {
+        *text = content;
+    }
+
+    /// Demonstrate application-owned normalization.
+    #[action]
+    pub fn edit_uppercase(mut uppercase: EntityMut<String>, content: String) {
+        *uppercase = content.to_uppercase();
+    }
+
+    /// Reject a proposal without changing the authoritative value.
+    #[action]
+    pub fn edit_limited(mut limited: EntityMut<String>, content: String) -> PixuiResult<()> {
+        if content.chars().count() > 12 {
+            return Err(pixui_error!("at most 12 characters"));
+        }
+        *limited = content;
+        Ok(())
+    }
+
     /// Select a gallery page in every presentation, preserving demo data.
     #[action]
     pub fn select(mut selected: EntityMut<u64>, page: u64) -> PixuiResult<()> {
@@ -68,6 +90,9 @@ pub fn register(application: &ApplicationHandle) -> PixuiResult<()> {
     let samples =
         application.register_collection(Collection::new_reflected::<data::Sample>("samples"))?;
     slice.bind_collection("samples", samples)?;
+    slice.bind("text", String::new())?;
+    slice.bind("uppercase", String::new())?;
+    slice.bind("limited", String::new())?;
     slice.bind("count", 0_u64)?;
     slice.bind("selected", 0_u64)?;
     slice.bind("checked", false)?;

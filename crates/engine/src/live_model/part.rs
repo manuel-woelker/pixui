@@ -38,6 +38,7 @@ pub struct ComponentPart {
     pub layout: crate::layout::style::LayoutStyle,
     pub(crate) expressions: Vec<Expression>,
     pub(crate) binding: Option<Arc<dyn ErasedBinding>>,
+    pub(crate) change: Option<crate::ui::text_input::binding::ChangeFactory>,
     pub(crate) activation: Option<ActivationFactory>,
 }
 
@@ -51,6 +52,7 @@ impl ComponentPart {
             expressions: Vec::new(),
             binding: None,
             activation: None,
+            change: None,
         }
     }
 
@@ -90,6 +92,7 @@ impl ComponentPart {
                 },
             )),
             activation: None,
+            change: None,
         }
     }
 
@@ -114,6 +117,7 @@ impl ComponentPart {
                 marker: PhantomData,
             })),
             activation: None,
+            change: None,
         }
     }
 
@@ -121,6 +125,13 @@ impl ComponentPart {
     /// and hit testing remain the renderer's responsibility.
     pub fn with_activation(mut self, activation: ActivationFactory) -> Self {
         self.activation = Some(activation);
+        self
+    }
+
+    /// Proposes complete owned content through an application action. Without a
+    /// binding a TextInputComponent remains selectable but read-only.
+    pub fn with_change(mut self, change: crate::ui::text_input::binding::ChangeFactory) -> Self {
+        self.change = Some(change);
         self
     }
 

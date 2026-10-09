@@ -30,6 +30,8 @@ struct PreparedComponent {
     focus: super::focus::FocusBehavior,
     address: ComponentAddress,
     props: Box<dyn Any + Send>,
+    change: Option<super::text_input::binding::ChangeBinding>,
+    change_factory: Option<usize>,
     activate: Option<ActionBinding>,
     activation_factory: Option<usize>,
 }
@@ -54,18 +56,35 @@ impl Visitor for PrepareVisitor<'_> {
             .map(|expression| crate::expression::evaluator::evaluate(entry.context, expression))
             .collect::<PixuiResult<Vec<_>>>()?;
         let props = binding.prepare(entry.context, self.settings, &mut state.state, &values)?;
+        if part.change.is_some()
+            && binding.address().component_type
+                != std::any::TypeId::of::<crate::components::text_input::TextInputComponent>()
+        {
+            return Err(pixui_error!("change bindings require TextInputComponent"));
+        }
         let activate = part
             .activation
             .map(|factory| factory(entry.context, self.settings))
             .transpose()?;
         self.components.push(PreparedComponent {
+            change: part
+                .change
+                .map(|factory| factory(entry.context, self.settings))
+                .transpose()?,
+            change_factory: part.change.map(|factory| factory as usize),
             path: entry.path.clone(),
             focus: part
                 .focus_resolver
                 .map(|resolve| resolve(entry.context, self.settings))
                 .transpose()?
                 .unwrap_or(part.focus)
-                .resolved(activate.is_some()),
+                .resolved(
+                    activate.is_some()
+                        || binding.address().component_type
+                            == std::any::TypeId::of::<
+                                crate::components::text_input::TextInputComponent,
+                            >(),
+                ),
             address: binding.address(),
             props,
             activate,
@@ -130,6 +149,7 @@ pub fn render_measured(
         focus,
         hover,
         None,
+        None,
     )
 }
 
@@ -143,6 +163,7 @@ pub(crate) fn render_with_pointer(
     focus: Option<&crate::live_model::identity::ComponentPath>,
     hover: Option<&crate::live_model::identity::ComponentPath>,
     pointer: Option<Point>,
+    editing: Option<&super::text_input::target::RenderEditing<'_>>,
 ) -> PixuiResult<RenderedUi> {
     let started = std::time::Instant::now();
     settings.validate()?;
@@ -269,6 +290,66 @@ pub(crate) fn render_with_pointer(
             .push(component.activation_factory);
         layout.content_bounds.push(content);
         layout.component_clips.push(geometry.clip);
+        let input_target = if component.address.component_type
+            == std::any::TypeId::of::<crate::components::text_input::TextInputComponent>()
+        {
+            let props = component
+                .props
+                .downcast_ref::<crate::components::text_input::TextInputProps>()
+                .ok_or_else(|| pixui_error!("input props mismatch"))?;
+            let input_geometry = application
+                .painters()
+                .text_input_geometry(
+                    component.address,
+                    application.components(),
+                    MeasureInput {
+                        props,
+                        state,
+                        settings,
+                        constraints: crate::painters::measure::MeasureConstraints {
+                            width: Some(content.width),
+                            height: Some(content.height),
+                            available_width: crate::painters::measure::AvailableSpace::Definite(
+                                content.width,
+                            ),
+                            available_height: crate::painters::measure::AvailableSpace::Definite(
+                                content.height,
+                            ),
+                        },
+                    },
+                )?
+                .ok_or_else(|| pixui_error!("text input painter must provide caret geometry"))?;
+            input_geometry.validate(&props.content)?;
+            let mut edit = editing
+                .and_then(|view| view.states.get(&component.path))
+                .cloned()
+                .unwrap_or_default();
+            edit.reconcile(&props.content)?;
+            let previous_scroll = editing
+                .and_then(|view| {
+                    view.previous
+                        .iter()
+                        .find(|target| target.path == component.path)
+                })
+                .map_or(0.0, |target| target.scroll);
+            let scroll = input_geometry.reveal(edit.selection.head, content.width, previous_scroll);
+            Some(super::text_input::target::TextInputTarget {
+                path: component.path.clone(),
+                component_index: index,
+                state: edit,
+                geometry: input_geometry,
+                bounds: content,
+                clip: geometry.clip.intersect(content),
+                scroll,
+                change: component.change,
+                change_factory: component.change_factory,
+            })
+        } else {
+            None
+        };
+        let input_snapshot = input_target
+            .as_ref()
+            .map(|target| target.snapshot(editing.is_some_and(|view| view.active)));
         display.emit(DrawCommand::PushClip {
             rect: geometry.clip.intersect(content),
         });
@@ -276,6 +357,7 @@ pub(crate) fn render_with_pointer(
             component.address,
             application.components(),
             PaintInput {
+                text_edit: input_snapshot.as_ref(),
                 props: component.props.as_ref(),
                 timestamp_us,
                 state,
@@ -316,6 +398,9 @@ pub(crate) fn render_with_pointer(
             });
         }
         layout.activations.push(component.activate);
+        if let Some(target) = input_target {
+            layout.text_inputs.push(target);
+        }
     }
     display.emit(DrawCommand::PopClip);
     let painting = started.elapsed();

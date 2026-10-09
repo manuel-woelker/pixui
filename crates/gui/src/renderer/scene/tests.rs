@@ -495,3 +495,110 @@ fn gpu_and_software_draw_engine_flex_and_grid_layouts_with_the_same_clips() {
         }
     }
 }
+
+#[test]
+fn controlled_input_selection_and_caret_draw_with_both_renderers() {
+    use pixui_engine::{
+        application::app::Application,
+        components::text_input::TextInputProps,
+        layout::style::LayoutStyle,
+        live_model::part::ComponentPart,
+        ui::{
+            definition::UiDefinition,
+            input::{Key, KeyboardEvent, UiCommand, UiInput},
+            presentation::PresentationSettings,
+            window_properties::WindowCommand,
+        },
+    };
+    let gpu = gpu();
+    let mut scene = gpu
+        .as_ref()
+        .map(|gpu| Scene::new(gpu.device.clone(), gpu.queue.clone(), DEFAULT_CACHE_BYTES).unwrap());
+    for scale in [1.0, 1.5] {
+        let app = Application::new();
+        let components = app.register_standard_components().unwrap();
+        app.register_standard_painters().unwrap();
+        let definition = app
+            .register_ui(UiDefinition::new(
+                "input",
+                ComponentPart::typed(components.text_input, |_, _| {
+                    Ok(TextInputProps {
+                        content: "AB".into(),
+                    })
+                })
+                .with_layout(LayoutStyle::fixed(40.0, 28.0))
+                .into(),
+            ))
+            .unwrap();
+        let (instance, outputs) = app
+            .create_ui(
+                definition,
+                PresentationSettings {
+                    timestamp_us: Some(0),
+                    scale_factor: scale,
+                    viewport: pixui_engine::ui::geometry::Size {
+                        width: 64.0 / scale,
+                        height: 64.0 / scale,
+                    },
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        outputs.recv_timeout(Duration::from_secs(3)).unwrap();
+        let target = app
+            .inspect(move |app| app.uis().instance(instance)?.component_id(0))
+            .unwrap();
+        app.ui_command(UiCommand::Focus {
+            instance,
+            target: Some(target),
+        })
+        .unwrap();
+        let caret = outputs.recv_timeout(Duration::from_secs(3)).unwrap();
+        let mut session = None;
+        while let Ok(command) = outputs.window_commands().try_recv() {
+            if let WindowCommand::SetTextInput(input) = command {
+                session = input.session;
+            }
+        }
+        let mut key = KeyboardEvent::named("shortcut");
+        key.key = Key::Character("a".into());
+        if cfg!(target_os = "macos") {
+            key.modifiers.super_key = true;
+        } else {
+            key.modifiers.control = true;
+        }
+        app.ui_command(UiCommand::TextInput {
+            instance,
+            revision: caret.revision,
+            session,
+            input: Box::new(UiInput::Keyboard(key)),
+        })
+        .unwrap();
+        let selection = outputs.recv_timeout(Duration::from_secs(3)).unwrap();
+        let first = crate::painter::paint(&caret.display_list, 64, 64, scale).unwrap();
+        let second = crate::painter::paint(&selection.display_list, 64, 64, scale).unwrap();
+        assert_ne!(first, second, "selection changes painted pixels");
+        for output in [caret, selection] {
+            output.display_list.validate().unwrap();
+            if let (Some(gpu), Some(scene)) = (&gpu, &mut scene) {
+                let pixels = render(scene, gpu, &output.display_list, scale);
+                let cpu = crate::painter::paint(&output.display_list, 64, 64, scale).unwrap();
+                let mismatches = pixels
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
+                    .zip(cpu)
+                    .filter(|(rgba, pixel)| {
+                        (i16::from(rgba[0]) - ((pixel >> 16) & 255) as i16).abs() > 3
+                            || (i16::from(rgba[1]) - ((pixel >> 8) & 255) as i16).abs() > 3
+                            || (i16::from(rgba[2]) - (pixel & 255) as i16).abs() > 3
+                    })
+                    .count();
+                assert!(
+                    mismatches <= 20,
+                    "scale {scale}: {mismatches} incorrect input pixels"
+                );
+            }
+        }
+    }
+}

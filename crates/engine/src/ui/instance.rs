@@ -30,6 +30,7 @@ pub struct FocusTarget {
 /// preorder, while hit regions contain only interactive widgets in paint order.
 #[derive(Default)]
 pub struct LayoutState {
+    pub text_inputs: Vec<super::text_input::target::TextInputTarget>,
     pub component_bounds: Vec<Rect>,
     /// Structural identity parallel to the flattened component geometry.
     pub component_paths: Vec<ComponentPath>,
@@ -55,7 +56,25 @@ impl LayoutState {
     /// published action snapshot. Content/presentation invalidation separately
     /// forbids reuse; closures cannot be compared for captured-value equality.
     pub(crate) fn compatible_with(&self, previous: &Self) -> bool {
-        self.component_paths == previous.component_paths
+        self.text_inputs
+            .iter()
+            .map(|target| {
+                (
+                    &target.path,
+                    &target.state.content,
+                    target.scroll.to_bits(),
+                    target.change_factory,
+                )
+            })
+            .eq(previous.text_inputs.iter().map(|target| {
+                (
+                    &target.path,
+                    &target.state.content,
+                    target.scroll.to_bits(),
+                    target.change_factory,
+                )
+            }))
+            && self.component_paths == previous.component_paths
             && self.component_bounds == previous.component_bounds
             && self.content_bounds == previous.content_bounds
             && self.component_clips == previous.component_clips
@@ -108,6 +127,9 @@ pub struct UiInstance {
     pub(crate) outputs: OutputSender,
     pub(crate) error: Option<String>,
     pub(crate) animation_request: Option<u64>,
+    pub(crate) clipboard_available: bool,
+    pub(crate) native_text_input: super::text_input::protocol::NativeTextInput,
+    pub(crate) native_focused: bool,
     pub(crate) visible: bool,
     pub(crate) painted_focus: Option<super::focus::ComponentInstanceId>,
     pub(crate) painted_hover: Option<super::focus::ComponentInstanceId>,

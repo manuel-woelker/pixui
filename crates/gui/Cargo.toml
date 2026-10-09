@@ -15,3 +15,4 @@ wgpu = "=30.0.1"
 pollster = "0.4"
 rgb = "0.8"
 imgref = "1.12"
+arboard = { version = "=3.6.1", default-features = false, features = ["wayland-data-control"] }

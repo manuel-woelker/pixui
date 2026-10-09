@@ -11,6 +11,7 @@ use pixui_engine::application::app::Application;
 fn create_application() -> PixuiResult<Application> {
     let mut application = Application::default();
     let mut slice = ApplicationSlice::new("todo");
+    slice.bind("draft", String::new())?;
     slice.bind("hide_done", false)?;
     slice.bind("animation_paused", false)?;
     let slice = application.add_slice(slice)?;

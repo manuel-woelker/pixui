@@ -1,6 +1,6 @@
 # Component layout
 
-Status: implemented; native visual verification pending.
+Status: completed.
 
 ## Goal
 
@@ -351,7 +351,7 @@ keep measurement and keyboard targets available.
 - [x] Update architecture, UI/painter API docs, and examples. Record adopted
   sizing ownership and container semantics in a decision record.
 - [x] Add the tests below and run `./n check` after each work/fix unit.
-- [ ] Record native visual verification before moving the plan to completed.
+- [x] Record native visual verification before moving the plan to completed.
 
 ## Verification
 
@@ -455,13 +455,10 @@ These are debug observations, not production benchmarks or timing gates. They
 support profiling optimized builds before choosing persistent caching or
 culling.
 
-### Remaining manual verification
+### Manual verification
 
-Run both examples with software and femtovg rendering. Resize their windows,
-check English/German text, toggle filtering and animation, exercise shared
-hover/focus and scrolling, and hot-reload longer PO strings and changed image
-sizes. This native visual check has not been recorded. Keep the plan in the
-active folder until it succeeds, as required by the implementation skill.
+The user reported successful manual validation on 2026-10-09 and requested
+that the finished plans move to completed.
 
 ## Sources
 

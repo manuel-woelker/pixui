@@ -35,6 +35,12 @@ pub mod actions {
         }))
     }
 
+    /// Accepts a controlled proposal for the next todo title.
+    #[action]
+    pub fn change_draft(mut draft: EntityMut<String>, content: String) {
+        *draft = content;
+    }
+
     /// Toggles shared completed-item visibility without modifying stored todos.
     #[action]
     pub fn toggle_hide_completed(mut hide_done: EntityMut<bool>) {
@@ -60,6 +66,7 @@ pub fn create_slice(application: &ApplicationHandle) -> PixuiResult<SliceId> {
     let mut slice = ApplicationSlice::new("todo");
     let todos = application.register_collection(Collection::new_reflected::<TodoItem>("todos"))?;
     slice.bind_collection("todos", todos)?;
+    slice.bind("draft", String::new())?;
     slice.bind("hide_done", false)?;
     slice.bind("animation_paused", false)?;
     let id = application.add_slice(slice)?;

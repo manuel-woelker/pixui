@@ -17,6 +17,8 @@ use crate::{
 use pixui_base::PixuiResult;
 
 pub struct PaintContext<'a, C: Component> {
+    /// Shared editing projected into this instance; None for non-input nodes.
+    pub text_edit: Option<&'a crate::ui::text_input::geometry::TextEditSnapshot>,
     pub props: &'a C::Props,
     pub state: &'a C::State,
     pub width: f32,

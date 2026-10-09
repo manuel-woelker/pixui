@@ -53,3 +53,12 @@ msgstr "Text und Übersetzungen"
 
 msgid "Focus without activation"
 msgstr "Fokus ohne Aktivierung"
+
+msgid "Controlled text"
+msgstr "Kontrollierte Texteingabe"
+
+msgid "Normalized to uppercase"
+msgstr "In Großbuchstaben umgewandelt"
+
+msgid "At most 12 characters; longer edits are rejected"
+msgstr "Maximal 12 Zeichen; längere Eingaben werden abgelehnt"

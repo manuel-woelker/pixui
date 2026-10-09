@@ -21,6 +21,8 @@ use std::{
     time::Instant,
 };
 
+mod text_editing;
+
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 
 fn next_id() -> PixuiResult<u64> {
@@ -35,6 +37,9 @@ pub struct UiRegistry {
     names: HashMap<String, UiDefinitionId>,
     instances: HashMap<UiInstanceId, UiInstance>,
     hover_sources: HashMap<UiDefinitionId, UiInstanceId>,
+    text_sessions: HashMap<UiDefinitionId, text_editing::EditingSession>,
+    pending_clipboards: HashMap<u64, text_editing::PendingClipboard>,
+    text_capture: Option<text_editing::PointerCapture>,
     focus_sources: HashMap<UiDefinitionId, UiInstanceId>,
 }
 
@@ -92,6 +97,9 @@ impl UiRegistry {
                 error: None,
                 animation_request: None,
                 visible: true,
+                native_focused: true,
+                clipboard_available: false,
+                native_text_input: Default::default(),
                 pointer_position: None,
                 painted_hover: None,
                 painted_focus: None,
@@ -121,6 +129,7 @@ impl UiRegistry {
     /// Content invalidation retains logical identities. Successful source
     /// preparation reconciles eligibility; input still rejects stale geometry.
     pub fn invalidate_all(&mut self) {
+        self.text_capture = None;
         for instance in self.instances.values_mut() {
             instance.dirty = true;
             instance.window_properties_dirty = true;
@@ -138,8 +147,46 @@ impl UiRegistry {
         command: UiCommand,
         application: &Application,
     ) -> PixuiResult<Option<ActionCall>> {
+        match command {
+            UiCommand::TextInput {
+                instance,
+                revision,
+                session,
+                input,
+            } => {
+                let input = *input;
+                self.sync_text_sessions(None, application)?;
+                if self.captured_text_input(instance, revision, session, &input, application)? {
+                    return Ok(None);
+                }
+                return match self.text_keyboard(
+                    instance,
+                    revision,
+                    session,
+                    true,
+                    &input,
+                    application,
+                )? {
+                    Some(action) => Ok(action),
+                    None => self.input(instance, revision, input, application),
+                };
+            }
+            UiCommand::Clipboard(reply) => return self.clipboard_reply(reply, application),
+            UiCommand::HostAttached {
+                instance,
+                clipboard,
+            } => {
+                self.instances
+                    .get_mut(&instance)
+                    .ok_or_else(|| pixui_error!("unknown UI instance"))?
+                    .clipboard_available = clipboard;
+                return Ok(None);
+            }
+            _ => {}
+        }
         if let UiCommand::Close { instance } = command {
             self.close(instance)?;
+            self.sync_text_sessions(None, application)?;
             return Ok(None);
         }
         if let UiCommand::Input {
@@ -148,10 +195,17 @@ impl UiRegistry {
             input,
         } = command
         {
-            return self.input(instance, revision, input, application);
+            let result = self.input(instance, revision, input, application);
+            self.sync_text_sessions(Some((instance, revision)), application)?;
+            return result;
         }
         if let UiCommand::Focus { instance, target } = command {
-            return self.request_focus(instance, target).map(|()| None);
+            self.request_focus(instance, target)?;
+            self.sync_text_sessions(None, application)?;
+            return Ok(None);
+        }
+        if matches!(command, UiCommand::Present { .. }) {
+            self.text_capture = None;
         }
         let instance = self
             .instances
@@ -224,10 +278,15 @@ impl UiRegistry {
                 instance.window_properties_dirty = true;
                 instance.geometry_stale = true;
             }
-            UiCommand::Input { .. } | UiCommand::Focus { .. } => unreachable!(),
+            UiCommand::Input { .. }
+            | UiCommand::Focus { .. }
+            | UiCommand::TextInput { .. }
+            | UiCommand::Clipboard(_)
+            | UiCommand::HostAttached { .. } => unreachable!(),
             UiCommand::Close { .. } => unreachable!(),
         }
         self.refresh_hover();
+        self.sync_text_sessions(None, application)?;
         Ok(None)
     }
 
@@ -238,6 +297,45 @@ impl UiRegistry {
         input: UiInput,
         application: &Application,
     ) -> PixuiResult<Option<ActionCall>> {
+        if let UiInput::Focused(focused) = &input {
+            self.instances
+                .get_mut(&id)
+                .ok_or_else(|| pixui_error!("unknown UI instance"))?
+                .native_focused = *focused;
+            if !focused {
+                self.text_capture = None;
+            }
+            let definition = self.instance(id)?.definition;
+            let focused_input = self.definitions[&definition]
+                .state
+                .focus
+                .as_ref()
+                .is_some_and(|focus| {
+                    self.instances[&id]
+                        .layout
+                        .text_inputs
+                        .iter()
+                        .any(|target| &target.path == focus.path())
+                });
+            if *focused && focused_input {
+                self.focus_sources.insert(definition, id);
+            }
+            if focused_input || self.text_sessions.contains_key(&definition) {
+                self.dirty_definition(definition, false);
+            }
+            self.sync_text_sessions(Some((id, revision)), application)?;
+            if *focused && let Some(session) = self.text_sessions.get_mut(&definition) {
+                session.origin = Some(revision);
+            }
+            return Ok(None);
+        }
+        if let Some(action) = self.text_keyboard(id, revision, None, false, &input, application)? {
+            return Ok(action);
+        }
+        if self.release_text_capture(id, &input, application)? {
+            return Ok(None);
+        }
+        let pointer_input = input.clone();
         let intent = interpret(input)?;
         let instance = self
             .instances
@@ -269,7 +367,7 @@ impl UiRegistry {
             .get_mut(&definition)
             .expect("registered definition")
             .state;
-        let before = state.clone();
+        let before = (state.focus.clone(), state.hover.clone(), state.scroll);
         let mut geometry_changed = false;
         let mut action = None;
         match intent {
@@ -376,18 +474,18 @@ impl UiRegistry {
                 self.focus_sources.insert(definition, id);
                 if let Some(index) = next {
                     scroll_to_target(state, instance, targets[index].bounds);
-                    geometry_changed = state.scroll != before.scroll;
+                    geometry_changed = state.scroll != before.2;
                 }
             }
             InputIntent::Scroll(delta) => {
                 let maximum =
                     (instance.layout.content_height - instance.settings.viewport.height).max(0.0);
                 state.scroll = (state.scroll + delta).clamp(0.0, maximum);
-                geometry_changed = state.scroll != before.scroll;
+                geometry_changed = state.scroll != before.2;
             }
             InputIntent::ToggleDiagnostics | InputIntent::Ignore => unreachable!(),
         }
-        if *state != before {
+        if state.focus != before.0 || state.hover != before.1 || state.scroll != before.2 {
             for peer in self
                 .instances
                 .values_mut()
@@ -403,6 +501,19 @@ impl UiRegistry {
                 peer.window_properties_dirty = true;
             }
         }
+        self.sync_text_sessions(Some((id, revision)), application)?;
+        let handshake = matches!(
+            &pointer_input,
+            UiInput::MouseButton {
+                button: super::input::MouseButton::Left,
+                state: super::input::ButtonState::Pressed,
+                ..
+            }
+        ) || matches!(&pointer_input, UiInput::Keyboard(event) if event.state == super::input::ButtonState::Pressed && matches!(&event.key, super::input::Key::Named(name) if name == "Tab"));
+        if handshake && let Some(session) = self.text_sessions.get_mut(&definition) {
+            session.origin = Some(revision);
+        }
+        self.text_pointer(id, &pointer_input, application)?;
         Ok(action)
     }
 
@@ -495,6 +606,12 @@ impl UiRegistry {
                 } else {
                     None
                 },
+                Some(&super::text_input::target::RenderEditing {
+                    states: &definition.state.text_inputs,
+                    previous: &instance.layout.text_inputs,
+                    active: self.focus_sources.get(&instance.definition) == Some(id)
+                        && instance.native_focused,
+                }),
             );
             match result {
                 Ok(renderer::RenderedUi {
@@ -532,6 +649,13 @@ impl UiRegistry {
                         // compatible visual redraw. Content invalidation and
                         // presentation changes always install fresh bindings.
                         layout.activations = std::mem::take(&mut instance.layout.activations);
+                        for (target, previous) in layout
+                            .text_inputs
+                            .iter_mut()
+                            .zip(&mut instance.layout.text_inputs)
+                        {
+                            target.change = previous.change.take();
+                        }
                     } else {
                         instance.compatible_revision = RenderRevision(revision);
                     }
@@ -580,6 +704,38 @@ impl UiRegistry {
                             focus_changed = true;
                         }
                     }
+                    if self
+                        .focus_sources
+                        .get(&instance.definition)
+                        .is_none_or(|source| source == id)
+                    {
+                        let definition = &self.definitions[&instance.definition];
+                        let cancelled = layout.text_inputs.iter().any(|target| {
+                            definition
+                                .state
+                                .text_inputs
+                                .get(&target.path)
+                                .is_some_and(|old| {
+                                    old.composing
+                                        && old.content_revision != target.state.content_revision
+                                })
+                        });
+                        if cancelled
+                            && let Some(session) = self.text_sessions.remove(&instance.definition)
+                        {
+                            self.pending_clipboards
+                                .retain(|_, request| request.session != session.id);
+                        }
+                        self.definitions
+                            .get_mut(&instance.definition)
+                            .expect("registered definition")
+                            .state
+                            .text_inputs = layout
+                            .text_inputs
+                            .iter()
+                            .map(|target| (target.path.clone(), target.state.clone()))
+                            .collect();
+                    }
                     instance.layout = layout;
                     instance.geometry_stale = false;
                     instance.error = None;
@@ -600,6 +756,9 @@ impl UiRegistry {
             }
         }
         self.refresh_hover();
+        if let Err(error) = self.sync_text_sessions(None, application) {
+            tracing::warn!("text input native metadata: {error:?}");
+        }
     }
 
     fn request_focus(
@@ -625,7 +784,7 @@ impl UiRegistry {
             .get_mut(&definition)
             .expect("registered definition")
             .state;
-        let before = state.clone();
+        let before = (state.focus.clone(), state.hover.clone(), state.scroll);
         if let Some(target) = &target {
             let instance = &self.instances[&id];
             let bounds = instance
@@ -638,9 +797,13 @@ impl UiRegistry {
             scroll_to_target(state, instance, bounds);
         }
         state.focus = target;
-        self.focus_sources.insert(definition, id);
-        if *state != before {
-            let geometry = state.scroll != before.scroll;
+        let source_changed = self.focus_sources.insert(definition, id) != Some(id);
+        if source_changed
+            || state.focus != before.0
+            || state.hover != before.1
+            || state.scroll != before.2
+        {
+            let geometry = state.scroll != before.2;
             self.dirty_definition(definition, geometry);
         }
         Ok(())

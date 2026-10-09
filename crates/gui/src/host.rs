@@ -15,10 +15,11 @@ use pixui_engine::{
     ui::{
         display_list::RenderOutput,
         geometry::{Point, Size},
-        input::{Modifiers, UiCommand, UiInput, WheelDelta},
+        input::{ButtonState, Modifiers, MouseButton, UiCommand, UiInput, WheelDelta},
         instance::UiInstanceId,
         mailbox::OutputReceiver,
         presentation::PresentationSettings,
+        text_input::protocol::{EditingSessionId, NativeTextInput},
         window_properties::WindowCommand,
     },
 };
@@ -34,10 +35,13 @@ use std::{
 };
 use winit::{
     application::ApplicationHandler,
-    dpi::LogicalSize,
+    dpi::{LogicalPosition, LogicalSize},
     event::{Ime, MouseScrollDelta, WindowEvent},
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
-    window::{Window, WindowAttributes, WindowId},
+    window::{
+        CursorGrabMode, ImeCapabilities, ImeEnableRequest, ImeRequest, ImeRequestData, Window,
+        WindowAttributes, WindowId,
+    },
 };
 
 /// One window for an already-created worker-side UI instance.
@@ -61,6 +65,10 @@ struct NativeWindow {
     occluded: bool,
     worker_visible: bool,
     drawing_activity: Option<crate::drawing_activity::DrawingActivity>,
+    text_input: NativeTextInput,
+    selecting: bool,
+    ime_enabled: bool,
+    ime_session: Option<EditingSessionId>,
 }
 
 impl NativeWindow {
@@ -83,6 +91,56 @@ impl NativeWindow {
             revision: self.presentation.revision.unwrap_or_default(),
             input,
         }
+    }
+
+    fn editing_input(&self, input: UiInput) -> UiCommand {
+        UiCommand::TextInput {
+            instance: self.instance,
+            revision: self.presentation.revision.unwrap_or_default(),
+            session: self.text_input.session,
+            input: Box::new(input),
+        }
+    }
+
+    fn set_text_input(&mut self, input: NativeTextInput) {
+        if self.ime_enabled && (input.session != self.text_input.session || !input.editable) {
+            let _ = self.window.request_ime_update(ImeRequest::Disable);
+            self.ime_enabled = false;
+        }
+        if input.editable && input.session.is_some() {
+            let data = ImeRequestData::default().with_cursor_area(
+                LogicalPosition::new(input.caret.x as f64, input.caret.y as f64).into(),
+                LogicalSize::new(input.caret.width as f64, input.caret.height as f64).into(),
+            );
+            let request = if self.ime_enabled {
+                ImeRequest::Update(data)
+            } else {
+                ImeRequest::Enable(
+                    ImeEnableRequest::new(ImeCapabilities::new().with_cursor_area(), data)
+                        .expect("cursor-area capability has matching data"),
+                )
+            };
+            match self.window.request_ime_update(request) {
+                Ok(()) => {
+                    self.ime_enabled = true;
+                    self.ime_session = input.session;
+                }
+                Err(error) => eprintln!("native IME unavailable: {error}"),
+            }
+        }
+        if input.capture_pointer != self.text_input.capture_pointer {
+            let grab = if input.capture_pointer {
+                CursorGrabMode::Confined
+            } else {
+                CursorGrabMode::None
+            };
+            // Some platforms provide implicit drag capture or do not support grabs.
+            let _ = self.window.set_cursor_grab(grab);
+        }
+        if !input.capture_pointer {
+            self.selecting = false;
+        }
+        self.text_input = input;
     }
 
     fn request_redraw(&mut self) {
@@ -166,6 +224,7 @@ struct Host {
     wake_pending: Arc<AtomicBool>,
     visibility_check: Instant,
     wayland: bool,
+    clipboard: crate::clipboard::ClipboardExecutor,
 }
 
 impl Host {
@@ -216,10 +275,18 @@ impl ApplicationHandler for Host {
                     occluded: false,
                     worker_visible: true,
                     drawing_activity: self.wayland.then(Default::default),
+                    text_input: NativeTextInput::default(),
+                    selecting: false,
+                    ime_enabled: false,
+                    ime_session: None,
                 };
                 if let Some(command) = native.visibility_command() {
                     self.pending.push(command)?;
                 }
+                self.pending.push(UiCommand::HostAttached {
+                    instance: native.instance,
+                    clipboard: true,
+                })?;
                 self.pending.push(native.presentation())?;
                 self.windows.insert(native.window.id(), native);
             }
@@ -377,7 +444,11 @@ impl ApplicationHandler for Host {
                     x: position.x as f32 / native.settings.scale_factor,
                     y: position.y as f32 / native.settings.scale_factor,
                 };
-                Some(native.input(UiInput::PointerMoved(native.pointer)))
+                Some(if native.selecting {
+                    native.editing_input(UiInput::PointerMoved(native.pointer))
+                } else {
+                    native.input(UiInput::PointerMoved(native.pointer))
+                })
             }
             WindowEvent::PointerEntered {
                 position,
@@ -407,12 +478,29 @@ impl ApplicationHandler for Host {
                 let Some(button) = native_input::pointer_button(button) else {
                     return;
                 };
-                Some(native.input(UiInput::MouseButton {
+                let state = native_input::button_state(state);
+                let input = UiInput::MouseButton {
                     button,
-                    state: native_input::button_state(state),
+                    state,
                     position: native.pointer,
                     modifiers: native.modifiers,
-                }))
+                };
+                if button == MouseButton::Left && state == ButtonState::Pressed {
+                    // Ordered click-then-type uses the press revision until metadata arrives.
+                    if native.ime_enabled {
+                        let _ = native.window.request_ime_update(ImeRequest::Disable);
+                        native.ime_enabled = false;
+                    }
+                    native.text_input.session = None;
+                    native.selecting = true;
+                    Some(native.input(input))
+                } else if button == MouseButton::Left && native.selecting {
+                    let command = native.editing_input(input);
+                    native.selecting = false;
+                    Some(command)
+                } else {
+                    Some(native.input(input))
+                }
             }
             WindowEvent::MouseWheel { delta, .. } => {
                 let delta = match delta {
@@ -432,23 +520,46 @@ impl ApplicationHandler for Host {
                 event,
                 is_synthetic,
                 ..
-            } => Some(native.input(UiInput::Keyboard(native_input::keyboard(
-                event,
-                native.modifiers,
-                is_synthetic,
-            )))),
+            } => {
+                let event = native_input::keyboard(event, native.modifiers, is_synthetic);
+                let changes_focus = event.state == ButtonState::Pressed
+                    && matches!(&event.key, pixui_engine::ui::input::Key::Named(name) if name == "Tab");
+                let command = native.editing_input(UiInput::Keyboard(event));
+                if changes_focus {
+                    native.text_input.session = None;
+                }
+                Some(command)
+            }
             WindowEvent::ModifiersChanged(modifiers) => {
                 native.modifiers = native_input::modifiers(modifiers.state());
                 Some(native.input(UiInput::ModifiersChanged(native.modifiers)))
             }
-            WindowEvent::Focused(focused) => Some(native.input(UiInput::Focused(focused))),
-            WindowEvent::Ime(ime) => Some(native.input(match ime {
-                Ime::Enabled => UiInput::ImeEnabled,
-                Ime::Preedit(text, cursor) => UiInput::ImePreedit { text, cursor },
-                Ime::Commit(text) => UiInput::ImeCommit(text),
-                Ime::Disabled => UiInput::ImeDisabled,
-                _ => return,
-            })),
+            WindowEvent::Focused(focused) => {
+                native.text_input.session = None;
+                if !focused {
+                    native.selecting = false;
+                    let _ = native.window.set_cursor_grab(CursorGrabMode::None);
+                    if native.ime_enabled {
+                        let _ = native.window.request_ime_update(ImeRequest::Disable);
+                        native.ime_enabled = false;
+                    }
+                }
+                Some(native.input(UiInput::Focused(focused)))
+            }
+            WindowEvent::Ime(ime) => Some(UiCommand::TextInput {
+                instance: native.instance,
+                revision: native.presentation.revision.unwrap_or_default(),
+                // Composition stays attached to the native IME session, even
+                // while keyboard events await a new pointer-focus handshake.
+                session: native.ime_session,
+                input: Box::new(match ime {
+                    Ime::Enabled => UiInput::ImeEnabled,
+                    Ime::Preedit(text, cursor) => UiInput::ImePreedit { text, cursor },
+                    Ime::Commit(text) => UiInput::ImeCommit(text),
+                    Ime::Disabled => UiInput::ImeDisabled,
+                    _ => return,
+                }),
+            }),
             _ => None,
         };
         if !close
@@ -494,11 +605,26 @@ impl ApplicationHandler for Host {
             self.fail(event_loop, error);
             return;
         }
+        while let Some(reply) = self.clipboard.try_recv() {
+            if let Err(error) = self.pending.push(UiCommand::Clipboard(reply)) {
+                self.fail(event_loop, error);
+                return;
+            }
+        }
         for native in self.windows.values_mut() {
+            while let Ok(effect) = native.outputs.effects().try_recv() {
+                if let Err(reply) = self.clipboard.submit(native.instance, effect)
+                    && let Err(error) = self.pending.push(UiCommand::Clipboard(reply))
+                {
+                    self.fail(event_loop, error);
+                    return;
+                }
+            }
             // Native metadata is independent of drawable/occluded state and
             // never requires a new display list or GPU work.
             while let Ok(command) = native.outputs.window_commands().try_recv() {
                 match command {
+                    WindowCommand::SetTextInput(input) => native.set_text_input(input),
                     WindowCommand::SetTitle(title) => native.window.set_title(title.as_str()),
                     WindowCommand::SetIcon(image) => {
                         let icon = match image
@@ -666,6 +792,11 @@ pub fn run_with_factory(
     let proxy = event_loop.create_proxy();
     // Winit owns the handler; retain its failure result after the loop returns.
     let error = Rc::new(RefCell::new(None));
+    let clipboard_proxy = proxy.clone();
+    let clipboard = crate::clipboard::ClipboardExecutor::new(
+        crate::clipboard::NativeClipboard::default(),
+        move || clipboard_proxy.wake_up(),
+    );
     let host = Host {
         application,
         specifications,
@@ -677,6 +808,7 @@ pub fn run_with_factory(
         wake_pending: Arc::new(AtomicBool::new(false)),
         visibility_check: Instant::now(),
         wayland,
+        clipboard,
     };
     event_loop
         .run_app(host)

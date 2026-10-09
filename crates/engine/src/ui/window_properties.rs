@@ -27,6 +27,7 @@ pub type WindowPropertiesResolver =
 /// AND icon even when the GUI has not drained earlier commands.
 #[derive(Clone, Debug, PartialEq)]
 pub enum WindowCommand {
+    SetTextInput(super::text_input::protocol::NativeTextInput),
     SetTitle(PixuiString),
     SetIcon(Option<Image>),
 }

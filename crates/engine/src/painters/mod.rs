@@ -8,3 +8,4 @@ pub mod painter;
 pub mod palette;
 pub mod registry;
 pub mod standard;
+pub mod text_input;

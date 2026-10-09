@@ -50,10 +50,16 @@ macOS requires separate application-icon integration).
 Title/icon changes use their own coalescing mailbox and still update while a
 window is hidden; unchanged properties are not resent.
 
-Click **Add todo** to append a generated task, or click a checkbox to mark a
-task done. Both windows update. Tab moves focus; Enter or Space activates the
-focused control. The mouse wheel scrolls overflowing content. Resize windows to
-see independent clipping, and close either window without closing the other.
+Enter a title in the controlled text field and click **Add todo**, or click a
+checkbox to mark a task done. Blank titles are rejected. The named `draft`
+string receives full proposals through `change_draft`; the Add action reads its
+current authoritative value. The draft remains available after adding, so it can
+be selected and replaced for the next task. Both windows update. Tab moves
+focus; Enter or Space activates the focused control. Inside the entry field,
+Enter is consumed without submission; Tab moves to another control. Select,
+copy, cut and paste use platform shortcuts. The mouse wheel scrolls overflowing
+content. Resize windows to see independent clipping, and close either window
+without closing the other.
 
 Click **Hide completed** / **Erledigte ausblenden** to filter completed rows in
 both windows. The named `hide_done` entity holds the boolean flag. The

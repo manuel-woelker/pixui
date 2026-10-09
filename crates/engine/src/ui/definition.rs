@@ -9,6 +9,11 @@ pub struct UiDefinitionId(pub(crate) u64);
 /// of a definition share it; successful source preparation reconciles focus.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct UiDefinitionState {
+    /// Shared editing state; only successful source preparation prunes entries.
+    pub text_inputs: std::collections::HashMap<
+        crate::live_model::identity::ComponentPath,
+        super::text_input::editing::EditState,
+    >,
     pub focus: Option<super::focus::ComponentInstanceId>,
     pub hover: Option<super::focus::ComponentInstanceId>,
     /// Requested logical scroll offset. Each window clamps it to its own extent.

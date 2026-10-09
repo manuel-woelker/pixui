@@ -17,6 +17,7 @@ impl OutputWake {
 }
 
 pub(crate) struct OutputSender {
+    effects: Sender<super::text_input::protocol::HostEffect>,
     pub(crate) window_commands: super::window_mailbox::WindowCommandSender,
     sender: Option<Sender<RenderOutput>>,
     drain: Receiver<RenderOutput>,
@@ -27,6 +28,7 @@ pub(crate) struct OutputSender {
 /// Single GUI consumer. Dropping it disconnects the logical subscription.
 /// At most one pending complete output is retained per instance.
 pub struct OutputReceiver {
+    effects: Receiver<super::text_input::protocol::HostEffect>,
     window_commands: super::window_mailbox::WindowCommandReceiver,
     receiver: Receiver<RenderOutput>,
     _subscription: Arc<()>,
@@ -34,12 +36,14 @@ pub struct OutputReceiver {
 }
 
 pub(crate) fn mailbox() -> (OutputSender, OutputReceiver) {
+    let (effects, effect_receiver) = bounded(16);
     let (window_sender, window_receiver) = super::window_mailbox::mailbox();
     let (sender, receiver) = bounded(1);
     let subscription = Arc::new(());
     let wake = Arc::new(OutputWake::default());
     (
         OutputSender {
+            effects,
             window_commands: window_sender,
             sender: Some(sender),
             drain: receiver.clone(),
@@ -47,6 +51,7 @@ pub(crate) fn mailbox() -> (OutputSender, OutputReceiver) {
             wake: wake.clone(),
         },
         OutputReceiver {
+            effects: effect_receiver,
             window_commands: window_receiver,
             receiver,
             _subscription: subscription,
@@ -56,6 +61,20 @@ pub(crate) fn mailbox() -> (OutputSender, OutputReceiver) {
 }
 
 impl OutputSender {
+    pub(crate) fn effect(
+        &self,
+        effect: super::text_input::protocol::HostEffect,
+    ) -> pixui_base::PixuiResult<()> {
+        if !self.connected() {
+            return Err(pixui_base::pixui_error!("native host disconnected"));
+        }
+        self.effects
+            .try_send(effect)
+            .map_err(|_| pixui_base::pixui_error!("native effect queue is full or disconnected"))?;
+        self.wake.notify();
+        Ok(())
+    }
+
     pub fn connected(&self) -> bool {
         self.subscriber.strong_count() > 0
     }
@@ -94,6 +113,12 @@ impl Drop for OutputSender {
 }
 
 impl OutputReceiver {
+    /// Ordered bounded native operations. Headless tests can implement these
+    /// after declaring clipboard support with UiCommand::HostAttached.
+    pub fn effects(&self) -> &Receiver<super::text_input::protocol::HostEffect> {
+        &self.effects
+    }
+
     /// Installs a lightweight notification after publication and disconnection.
     /// Called on the publishing thread, outside the callback lock: do not block
     /// or panic. Notifications may be coalesced by the consumer.

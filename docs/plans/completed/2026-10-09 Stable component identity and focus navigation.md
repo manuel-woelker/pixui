@@ -1,6 +1,6 @@
 # Stable component identity and focus navigation
 
-Status: implemented; native showcase verification pending.
+Status: completed.
 
 ## Goal
 
@@ -183,7 +183,7 @@ focus. Document this policy and test render-order independence.
       documented policy independently of render order.
 - [x] Stale revisions and dirty geometry still reject discrete input; compatible
   redraws preserve safe bindings without confusing moved identities.
-- [ ] Native showcase verification: Tab, Shift+Tab, click, action-triggered
+- [x] Native showcase verification: Tab, Shift+Tab, click, action-triggered
       updates, conditional pages, scrolling and two-window focus. Add a
       nonactivating focusable showcase target to exercise the input groundwork
       without implementing editing.
@@ -212,3 +212,8 @@ focus. Document this policy and test render-order independence.
 Out of scope: text editing, clipboard/IME, undo, accessibility integration,
 spatial navigation, nested focus scopes, custom tab order and arbitrary live
 template mutation. These should build on this identity/navigation contract.
+
+## Manual verification
+
+The user reported successful manual validation on 2026-10-09 and requested
+that the finished plans move to completed.

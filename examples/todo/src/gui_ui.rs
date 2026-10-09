@@ -10,6 +10,7 @@ use pixui_engine::{
     component_registry::component_id::ComponentId,
     components::{
         button::ButtonProps, checkbox::CheckboxProps, image::ImageProps, label::LabelProps,
+        text_input::TextInputProps,
     },
     expression::{context::ExpressionContext, expression::Expression},
     layout::{container::ContainerPart, style::LayoutStyle},
@@ -46,6 +47,7 @@ pub fn definition_with_assets(
     let todos = application.collection_key("todo", "todos")?;
     let slice = application.inspect(|app| Ok(app.slice_named("todo")?.id()))?;
     let hide_done = application.entity_ref::<bool>(slice, "hide_done")?;
+    let draft = application.entity_ref::<String>(slice, "draft")?;
     let paused = application.entity_ref::<bool>(slice, "animation_paused")?;
     let completed = TodoItem::type_descriptor().field_index("completed")?;
     let row = LivePart::Component(
@@ -83,6 +85,18 @@ pub fn definition_with_assets(
                 )
                 .with_activation(add_action),
             ),
+            ComponentPart::typed_with_expressions(
+                components.text_input,
+                vec![Expression::entity(draft)],
+                |_, _, values| {
+                    Ok(TextInputProps {
+                        content: translated(values)?,
+                    })
+                },
+            )
+            .with_change(draft_change)
+            .with_layout(LayoutStyle::fixed(260.0, 40.0))
+            .into(),
             LivePart::Component(
                 ComponentPart::typed(comets, orbiting_comets::props)
                     .with_layout(LayoutStyle::fixed(320.0, 120.0)),
@@ -264,14 +278,21 @@ fn add_button(
 fn add_action(_: &ExpressionContext<'_>, _: &PresentationSettings) -> PixuiResult<ActionBinding> {
     Ok(Box::new(move |application| {
         let slice = application.slice_named("todo")?;
-        let number = application
-            .collection(slice.id(), "todos")?
-            .arena::<TodoItem>()
-            .ok_or_else(|| pixui_error!("wrong todo collection type"))?
-            .len()
-            + 1;
-        let title = format!("New todo {number}");
+        let title = application.entity::<String>(slice.id(), "draft")?.clone();
         application.action_call(slice.id(), "add_todo", vec![Box::new(title)])
+    }))
+}
+
+fn draft_change(
+    context: &ExpressionContext<'_>,
+    _: &PresentationSettings,
+) -> PixuiResult<pixui_engine::ui::text_input::binding::ChangeBinding> {
+    let action = context
+        .application()?
+        .slice_named("todo")?
+        .action_handle_named("change_draft")?;
+    Ok(Box::new(move |_, content| {
+        action.call(vec![Box::new(content)])
     }))
 }
 
@@ -427,7 +448,7 @@ mod tests {
                 let a = app.uis().instance(one)?.layout();
                 let b = app.uis().instance(two)?.layout();
                 assert_eq!(a.hit_regions.len(), 4);
-                assert_eq!(a.component_bounds.len(), 7);
+                assert_eq!(a.component_bounds.len(), 8);
                 assert_eq!(a.component_bounds, b.component_bounds);
                 let rect = a.hit_regions[3].bounds;
                 Ok(Point {
@@ -487,6 +508,10 @@ mod tests {
     fn animation_replaces_snapshots_without_invalidating_presented_actions() {
         let app = Application::new();
         create_slice(&app).unwrap();
+        TodoActions::bind(&app)
+            .unwrap()
+            .change_draft("New todo")
+            .unwrap();
         let components = app.register_standard_components().unwrap();
         app.register_standard_painters().unwrap();
         let comets = crate::orbiting_comets::register(&app).unwrap();
@@ -581,8 +606,16 @@ mod tests {
         for custom in [false, true] {
             let app = Application::new();
             create_slice(&app).unwrap();
+            TodoActions::bind(&app)
+                .unwrap()
+                .change_draft("New todo")
+                .unwrap();
             let components = app.register_standard_components().unwrap();
             if custom {
+                app.register_painter::<pixui_engine::components::text_input::TextInputComponent>(
+                    pixui_engine::painters::text_input::TextInputPainter,
+                )
+                .unwrap();
                 app.register_painter::<pixui_engine::components::button::ButtonComponent>(
                     crate::custom_button_painter::CustomButtonPainter,
                 )
@@ -693,6 +726,7 @@ mod tests {
         let application = Application::new();
         create_slice(&application).unwrap();
         let actions = TodoActions::bind(&application).unwrap();
+        actions.change_draft("New todo").unwrap();
         actions.add_todo("First").unwrap();
         let components = application.register_standard_components().unwrap();
         application.register_standard_painters().unwrap();

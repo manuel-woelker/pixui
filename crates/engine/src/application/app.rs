@@ -385,13 +385,32 @@ impl Application {
     }
 
     pub(crate) fn ui_command(&mut self, command: crate::ui::input::UiCommand) -> PixuiResult<()> {
+        let editing = matches!(
+            &command,
+            crate::ui::input::UiCommand::TextInput { .. }
+                | crate::ui::input::UiCommand::Clipboard(_)
+                | crate::ui::input::UiCommand::Input {
+                    input: crate::ui::input::UiInput::Keyboard(_)
+                        | crate::ui::input::UiInput::ImeCommit(_)
+                        | crate::ui::input::UiInput::ImePreedit { .. },
+                    ..
+                }
+        );
+        if editing {
+            self.render_dirty();
+        }
         let mut uis = std::mem::take(&mut self.uis);
         let result = uis.command(command, self);
         self.uis = uis;
-        if let Some(call) = result? {
-            self.dispatch(call)?;
+        let result = match result {
+            Ok(Some(call)) => self.dispatch(call).map(|_| ()),
+            Ok(None) => Ok(()),
+            Err(error) => Err(error),
+        };
+        if editing {
+            self.render_dirty();
         }
-        Ok(())
+        result
     }
 
     pub(super) fn next_ui_refresh(&self) -> Option<std::time::Instant> {

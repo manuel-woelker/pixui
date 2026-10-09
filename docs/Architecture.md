@@ -614,3 +614,24 @@ holds an application sender.
 See [hot reload](../crates/engine/src/resources/reload/README.md) and
 [DR-015](<decisions/DR-015 Reload resources through a shared background pipeline.md>)
 for setup, lifecycle, and limits.
+
+## Controlled text input
+
+Application entities supply authoritative `TextInputProps::content`; change
+bindings propose full replacement strings through ordinary actions. The worker
+resolves props before and after editing commands, preserving ordered rapid edits
+without an optimistic text buffer. Definition-side selection follows structural
+occurrence IDs; each instance projects it into measured caret stops, clipping
+and horizontal scroll. Painters receive read-only snapshots and produce normal
+rectangle/text commands, including selection and idle-aware caret blinking.
+
+The focused source owns an opaque editing session. Latest native metadata
+communicates that token, editability, the IME caret rectangle and selection
+capture. Ordinary activation input retains presented-revision validation. Native
+clipboard operations use a separate bounded ordered effect queue, an I/O thread,
+and correlated replies. The worker rejects obsolete paste/cut results using the
+session, occurrence, content and selection revisions. Native IME preedit never
+replaces displayed props; commits dispatch controlled changes.
+
+See [controlled text input](<../crates/engine/src/ui/Text input.md>) and
+[DR-018](<decisions/DR-018 Keep text input controlled with shared selection and editing sessions.md>).
