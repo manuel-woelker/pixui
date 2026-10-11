@@ -92,3 +92,69 @@ msgstr "Kompakten Stil verwenden"
 
 msgid "Dynamic style variant"
 msgstr "Dynamische Stilvariante"
+
+msgid "Layout"
+msgstr "Layout"
+
+msgid "Nested Grid and Flex"
+msgstr "Verschachteltes Grid und Flex"
+
+msgid "Workspace"
+msgstr "Arbeitsbereich"
+
+msgid "Overview"
+msgstr "Übersicht"
+
+msgid "Projects"
+msgstr "Projekte"
+
+msgid "Tasks"
+msgstr "Aufgaben"
+
+msgid "Teams"
+msgstr "Teams"
+
+msgid "Releases"
+msgstr "Versionen"
+
+msgid "Reviews"
+msgstr "Prüfungen"
+
+msgid "Milestones"
+msgstr "Meilensteine"
+
+msgid "Activity"
+msgstr "Aktivität"
+
+msgid "Design ready"
+msgstr "Entwurf fertig"
+
+msgid "Tests passed"
+msgstr "Tests bestanden"
+
+msgid "Review queued"
+msgstr "Prüfung geplant"
+
+msgid "Build shipped"
+msgstr "Version geliefert"
+
+msgid "Plan sprint"
+msgstr "Sprint planen"
+
+msgid "Create task"
+msgstr "Aufgabe erstellen"
+
+msgid "Review work"
+msgstr "Arbeit prüfen"
+
+msgid "Ship release"
+msgstr "Version liefern"
+
+msgid "Invite team"
+msgstr "Team einladen"
+
+msgid "Archive project"
+msgstr "Projekt archivieren"
+
+msgid "Project board · 36 projects / 216 tasks"
+msgstr "Projektübersicht · 36 Projekte / 216 Aufgaben"

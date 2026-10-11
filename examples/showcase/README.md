@@ -28,6 +28,12 @@ both windows. Switching pages preserves counters, flags, and rows.
   Add enough rows to try mouse-wheel scrolling.
 - **Images:** the core image component loads the repository logo through the
   filesystem abstraction. The native window icon shares the same snapshot.
+- **Layout:** a dashboard combines spanning Grid sections, a nested six-card
+  grid, Flex columns and wrapping action rows. Resize either window to compare
+  independent geometry; dashboard buttons increment or reset the shared counter.
+  Below it, nested live loops expand 36 project cards with six task rows each
+  into more than 600 components. Scroll to explore the board and use F11 to
+  inspect the cost of full-tree layout and painting, including offscreen items.
 - **Text and translations:** three controlled fields demonstrate accepted text,
   uppercase normalization and rejection beyond 12 characters. Selection is
   shared between windows; clipboard and IME ownership belong to the active
@@ -50,6 +56,7 @@ Runtime window icons on Wayland require compositor support for
   action facade.
 - [gallery.rs](src/gallery.rs): live parts, props, activation bindings,
   conditional rendering, and native window properties.
+- [layout_demo.rs](src/layout_demo.rs): nested Grid and Flex dashboard.
 - [setup.rs](src/setup.rs): component/painter and filesystem registration.
 - [main.rs](src/main.rs): native windows and renderer selection.
 - [gallery tests](tests/gallery.rs): real worker rendering and input dispatch

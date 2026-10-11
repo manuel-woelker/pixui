@@ -26,7 +26,9 @@ pub struct MeasureConstraints {
     pub available_width: AvailableSpace,
     pub available_height: AvailableSpace,
 }
-/// Known dimensions are content-box dimensions and must be respected. Available
+/// Known dimensions are nonnegative content-box dimensions and must be respected.
+/// Definite available space is also nonnegative, including intrinsic probes
+/// where padding exceeds the provisional allocation. Available
 /// space is a probe, not an instruction to wrap text. Font access and advances
 /// share painting's normalization/scale policy and allocate no atlas coverage.
 pub struct MeasureContext<'a, C: Component> {

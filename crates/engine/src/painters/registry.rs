@@ -91,7 +91,10 @@ impl<C: Component, P: Painter<C>> ErasedPainter for Adapter<C, P> {
             || size.width < 0.0
             || size.height < 0.0
         {
-            return Err(pixui_error!("painter returned invalid measured size"));
+            return Err(pixui_error!(
+                "painter returned invalid measured size {size:?} for {:?}",
+                input.constraints
+            ));
         }
         Ok(size)
     }

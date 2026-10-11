@@ -83,13 +83,15 @@ impl PerformanceOverlay {
             "FPS (painted frames):",
             self.frames.len()
         );
-        for (label, duration) in [
+        let worker_stages = [
             ("Prepare:", worker.preparation),
             ("Layout tree:", worker.tree_construction),
             ("Layout:", worker.layout),
             ("Paint:", worker.painting),
             ("Text / finalize:", worker.text),
-        ] {
+        ];
+        let mut total: Duration = worker_stages.iter().map(|(_, duration)| *duration).sum();
+        for (label, duration) in worker_stages {
             text.push_str(&format!(
                 "{label:<20} {:>9.3} ms\n",
                 duration.as_secs_f64() * 1000.0
@@ -102,6 +104,7 @@ impl PerformanceOverlay {
                 ("Draw / rasterize:", gui.drawing),
                 ("Submit / present:", gui.submission),
             ] {
+                total += duration;
                 text.push_str(&format!(
                     "{label:<20} {:>9.3} ms\n",
                     duration.as_secs_f64() * 1000.0
@@ -110,6 +113,15 @@ impl PerformanceOverlay {
         } else {
             text.push_str("Renderer timings: unavailable\n");
         }
+        let total_label = if self.timings.is_some() {
+            "Total CPU:"
+        } else {
+            "Total (worker):"
+        };
+        text.push_str(&format!(
+            "{total_label:<20} {:>9.3} ms\n",
+            total.as_secs_f64() * 1000.0
+        ));
         for (label, bytes) in [
             ("Display list:", memory.display_list),
             ("Images (RGB):", memory.images),
@@ -166,6 +178,58 @@ impl PerformanceOverlay {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn total_sums_cpu_stages_and_identifies_worker_only_diagnostics() {
+        let worker = WorkerTimings {
+            preparation: Duration::from_millis(1),
+            tree_construction: Duration::from_millis(2),
+            layout: Duration::from_millis(3),
+            measurements: 100,
+            painting: Duration::from_millis(4),
+            text: Duration::from_millis(5),
+        };
+        let mut overlay = PerformanceOverlay::default();
+        for renderer in [
+            None,
+            Some(RendererTimings {
+                acquisition: Duration::from_millis(6),
+                resources: Duration::from_millis(7),
+                drawing: Duration::from_millis(8),
+                submission: Duration::from_millis(9),
+            }),
+        ] {
+            overlay.timings = renderer;
+            let display = overlay
+                .append(
+                    DisplayList::default(),
+                    &[],
+                    worker,
+                    1.0,
+                    Size {
+                        width: 640.0,
+                        height: 600.0,
+                    },
+                    Instant::now(),
+                )
+                .unwrap();
+            let text = display
+                .commands
+                .iter()
+                .find_map(|command| match command {
+                    DrawCommand::DrawText { text, .. } => Some(text),
+                    _ => None,
+                })
+                .unwrap();
+            let line = text.lines().find(|line| line.starts_with("Total")).unwrap();
+            if renderer.is_some() {
+                assert!(line.starts_with("Total CPU:"));
+                assert!(line.ends_with("45.000 ms"));
+            } else {
+                assert!(line.starts_with("Total (worker):"));
+                assert!(line.ends_with("15.000 ms"));
+            }
+        }
+    }
     #[test]
     fn diagnostic_redraws_do_not_inflate_fps_and_idle_frames_expire() {
         let mut overlay = PerformanceOverlay::default();

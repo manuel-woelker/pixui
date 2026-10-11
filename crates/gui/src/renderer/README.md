@@ -110,6 +110,8 @@ age from the FPS window. The overlay shows these CPU stages:
 
 - **Prepare:** component validation, expression evaluation, state updates,
   props preparation and fixed-row geometry.
+- **Layout tree / Layout:** physical tree construction, followed by solver
+  probes, painter measurement and geometry extraction.
 - **Paint:** painter calls and shared display list construction.
 - **Text / finalize:** glyph batching, atlas creation, resource indexing and
   command validation.
@@ -120,6 +122,10 @@ age from the FPS window. The overlay shows these CPU stages:
 - **Submit / present:** GPU encoding, queue submission, presentation and cache
   cleanup; software surface resize, buffer acquisition, copying and
   presentation.
+- **Total CPU:** sum of the displayed worker and renderer stages. These are
+  the latest completed timings from each side and may overlap in execution;
+  this is accumulated stage time, not frame latency or a refresh interval.
+  When renderer timings are unavailable, **Total (worker)** sums worker stages.
 
 GPU numbers measure CPU work and may include surface waits. They do not measure
 GPU execution or compositor latency. Custom renderers can expose timings through

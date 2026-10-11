@@ -35,7 +35,7 @@ fn text(values: &[pixui_reflect::DynamicObject<'_>], index: usize) -> PixuiResul
         .cloned()
         .ok_or_else(|| pixui_error!("showcase requires a string expression"))
 }
-fn label(components: StandardComponents, expression: Expression) -> LivePart {
+pub(crate) fn label(components: StandardComponents, expression: Expression) -> LivePart {
     LivePart::Component(ComponentPart::typed_with_expressions(
         components.label,
         vec![expression],
@@ -46,7 +46,7 @@ fn label(components: StandardComponents, expression: Expression) -> LivePart {
         },
     ))
 }
-fn button(
+pub(crate) fn button(
     components: StandardComponents,
     source: &str,
     activate: pixui_engine::ui::activation::ActivationFactory,
@@ -256,6 +256,9 @@ pub fn definition(
         .into(),
     );
     let styles_page = page(examples);
+    let projects =
+        app.entity_ref::<Vec<crate::model::data::LayoutProject>>(slice, "layout_projects")?;
+    let layout_page = crate::layout_demo::page(components, count, projects)?;
     let navigation = ContainerPart::column()
         .with_layout(LayoutStyle {
             width: Length::Pixels(SIDEBAR_WIDTH),
@@ -273,6 +276,7 @@ pub fn definition(
             navigation_item::<3>(components, "Collections")?,
             navigation_item::<4>(components, "Text and translations")?,
             navigation_item::<5>(components, "Styles")?,
+            navigation_item::<6>(components, "Layout")?,
         ])
         .into();
     let selected_page = LivePart::Match(MatchPart::new(
@@ -284,6 +288,7 @@ pub fn definition(
             collections,
             text_page,
             styles_page,
+            layout_page,
         ]
         .into_iter()
         .enumerate()
@@ -381,13 +386,16 @@ fn binding(context: &ExpressionContext<'_>, name: &'static str) -> PixuiResult<A
     Ok(Box::new(move |_| action.call(vec![])))
 }
 
-fn increment(
+pub(crate) fn increment(
     context: &ExpressionContext<'_>,
     _: &PresentationSettings,
 ) -> PixuiResult<ActionBinding> {
     binding(context, "increment")
 }
-fn reset(context: &ExpressionContext<'_>, _: &PresentationSettings) -> PixuiResult<ActionBinding> {
+pub(crate) fn reset(
+    context: &ExpressionContext<'_>,
+    _: &PresentationSettings,
+) -> PixuiResult<ActionBinding> {
     binding(context, "reset")
 }
 fn toggle_checked(

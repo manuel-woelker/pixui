@@ -58,6 +58,8 @@ settings, known content dimensions and available space (definite, min-content,
 or max-content). It may run repeatedly. Respect known dimensions and return
 finite nonnegative content size. Do not prepare resources, mutate state,
 dispatch, schedule animation, emit commands, or allocate glyph coverage.
+Known dimensions and definite available space are clamped to zero when an
+intrinsic probe temporarily allocates less space than padding requires.
 `measure_text`, `font_metrics`, and `line_height` share painting's metrics and
 normalization, without a display-list sink. Text does not wrap or ellipsize.
 

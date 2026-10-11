@@ -11,6 +11,17 @@ pub mod data {
     pub struct Sample {
         pub label: String,
     }
+
+    /// Data for the nested live loops on the layout stress page.
+    pub struct LayoutProject {
+        pub name: String,
+        pub tasks: Vec<LayoutTask>,
+    }
+
+    pub struct LayoutTask {
+        pub name: String,
+        pub status: String,
+    }
 }
 
 #[slice_actions(slice = "showcase", facade = ShowcaseActions)]
@@ -43,7 +54,7 @@ pub mod actions {
     /// Select a gallery page in every presentation, preserving demo data.
     #[action]
     pub fn select(mut selected: EntityMut<u64>, page: u64) -> PixuiResult<()> {
-        if page >= 6 {
+        if page >= 7 {
             return Err(pixui_error!("unknown showcase page"));
         }
         *selected = page;
@@ -97,6 +108,18 @@ pub fn register(application: &ApplicationHandle) -> PixuiResult<()> {
     slice.bind("selected", 0_u64)?;
     slice.bind("checked", false)?;
     slice.bind("details", true)?;
+    let projects: Vec<_> = (1..=36)
+        .map(|project| data::LayoutProject {
+            name: format!("Project {project:02}"),
+            tasks: (1..=6)
+                .map(|task| data::LayoutTask {
+                    name: format!("Task {task:02}"),
+                    status: if task % 3 == 0 { "Ready" } else { "Active" }.into(),
+                })
+                .collect(),
+        })
+        .collect();
+    slice.bind("layout_projects", projects)?;
     let id = application.add_slice(slice)?;
     actions::ShowcaseActions::register(application, id)?;
     let actions = actions::ShowcaseActions::bind(application)?;

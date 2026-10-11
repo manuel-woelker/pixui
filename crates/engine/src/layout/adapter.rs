@@ -80,8 +80,11 @@ pub(crate) fn compute(
                     match measure(
                         *index,
                         MeasureConstraints {
-                            width: known.width,
-                            height: known.height,
+                            // Intrinsic Grid probes can subtract padding from a
+                            // zero-sized track. Painters see empty content boxes,
+                            // consistent with the geometry passed to painting.
+                            width: known.width.map(|value| value.max(0.0)),
+                            height: known.height.map(|value| value.max(0.0)),
                             available_width: space(available.width),
                             available_height: space(available.height),
                         },
@@ -139,7 +142,7 @@ pub(crate) fn compute(
 }
 fn space(space: taffy::style::AvailableSpace) -> AvailableSpace {
     match space {
-        taffy::style::AvailableSpace::Definite(v) => AvailableSpace::Definite(v),
+        taffy::style::AvailableSpace::Definite(v) => AvailableSpace::Definite(v.max(0.0)),
         taffy::style::AvailableSpace::MinContent => AvailableSpace::MinContent,
         taffy::style::AvailableSpace::MaxContent => AvailableSpace::MaxContent,
     }
