@@ -1,9 +1,9 @@
 //! Software window presentation; the pure CPU painter remains available separately.
+use pixui_engine::ui::render_input::RenderInput;
 
 use super::contract::{RenderOutcome, Renderer, RendererTimings};
 use crate::painter;
 use pixui_base::{PixuiResult, pixui_error};
-use pixui_engine::ui::display_list::DisplayList;
 use softbuffer::{Context, Surface};
 use std::{num::NonZeroU32, sync::Arc};
 use winit::window::Window;
@@ -38,9 +38,9 @@ impl Renderer for SoftwareRenderer {
         self.scale = scale;
         Ok(())
     }
-    fn render(&mut self, display: &DisplayList) -> PixuiResult<RenderOutcome> {
+    fn render(&mut self, input: RenderInput<'_>) -> PixuiResult<RenderOutcome> {
         let started = std::time::Instant::now();
-        display.validate()?;
+        input.validate()?;
         let (Some(width), Some(height), Some(surface)) = (
             NonZeroU32::new(self.width),
             NonZeroU32::new(self.height),
@@ -50,7 +50,7 @@ impl Renderer for SoftwareRenderer {
         };
         let acquisition = started.elapsed();
         let started = std::time::Instant::now();
-        let pixels = painter::paint(display, self.width, self.height, self.scale)?;
+        let pixels = painter::paint(input, self.width, self.height, self.scale)?;
         let drawing = started.elapsed();
         let started = std::time::Instant::now();
         surface

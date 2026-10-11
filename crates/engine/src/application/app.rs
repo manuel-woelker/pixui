@@ -28,6 +28,7 @@ use super::{
 pub struct Application {
     pub(crate) components: ComponentRegistry,
     pub(crate) painters: PainterRegistry,
+    pub(crate) styles: crate::styles::registry::StyleRegistry,
     pub(crate) uis: crate::ui::registry::UiRegistry,
     // Finalization mutates only this cache while renderers borrow application
     // data immutably. RefCell is worker-local; no shared application-state lock.
@@ -85,9 +86,54 @@ impl Application {
 
     /// Registers appearance independently of component identity and behavior.
     pub fn register_painter<C: Component>(&mut self, painter: impl Painter<C>) -> PixuiResult<()> {
-        self.painters.register::<C>(&self.components, painter)
+        painter.register(&mut self.painters, &self.components, &mut self.styles)
     }
 
+    pub fn styles(&self) -> &crate::styles::registry::StyleRegistry {
+        &self.styles
+    }
+    pub fn register_style(
+        &mut self,
+        name: impl Into<String>,
+        family: crate::styles::family::StyleFamily,
+    ) -> PixuiResult<crate::styles::family::StyleFamilyId> {
+        let id = self.styles.register(name, family)?;
+        self.uis.invalidate_all();
+        Ok(id)
+    }
+    pub fn replace_style(
+        &mut self,
+        id: crate::styles::family::StyleFamilyId,
+        family: crate::styles::family::StyleFamily,
+    ) -> PixuiResult<()> {
+        let mut candidate = self.styles.clone();
+        candidate.replace(id, family)?;
+        self.painters.validate_styles(&candidate)?;
+        self.uis.validate_styles(&self.painters, &candidate)?;
+        self.styles = candidate;
+        self.uis.invalidate_all();
+        Ok(())
+    }
+    pub fn set_theme_tokens(
+        &mut self,
+        theme: crate::ui::presentation::Theme,
+        tokens: crate::styles::theme::ThemeTokens,
+    ) -> PixuiResult<()> {
+        let mut candidate = self.styles.clone();
+        candidate.set_tokens(theme, tokens)?;
+        self.painters.validate_styles(&candidate)?;
+        self.uis.validate_styles(&self.painters, &candidate)?;
+        self.styles = candidate;
+        self.uis.invalidate_all();
+        Ok(())
+    }
+    pub fn register_styled_painter<C: Component, P: Painter<C> + pixui_reflect::Reflect>(
+        &mut self,
+        defaults: Vec<crate::styles::slots::SlotAssignment>,
+    ) -> PixuiResult<()> {
+        self.painters
+            .register_styled::<C, P>(&self.components, &self.styles, defaults)
+    }
     /// Checks all component registrations and painters before accepting a template.
     pub fn register_ui(
         &mut self,
@@ -95,6 +141,8 @@ impl Application {
     ) -> PixuiResult<crate::ui::definition::UiDefinitionId> {
         self.components
             .validate(&definition.template, &self.painters)?;
+        self.painters
+            .validate_template_styles(&definition.template, &self.styles)?;
         let mut translations = self.translations.clone();
         crate::i18n::registration::register(&mut definition, &mut translations)?;
         let id = self.uis.register(definition)?;

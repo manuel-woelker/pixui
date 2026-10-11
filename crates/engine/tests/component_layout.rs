@@ -409,7 +409,7 @@ fn measure_context_text_matches_paint_metrics_and_long_text_can_shrink() {
         .register_component::<pixui_engine::components::label::LabelComponent>("label")
         .unwrap();
     app.register_painter::<pixui_engine::components::label::LabelComponent>(
-        pixui_engine::painters::label::LabelPainter,
+        pixui_engine::painters::label::LabelPainter::default(),
     )
     .unwrap();
     let label = ComponentPart::typed(label_id, |_, _| {
@@ -437,6 +437,7 @@ fn measure_context_text_matches_paint_metrics_and_long_text_can_shrink() {
         height: 1.0,
     };
     let context = MeasureContext::<Block> {
+        styles: &[],
         props: &props,
         state: &0,
         settings: &settings,
@@ -519,7 +520,7 @@ fn explicit_multiline_labels_fit_their_measured_height() {
         .register_component::<pixui_engine::components::label::LabelComponent>("label")
         .unwrap();
     app.register_painter::<pixui_engine::components::label::LabelComponent>(
-        pixui_engine::painters::label::LabelPainter,
+        pixui_engine::painters::label::LabelPainter::default(),
     )
     .unwrap();
     let part = ComponentPart::typed(id, |_, _| {
@@ -538,7 +539,10 @@ fn explicit_multiline_labels_fit_their_measured_height() {
         .commands
         .iter()
         .find_map(|command| match command {
-            pixui_engine::ui::display_list::DrawCommand::DrawText { origin, .. } => Some(*origin),
+            pixui_engine::ui::display_list::DrawCommand::DrawText { origin, .. }
+            | pixui_engine::ui::display_list::DrawCommand::StyledText { origin, .. } => {
+                Some(*origin)
+            }
             _ => None,
         })
         .unwrap();

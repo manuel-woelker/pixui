@@ -183,3 +183,12 @@ primary-selection clipboard or double/triple-click selection.
 
 See the showcase's text page for acceptance, uppercase normalization and
 rejected longer values, and the todo example for an entity-bound entry field.
+
+## Input paint slots
+
+The standard painter declares `body`, `selection`, `caret` and `focus_ring`.
+Body font/size/inset determine intrinsic height, text placement, hit-testing
+advances, horizontal scrolling and IME geometry. All are measured from the same
+resolved occurrence style at its DPI. Interaction color patches preserve these
+metrics. Selection uses the body foreground; custom selection fills should
+preserve its contrast. See [painter styles](../styles/README.md).

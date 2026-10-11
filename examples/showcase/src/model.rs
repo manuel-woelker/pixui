@@ -43,7 +43,7 @@ pub mod actions {
     /// Select a gallery page in every presentation, preserving demo data.
     #[action]
     pub fn select(mut selected: EntityMut<u64>, page: u64) -> PixuiResult<()> {
-        if page >= 5 {
+        if page >= 6 {
             return Err(pixui_error!("unknown showcase page"));
         }
         *selected = page;

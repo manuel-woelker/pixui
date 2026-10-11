@@ -199,6 +199,63 @@ pub fn definition(
         .with_focus(pixui_engine::ui::focus::FocusBehavior::Sequential)
         .into(),
     ]);
+    let primary = crate::styles::assignment(app, "showcase.primary")?;
+    let quiet = crate::styles::assignment(app, "showcase.quiet")?;
+    let danger = crate::styles::assignment(app, "showcase.danger")?;
+    let mut examples = vec![
+        label(components, Expression::text("Styles")?),
+        label(
+            components,
+            Expression::text("Theme colors and fonts · reflected painter slots")?,
+        ),
+    ];
+    for (title, assignment) in [
+        ("Primary", primary.clone()),
+        ("Quiet", quiet),
+        ("Danger", danger),
+        ("Compact", primary.clone().variant("compact")),
+        ("Monospace", primary.clone().variant("mono")),
+        (
+            "Local purple override",
+            primary.patch(crate::styles::local_color()),
+        ),
+    ] {
+        examples.push(
+            ComponentPart::typed_with_expressions(
+                components.button,
+                vec![Expression::text(title)?],
+                |_, _, values| {
+                    Ok(ButtonProps {
+                        label: text(values, 0)?,
+                    })
+                },
+            )
+            .with_style("body", assignment)
+            .with_activation(increment)
+            .into(),
+        );
+    }
+    examples.push(checkbox(
+        components,
+        "Use compact style",
+        Expression::entity(checked),
+        toggle_checked,
+    )?);
+    examples.push(
+        ComponentPart::typed_with_expressions(
+            components.button,
+            vec![Expression::text("Dynamic style variant")?],
+            |_, _, values| {
+                Ok(ButtonProps {
+                    label: text(values, 0)?,
+                })
+            },
+        )
+        .with_style_resolver(dynamic_style)
+        .with_activation(increment)
+        .into(),
+    );
+    let styles_page = page(examples);
     let navigation = ContainerPart::column()
         .with_layout(LayoutStyle {
             width: Length::Pixels(SIDEBAR_WIDTH),
@@ -215,18 +272,26 @@ pub fn definition(
             navigation_item::<2>(components, "Images")?,
             navigation_item::<3>(components, "Collections")?,
             navigation_item::<4>(components, "Text and translations")?,
+            navigation_item::<5>(components, "Styles")?,
         ])
         .into();
     let selected_page = LivePart::Match(MatchPart::new(
         Expression::entity(selected),
-        [buttons, checkboxes, images, collections, text_page]
-            .into_iter()
-            .enumerate()
-            .map(|(index, part)| MatchCandidate {
-                pattern: MatchPattern::value(index as u64),
-                part,
-            })
-            .collect(),
+        [
+            buttons,
+            checkboxes,
+            images,
+            collections,
+            text_page,
+            styles_page,
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, part)| MatchCandidate {
+            pattern: MatchPattern::value(index as u64),
+            part,
+        })
+        .collect(),
     )?);
     let mut panes = ContainerPart::grid()
         .with_layout(LayoutStyle {
@@ -393,4 +458,22 @@ fn change<const MODE: u8>(
     Ok(Box::new(move |_, content| {
         action.call(vec![Box::new(content)])
     }))
+}
+
+fn dynamic_style(
+    context: &ExpressionContext<'_>,
+    _: &PresentationSettings,
+) -> PixuiResult<Vec<pixui_engine::styles::slots::SlotAssignment>> {
+    let app = context.application()?;
+    let slice = app.slice_named("showcase")?;
+    let checked = *app.entity::<bool>(slice.id(), "checked")?;
+    let mut assignment = pixui_engine::styles::family::StyleAssignment::new(
+        app.styles().family("showcase.primary")?,
+    );
+    if checked {
+        assignment = assignment.variant("compact");
+    }
+    Ok(vec![pixui_engine::styles::slots::SlotAssignment::new(
+        "body", assignment,
+    )])
 }

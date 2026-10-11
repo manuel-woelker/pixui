@@ -67,7 +67,9 @@ fn painters_share_one_timestamp_and_explicit_time_can_freeze_and_seek() {
             .commands
             .iter()
             .filter_map(|command| match command {
-                DrawCommand::DrawText { text, .. } => Some(text.parse::<u64>().unwrap()),
+                DrawCommand::DrawText { text, .. } | DrawCommand::StyledText { text, .. } => {
+                    Some(text.parse::<u64>().unwrap())
+                }
                 _ => None,
             })
             .collect();

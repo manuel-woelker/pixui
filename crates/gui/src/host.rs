@@ -195,7 +195,7 @@ impl NativeWindow {
         }
         let size = self.window.surface_size();
         self.presentation.draw(
-            &output.display_list,
+            output.into(),
             output.revision,
             size.width,
             size.height,

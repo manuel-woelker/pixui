@@ -67,13 +67,45 @@ impl ApplicationHandle {
     /// use pixui_engine::{application::app::Application, components::label::LabelComponent, painters::button::ButtonPainter};
     /// let application = Application::new();
     /// // ButtonPainter implements Painter<ButtonComponent>, not Painter<LabelComponent>.
-    /// application.register_painter::<LabelComponent>(ButtonPainter).unwrap();
+    /// application.register_painter::<LabelComponent>(ButtonPainter::default()).unwrap();
     /// ```
     pub fn register_painter<C: Component>(&self, painter: impl Painter<C>) -> PixuiResult<()> {
         self.request(move |application| application.register_painter::<C>(painter))?
             .wait()
     }
 
+    pub fn register_style(
+        &self,
+        name: impl Into<String>,
+        family: crate::styles::family::StyleFamily,
+    ) -> PixuiResult<crate::styles::family::StyleFamilyId> {
+        let name = name.into();
+        self.request(move |app| app.register_style(name, family))?
+            .wait()
+    }
+    pub fn replace_style(
+        &self,
+        id: crate::styles::family::StyleFamilyId,
+        family: crate::styles::family::StyleFamily,
+    ) -> PixuiResult<()> {
+        self.request(move |app| app.replace_style(id, family))?
+            .wait()
+    }
+    pub fn set_theme_tokens(
+        &self,
+        theme: crate::ui::presentation::Theme,
+        tokens: crate::styles::theme::ThemeTokens,
+    ) -> PixuiResult<()> {
+        self.request(move |app| app.set_theme_tokens(theme, tokens))?
+            .wait()
+    }
+    pub fn register_styled_painter<C: Component, P: Painter<C> + pixui_reflect::Reflect>(
+        &self,
+        defaults: Vec<crate::styles::slots::SlotAssignment>,
+    ) -> PixuiResult<()> {
+        self.request(move |app| app.register_styled_painter::<C, P>(defaults))?
+            .wait()
+    }
     /// Registers standard component types only; choose their painters separately.
     pub fn register_standard_components(
         &self,
@@ -89,6 +121,7 @@ impl ApplicationHandle {
             crate::painters::standard::register_painters(
                 &mut application.painters,
                 &application.components,
+                &mut application.styles,
             )
         })?
         .wait()

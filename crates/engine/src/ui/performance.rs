@@ -34,16 +34,21 @@ pub struct FrameMemory {
     pub fonts: usize,
 }
 impl FrameMemory {
-    pub fn measure(display: &DisplayList) -> Self {
+    pub fn measure<'a>(input: impl Into<super::render_input::RenderInput<'a>>) -> Self {
+        let input = input.into();
+        let display = input.display;
         let mut result = Self {
             display_list: size_of::<DisplayList>()
+                + std::mem::size_of_val(input.styles)
                 + display.commands.capacity() * size_of::<DrawCommand>()
                 + display.images.storage_bytes()
                 + display.fonts.storage_bytes(),
             ..Self::default()
         };
         for command in &display.commands {
-            if let DrawCommand::DrawText { text, .. } = command {
+            if let DrawCommand::DrawText { text, .. } | DrawCommand::StyledText { text, .. } =
+                command
+            {
                 result.display_list += text.capacity();
             }
         }

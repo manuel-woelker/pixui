@@ -5,6 +5,8 @@ and shared infrastructure in [`crates/base`](crates/base).
 
 See the [architecture overview](docs/Architecture.md) for the application
 runtime diagram, state ownership, and workspace responsibilities.
+See [painter styles](crates/engine/src/styles/README.md) for themes, reflected
+slots and occurrence overrides.
 
 Run the [native todo example](examples/todo/README.md) with
 `./t cargo run -p pixui-example-todo --bin gui`. It shows one UI definition in

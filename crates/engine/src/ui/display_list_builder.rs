@@ -32,6 +32,7 @@ pub struct DisplayListBuilder {
     redraw_after: Option<Duration>,
     animating: bool,
     font_indices: HashMap<FontKey, FontIndex>,
+    styles: Vec<super::render_input::RenderStyle>,
     fonts: Vec<(FontConfig, BTreeSet<char>)>,
 }
 
@@ -59,6 +60,48 @@ impl DisplayListBuilder {
             text,
             font: index,
             color,
+        });
+        Ok(())
+    }
+    /// Install styles before painting. Each text slot acquires its final font
+    /// index only when used, so decorative slots allocate no glyph atlas.
+    pub(crate) fn set_styles(&mut self, styles: &[crate::styles::style::PaintStyle]) {
+        self.styles = styles
+            .iter()
+            .map(|style| super::render_input::RenderStyle {
+                fill: style.fill,
+                border: style.border,
+                foreground: style.foreground,
+                font: None,
+            })
+            .collect();
+    }
+    pub fn styled_text(
+        &mut self,
+        config: FontConfig,
+        origin: Point,
+        text: impl Into<String>,
+        style: crate::styles::index::StyleIndex,
+    ) -> PixuiResult<()> {
+        if self.styles.get(style.index).is_none() {
+            return Err(pixui_error!("unbound text style"));
+        }
+        self.text(config, origin, text, super::display_list::Color(0, 0, 0))?;
+        let Some(DrawCommand::DrawText {
+            origin, text, font, ..
+        }) = self.display.commands.pop()
+        else {
+            unreachable!("text appends one command")
+        };
+        let entry = &mut self.styles[style.index];
+        if entry.font.is_some_and(|previous| previous != font) {
+            return Err(pixui_error!("style used with inconsistent font"));
+        }
+        entry.font = Some(font);
+        self.emit(DrawCommand::StyledText {
+            origin,
+            text,
+            style,
         });
         Ok(())
     }
@@ -100,9 +143,28 @@ impl DisplayListBuilder {
     /// Finalize all demands against the worker cache before validating/publishing.
     /// No partial display list is returned when preparation fails.
     pub fn finish_with_text(
-        mut self,
+        self,
         service: &mut TextService,
     ) -> PixuiResult<(DisplayList, Option<Duration>)> {
+        let (display, styles, delay) = self.finish_styled(service)?;
+        if !styles.is_empty() {
+            return Err(pixui_error!(
+                "styled lists require finish_styled to retain their table"
+            ));
+        }
+        Ok((display, delay))
+    }
+    /// Finalizes glyphs and returns commands together with their owning style
+    /// table. Equal renderer styles deduplicate; command indices are remapped.
+    /// Errors publish neither table.
+    pub fn finish_styled(
+        mut self,
+        service: &mut TextService,
+    ) -> PixuiResult<(
+        DisplayList,
+        Vec<super::render_input::RenderStyle>,
+        Option<Duration>,
+    )> {
         let mut fonts = ResourceTableBuilder::<FontResource>::default();
         let mut indices = Vec::with_capacity(self.fonts.len());
         for (config, characters) in &self.fonts {
@@ -117,9 +179,42 @@ impl DisplayListBuilder {
                     .ok_or_else(|| pixui_error!("font index outside pending demands"))?;
             }
         }
+        for style in &mut self.styles {
+            if let Some(font) = &mut style.font {
+                *font = *indices
+                    .get(font.as_usize())
+                    .ok_or_else(|| pixui_error!("style font outside pending demands"))?;
+            }
+        }
+        // Metrics have already been consumed by layout. Deduplicate the concrete
+        // renderer values, then remap output indices; painter indices never escape.
+        let mut lookup = HashMap::new();
+        let mut remap = Vec::with_capacity(self.styles.len());
+        let mut styles = Vec::new();
+        for style in self.styles.drain(..) {
+            let index = *lookup.entry(style.key()).or_insert_with(|| {
+                let index = crate::styles::index::StyleIndex {
+                    index: styles.len(),
+                };
+                styles.push(style);
+                index
+            });
+            remap.push(index);
+        }
+        for command in &mut self.display.commands {
+            if let DrawCommand::StyledFillRect { style, .. }
+            | DrawCommand::StyledStrokeRect { style, .. }
+            | DrawCommand::StyledText { style, .. } = command
+            {
+                *style = *remap
+                    .get(style.index)
+                    .ok_or_else(|| pixui_error!("unbound drawing style"))?;
+            }
+        }
+        self.styles = styles;
         self.display.fonts = fonts.finish();
         self.display.images = self.images.finish();
-        self.display.validate()?;
-        Ok((self.display, self.redraw_after))
+        self.display.validate_with_styles(&self.styles)?;
+        Ok((self.display, self.styles, self.redraw_after))
     }
 }

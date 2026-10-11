@@ -161,6 +161,7 @@ mod tests {
 
     fn output(revision: u64) -> RenderOutput {
         RenderOutput {
+            styles: Vec::new(),
             instance_id: UiInstanceId(1),
             revision: RenderRevision(revision),
             paint_revision: RenderRevision(revision),

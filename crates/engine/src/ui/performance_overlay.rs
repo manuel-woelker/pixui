@@ -57,6 +57,7 @@ impl PerformanceOverlay {
     pub fn append(
         &mut self,
         mut display: DisplayList,
+        styles: &[super::render_input::RenderStyle],
         worker: WorkerTimings,
         scale: f32,
         viewport: Size,
@@ -73,7 +74,10 @@ impl PerformanceOverlay {
             let font = TextService::default().prepare(&config, &characters)?;
             self.font = Some((scale, font));
         }
-        let memory = FrameMemory::measure(&display);
+        let memory = FrameMemory::measure(super::render_input::RenderInput {
+            display: &display,
+            styles,
+        });
         let mut text = format!(
             "Performance (F11)\n{:<20} {:>9} fps\n",
             "FPS (painted frames):",
@@ -150,7 +154,11 @@ impl PerformanceOverlay {
             },
             DrawCommand::PopClip,
         ]);
-        display.validate()?;
+        super::render_input::RenderInput {
+            display: &display,
+            styles,
+        }
+        .validate()?;
         self.refresh = self.visible.then_some(now + Duration::from_millis(250));
         Ok(display)
     }
@@ -183,6 +191,7 @@ mod tests {
         let display = overlay
             .append(
                 source.clone(),
+                &[],
                 WorkerTimings::default(),
                 1.0,
                 Size {
@@ -200,6 +209,7 @@ mod tests {
             overlay
                 .append(
                     source.clone(),
+                    &[],
                     WorkerTimings::default(),
                     1.0,
                     Size {
@@ -217,6 +227,7 @@ mod tests {
             overlay
                 .append(
                     source.clone(),
+                    &[],
                     WorkerTimings::default(),
                     2.0,
                     Size {

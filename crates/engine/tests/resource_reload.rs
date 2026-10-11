@@ -160,7 +160,7 @@ fn output(outputs: &OutputReceiver, text: &str, color: u8) -> RenderOutput {
             .recv_timeout(deadline.saturating_duration_since(Instant::now()))
             .unwrap();
         if frame.display_list.commands.iter().any(
-            |command| matches!(command, DrawCommand::DrawText { text: value, .. } if value == text),
+            |command| matches!(command, DrawCommand::DrawText { text: value, .. } | DrawCommand::StyledText { text: value, .. } if value == text),
         ) && frame
             .display_list
             .images
@@ -403,7 +403,7 @@ fn missing_catalog_can_be_created_and_domain_replacement_is_atomic() {
             .recv_timeout(deadline.saturating_duration_since(Instant::now()))
             .unwrap();
         if frame.display_list.commands.iter().any(
-            |command| matches!(command, DrawCommand::DrawText { text, .. } if text == "Speichern"),
+            |command| matches!(command, DrawCommand::DrawText { text, .. } | DrawCommand::StyledText { text, .. } if text == "Speichern"),
         ) {
             break;
         }
@@ -635,11 +635,11 @@ fn edits_during_background_parsing_discard_the_obsolete_snapshot() {
     release.send(()).unwrap();
     let frame = outputs.recv_timeout(TIMEOUT).unwrap();
     assert!(frame.display_list.commands.iter().any(
-        |command| matches!(command, DrawCommand::DrawText { text, .. } if text == "Latest content")
+        |command| matches!(command, DrawCommand::DrawText { text, .. } | DrawCommand::StyledText { text, .. } if text == "Latest content")
     ));
     assert!(
         old.display_list.commands.iter().any(
-            |command| matches!(command, DrawCommand::DrawText { text, .. } if text == "Initial")
+            |command| matches!(command, DrawCommand::DrawText { text, .. } | DrawCommand::StyledText { text, .. } if text == "Initial")
         )
     );
     reload.stop();

@@ -32,6 +32,8 @@ pub struct CompositePart {
 
 #[derive(Clone)]
 pub struct ComponentPart {
+    pub(crate) styles: Vec<crate::styles::slots::SlotAssignment>,
+    pub(crate) style_resolver: Option<StyleResolver>,
     pub create_state: StateFactory,
     pub(crate) focus: crate::ui::focus::FocusBehavior,
     pub(crate) focus_resolver: Option<crate::ui::focus::FocusResolver>,
@@ -45,6 +47,8 @@ pub struct ComponentPart {
 impl ComponentPart {
     pub fn new(create_state: StateFactory) -> Self {
         Self {
+            styles: Vec::new(),
+            style_resolver: None,
             focus: Default::default(),
             focus_resolver: None,
             create_state,
@@ -80,6 +84,8 @@ impl ComponentPart {
         resolve: crate::component_registry::binding::ExpressionPropsResolver<C>,
     ) -> Self {
         Self {
+            styles: Vec::new(),
+            style_resolver: None,
             focus: Default::default(),
             focus_resolver: None,
             create_state: |_| Ok(GenericComponentState::new(())),
@@ -105,6 +111,8 @@ impl ComponentPart {
         update: ComponentUpdate<C>,
     ) -> Self {
         Self {
+            styles: Vec::new(),
+            style_resolver: None,
             focus: Default::default(),
             focus_resolver: None,
             create_state: |_| Ok(GenericComponentState::new(())),
@@ -121,6 +129,22 @@ impl ComponentPart {
         }
     }
 
+    /// Replace one painter slot for this declaration. Dynamic assignments follow
+    /// these constants; duplicate slots are errors rather than order-dependent.
+    pub fn with_style(
+        mut self,
+        slot: impl Into<String>,
+        style: crate::styles::family::StyleAssignment,
+    ) -> Self {
+        self.styles
+            .push(crate::styles::slots::SlotAssignment::new(slot, style));
+        self
+    }
+    /// A pure resolver called once during preparation, never during solver probes.
+    pub fn with_style_resolver(mut self, resolve: StyleResolver) -> Self {
+        self.style_resolver = Some(resolve);
+        self
+    }
     /// Resolves an owned activation binding separately from the painter. Bounds
     /// and hit testing remain the renderer's responsibility.
     pub fn with_activation(mut self, activation: ActivationFactory) -> Self {
@@ -201,3 +225,8 @@ impl From<ComponentPart> for LivePart {
         Self::Component(part)
     }
 }
+
+pub type StyleResolver = for<'a> fn(
+    &crate::expression::context::ExpressionContext<'a>,
+    &crate::ui::presentation::PresentationSettings,
+) -> PixuiResult<Vec<crate::styles::slots::SlotAssignment>>;

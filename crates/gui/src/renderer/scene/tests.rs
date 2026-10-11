@@ -1,6 +1,7 @@
 //! Offscreen compatibility fixture. Set PIXUI_REQUIRE_GPU=1 to require an adapter.
 use super::*;
 use crate::renderer::gpu::Gpu;
+use pixui_engine::ui::display_list::{DisplayList, DrawCommand};
 use pixui_engine::ui::{
     geometry::Point,
     image::Image,
@@ -23,7 +24,12 @@ fn gpu() -> Option<Gpu> {
         Err(error) => panic!("required GPU adapter unavailable: {error:?}"),
     }
 }
-fn render(scene: &mut Scene, gpu: &Gpu, display: &DisplayList, scale: f32) -> Vec<u8> {
+fn render<'a>(
+    scene: &mut Scene,
+    gpu: &Gpu,
+    display: impl Into<RenderInput<'a>>,
+    scale: f32,
+) -> Vec<u8> {
     let texture = gpu.device.create_texture(&wgpu::TextureDescriptor {
         label: Some("renderer compatibility fixture"),
         size: wgpu::Extent3d {
@@ -575,14 +581,14 @@ fn controlled_input_selection_and_caret_draw_with_both_renderers() {
         })
         .unwrap();
         let selection = outputs.recv_timeout(Duration::from_secs(3)).unwrap();
-        let first = crate::painter::paint(&caret.display_list, 64, 64, scale).unwrap();
-        let second = crate::painter::paint(&selection.display_list, 64, 64, scale).unwrap();
+        let first = crate::painter::paint(&caret, 64, 64, scale).unwrap();
+        let second = crate::painter::paint(&selection, 64, 64, scale).unwrap();
         assert_ne!(first, second, "selection changes painted pixels");
         for output in [caret, selection] {
-            output.display_list.validate().unwrap();
+            RenderInput::from(&output).validate().unwrap();
             if let (Some(gpu), Some(scene)) = (&gpu, &mut scene) {
-                let pixels = render(scene, gpu, &output.display_list, scale);
-                let cpu = crate::painter::paint(&output.display_list, 64, 64, scale).unwrap();
+                let pixels = render(scene, gpu, &output, scale);
+                let cpu = crate::painter::paint(&output, 64, 64, scale).unwrap();
                 let mismatches = pixels
                     .as_chunks::<4>()
                     .0

@@ -2,9 +2,10 @@
 
 use pixui_base::{PixuiResult, pixui_error};
 use pixui_engine::ui::{
-    display_list::{Color, DisplayList, DrawCommand},
+    display_list::Color,
     geometry::{Point, Rect},
     image::{ImagePixels, RgbaColor},
+    render_input::{RenderInput, ResolvedCommand as DrawCommand},
     text::resource::FontResource,
 };
 
@@ -104,8 +105,15 @@ impl Canvas {
 /// Paints opaque sRGB pixels as `0x00RRGGBB`, matching softbuffer's format.
 /// Validates commands before allocating. Buffers larger than 64 million pixels
 /// are rejected. Logical geometry and glyph metrics match the worker renderer.
-pub fn paint(display: &DisplayList, width: u32, height: u32, scale: f32) -> PixuiResult<Vec<u32>> {
-    display.validate()?;
+pub fn paint<'a>(
+    input: impl Into<RenderInput<'a>>,
+    width: u32,
+    height: u32,
+    scale: f32,
+) -> PixuiResult<Vec<u32>> {
+    let input = input.into();
+    input.validate()?;
+    let display = input.display;
     let count = u64::from(width) * u64::from(height);
     if count > 64_000_000 || !scale.is_finite() || !(0.1..=16.0).contains(&scale) {
         return Err(pixui_error!("invalid raster dimensions or scale"));
@@ -123,7 +131,8 @@ pub fn paint(display: &DisplayList, width: u32, height: u32, scale: f32) -> Pixu
         }],
     };
     for command in &display.commands {
-        match command {
+        let command = input.resolve(command)?;
+        match &command {
             DrawCommand::FillRect { rect, color } => canvas.fill(*rect, *color),
             DrawCommand::StrokeRect { rect, color, width } => {
                 let thickness = width.min(rect.width).min(rect.height);

@@ -584,7 +584,7 @@ mod tests {
         .unwrap();
         let added = outputs.recv_timeout(Duration::from_secs(2)).unwrap();
         assert_eq!(added.animation_request, Some(3));
-        assert!(added.display_list.commands.iter().any(|command| matches!(command, DrawCommand::DrawText { text, .. } if text.contains("New todo"))));
+        assert!(added.display_list.commands.iter().any(|command| matches!(command, DrawCommand::DrawText { text, .. } | DrawCommand::StyledText { text, .. } if text.contains("New todo"))));
         assert!(
             app.ui_command(UiCommand::Input {
                 instance,
@@ -613,19 +613,19 @@ mod tests {
             let components = app.register_standard_components().unwrap();
             if custom {
                 app.register_painter::<pixui_engine::components::text_input::TextInputComponent>(
-                    pixui_engine::painters::text_input::TextInputPainter,
+                    pixui_engine::painters::text_input::TextInputPainter::default(),
                 )
                 .unwrap();
                 app.register_painter::<pixui_engine::components::button::ButtonComponent>(
-                    crate::custom_button_painter::CustomButtonPainter,
+                    crate::custom_button_painter::CustomButtonPainter::default(),
                 )
                 .unwrap();
                 app.register_painter::<pixui_engine::components::label::LabelComponent>(
-                    pixui_engine::painters::label::LabelPainter,
+                    pixui_engine::painters::label::LabelPainter::default(),
                 )
                 .unwrap();
                 app.register_painter::<pixui_engine::components::checkbox::CheckboxComponent>(
-                    pixui_engine::painters::checkbox::CheckboxPainter,
+                    pixui_engine::painters::checkbox::CheckboxPainter::default(),
                 )
                 .unwrap();
                 app.register_painter::<pixui_engine::components::image::ImageComponent>(
@@ -666,13 +666,10 @@ mod tests {
             })
             .unwrap();
             let hovered = outputs.recv_timeout(Duration::from_secs(2)).unwrap();
-            assert!(
-                hovered
-                    .display_list
-                    .commands
-                    .iter()
-                    .any(|command| matches!(command, DrawCommand::StrokeRect { .. }))
-            );
+            assert!(hovered.display_list.commands.iter().any(|command| matches!(
+                command,
+                DrawCommand::StrokeRect { .. } | DrawCommand::StyledStrokeRect { .. }
+            )));
             app.ui_command(UiCommand::Input {
                 instance,
                 revision: hovered.revision,
@@ -687,13 +684,10 @@ mod tests {
             })
             .unwrap();
             let focused = outputs.recv_timeout(Duration::from_secs(2)).unwrap();
-            assert!(
-                focused
-                    .display_list
-                    .commands
-                    .iter()
-                    .any(|command| matches!(command, DrawCommand::StrokeRect { .. }))
-            );
+            assert!(focused.display_list.commands.iter().any(|command| matches!(
+                command,
+                DrawCommand::StrokeRect { .. } | DrawCommand::StyledStrokeRect { .. }
+            )));
             app.ui_command(UiCommand::Input {
                 instance,
                 revision: focused.revision,
@@ -706,7 +700,7 @@ mod tests {
             })
             .unwrap();
             let updated = outputs.recv_timeout(Duration::from_secs(2)).unwrap();
-            assert!(updated.display_list.commands.iter().any(|command| matches!(command, DrawCommand::DrawText { text, .. } if text.contains("New todo"))));
+            assert!(updated.display_list.commands.iter().any(|command| matches!(command, DrawCommand::DrawText { text, .. } | DrawCommand::StyledText { text, .. } if text.contains("New todo"))));
             assert_eq!(
                 app.inspect(move |app| Ok(app
                     .uis()
@@ -756,7 +750,7 @@ mod tests {
             .unwrap();
         let light_output = light_outputs.recv_timeout(Duration::from_secs(2)).unwrap();
         let dark_output = dark_outputs.recv_timeout(Duration::from_secs(2)).unwrap();
-        assert!(dark_output.display_list.commands.iter().any(|command| matches!(command, DrawCommand::DrawText { text, .. } if text.contains("Aufgaben"))));
+        assert!(dark_output.display_list.commands.iter().any(|command| matches!(command, DrawCommand::DrawText { text, .. } | DrawCommand::StyledText { text, .. } if text.contains("Aufgaben"))));
         assert_ne!(light_output.display_list, dark_output.display_list);
         let point = application
             .inspect(move |app| {
@@ -902,7 +896,9 @@ mod tests {
             initial.display_list.fonts[0].characters().len()
                 < grown.display_list.fonts[0].characters().len()
         );
-        initial.display_list.validate().unwrap();
+        pixui_engine::ui::render_input::RenderInput::from(&initial)
+            .validate()
+            .unwrap();
         application
             .ui_command(UiCommand::Close { instance: light })
             .unwrap();
@@ -968,10 +964,10 @@ mod tests {
         let german = other.recv_timeout(Duration::from_secs(2)).unwrap();
         assert!(!paused.animating && !german.animating);
         assert!(paused.display_list.commands.iter().any(
-            |c| matches!(c, DrawCommand::DrawText { text, .. } if text == "Resume animation")
+            |c| matches!(c, DrawCommand::DrawText { text, .. } | DrawCommand::StyledText { text, .. } if text == "Resume animation")
         ));
         assert!(german.display_list.commands.iter().any(
-            |c| matches!(c, DrawCommand::DrawText { text, .. } if text == "Animation fortsetzen")
+            |c| matches!(c, DrawCommand::DrawText { text, .. } | DrawCommand::StyledText { text, .. } if text == "Animation fortsetzen")
         ));
         app.ui_command(UiCommand::Redraw { instance: one }).unwrap();
         let redrawn = outputs.recv_timeout(Duration::from_secs(2)).unwrap();

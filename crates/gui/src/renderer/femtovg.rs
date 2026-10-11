@@ -5,7 +5,7 @@ use super::{
     scene::{DEFAULT_CACHE_BYTES, Scene},
 };
 use pixui_base::{PixuiResult, pixui_error};
-use pixui_engine::ui::display_list::DisplayList;
+use pixui_engine::ui::render_input::RenderInput;
 use std::{rc::Rc, sync::Arc};
 use winit::window::Window;
 
@@ -100,9 +100,9 @@ impl Renderer for FemtovgRenderer {
         }
         Ok(())
     }
-    fn render(&mut self, display: &DisplayList) -> PixuiResult<RenderOutcome> {
+    fn render(&mut self, input: RenderInput<'_>) -> PixuiResult<RenderOutcome> {
         let started = std::time::Instant::now();
-        display.validate()?;
+        input.validate()?;
         self.gpu.check()?;
         if self.config.is_none() || self.surface.is_none() {
             return Ok(RenderOutcome::Skipped);
@@ -123,7 +123,7 @@ impl Renderer for FemtovgRenderer {
         let acquisition = started.elapsed();
         let started = std::time::Instant::now();
         self.scene
-            .prepare(display, self.width, self.height, self.scale)?;
+            .prepare(input, self.width, self.height, self.scale)?;
         let resources = self.scene.resource_time;
         let drawing = started.elapsed().saturating_sub(resources);
         let started = std::time::Instant::now();

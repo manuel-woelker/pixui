@@ -20,7 +20,7 @@ Register components and then painters before registering UI definitions:
 # fn main() -> PixuiResult<()> {
 let app = Application::new();
 let button = app.register_component::<ButtonComponent>("button")?;
-app.register_painter::<ButtonComponent>(ButtonPainter)?;
+app.register_painter::<ButtonComponent>(ButtonPainter::default())?;
 let part = ComponentPart::typed(button, resolve_props);
 # Ok(())
 # }
@@ -112,3 +112,12 @@ The worker's weak path cache shares live snapshots across nodes and windows.
 Changing props resolves the new path; replacing the application loader clears
 lookup and invalidates existing UIs. Failed loads abort frame publication,
 retaining the previous output. See [resource loading](../resources/README.md).
+
+## Theme-derived slots
+
+Standard painters use reflected `StyleIndex` fields and external family
+defaults. Each render constructs occurrence-specific painters for measurement
+and drawing; raw custom painters remain shared and may hold configuration.
+Declaration-local assignments and variants do not mutate registrations. See
+[painter styles](../styles/README.md) for reflection, registration, precedence,
+font metrics and output-table ownership.

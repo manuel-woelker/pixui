@@ -44,6 +44,16 @@ pub struct UiRegistry {
 }
 
 impl UiRegistry {
+    pub(crate) fn validate_styles(
+        &self,
+        painters: &crate::painters::registry::PainterRegistry,
+        styles: &crate::styles::registry::StyleRegistry,
+    ) -> PixuiResult<()> {
+        for definition in self.definitions.values() {
+            painters.validate_template_styles(&definition.template, styles)?;
+        }
+        Ok(())
+    }
     pub fn register(&mut self, definition: UiDefinition) -> PixuiResult<UiDefinitionId> {
         if definition.name.is_empty() || self.names.contains_key(&definition.name) {
             return Err(pixui_error!("empty or duplicate UI definition name"));
@@ -615,6 +625,7 @@ impl UiRegistry {
             );
             match result {
                 Ok(renderer::RenderedUi {
+                    styles,
                     display_list,
                     mut layout,
                     scroll: _,
@@ -629,6 +640,7 @@ impl UiRegistry {
                         revision: RenderRevision(revision),
                         paint_revision: RenderRevision(revision),
                         display_list,
+                        styles,
                         redraw_after,
                         timings,
                         animating,
@@ -948,6 +960,7 @@ fn decorate(instance: &mut UiInstance, output: &mut RenderOutput, now: Instant) 
     if instance.overlay.visible {
         output.display_list = instance.overlay.append(
             std::mem::take(&mut output.display_list),
+            &output.styles,
             output.timings,
             instance.settings.scale_factor,
             instance.settings.viewport,

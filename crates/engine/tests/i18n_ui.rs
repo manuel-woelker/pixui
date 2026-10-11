@@ -97,7 +97,7 @@ fn translated(output: &RenderOutput, expected: &str) -> bool {
         .display_list
         .commands
         .iter()
-        .any(|command| matches!(command, DrawCommand::DrawText { text, .. } if text == expected))
+        .any(|command| matches!(command, DrawCommand::DrawText { text, .. } | DrawCommand::StyledText { text, .. } if text == expected))
 }
 fn catalog(text: &str) -> TranslationCatalog {
     TranslationCatalog {

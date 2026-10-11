@@ -51,16 +51,16 @@ fn main() -> PixuiResult<()> {
     let components = application.register_standard_components()?;
     if std::env::args().any(|arg| arg == "--custom-painter") {
         application.register_painter::<pixui_engine::components::text_input::TextInputComponent>(
-            pixui_engine::painters::text_input::TextInputPainter,
+            pixui_engine::painters::text_input::TextInputPainter::default(),
         )?;
         application.register_painter::<pixui_engine::components::button::ButtonComponent>(
-            CustomButtonPainter,
+            CustomButtonPainter::default(),
         )?;
         application.register_painter::<pixui_engine::components::label::LabelComponent>(
-            pixui_engine::painters::label::LabelPainter,
+            pixui_engine::painters::label::LabelPainter::default(),
         )?;
         application.register_painter::<pixui_engine::components::checkbox::CheckboxComponent>(
-            pixui_engine::painters::checkbox::CheckboxPainter,
+            pixui_engine::painters::checkbox::CheckboxPainter::default(),
         )?;
         application.register_painter::<pixui_engine::components::image::ImageComponent>(
             pixui_engine::painters::image::ImagePainter,

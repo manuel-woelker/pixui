@@ -3,9 +3,10 @@ use super::{glyphs, texture_cache::TextureCache};
 use femtovg::{Canvas, ImageFlags, ImageSource, Paint, Path, renderer::WGPURenderer};
 use pixui_base::{PixuiResult, pixui_error};
 use pixui_engine::ui::{
-    display_list::{Color, DisplayList, DrawCommand},
+    display_list::Color,
     geometry::Rect,
     image::{ImageData, ImagePixels, RgbaColor},
+    render_input::{RenderInput, ResolvedCommand as DrawCommand},
     text::resource::FontResource,
 };
 
@@ -82,14 +83,16 @@ impl Scene {
         }
         Ok(())
     }
-    pub fn prepare(
+    pub fn prepare<'a>(
         &mut self,
-        display: &DisplayList,
+        input: impl Into<RenderInput<'a>>,
         width: u32,
         height: u32,
         scale: f32,
     ) -> PixuiResult<()> {
-        display.validate()?;
+        let input = input.into();
+        input.validate()?;
+        let display = input.display;
         let started = std::time::Instant::now();
         self.frame = self.frame.wrapping_add(1);
         // Complete all uploads before recording commands, so upload errors do not
@@ -169,7 +172,8 @@ impl Scene {
         self.canvas
             .scissor(0.0, 0.0, width as f32 / scale, height as f32 / scale);
         for command in &display.commands {
-            match command {
+            let command = input.resolve(command)?;
+            match &command {
                 DrawCommand::FillRect { rect, color: c } => self.canvas.fill_path(
                     &solid_path(*rect, scale),
                     &Paint::color(color(*c)).with_anti_alias(false),

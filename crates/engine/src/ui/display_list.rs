@@ -11,11 +11,24 @@ use super::{
 use pixui_base::{PixuiResult, pixui_error};
 
 /// Opaque sRGB color. The initial painter does not support transparency.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Color(pub u8, pub u8, pub u8);
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum DrawCommand {
+    StyledFillRect {
+        rect: Rect,
+        style: crate::styles::index::StyleIndex,
+    },
+    StyledStrokeRect {
+        rect: Rect,
+        style: crate::styles::index::StyleIndex,
+    },
+    StyledText {
+        origin: Point,
+        text: String,
+        style: crate::styles::index::StyleIndex,
+    },
     FillRect {
         rect: Rect,
         color: Color,
@@ -52,15 +65,27 @@ pub struct DisplayList {
 impl DisplayList {
     /// Validates finite geometry, prepared glyphs, resource indices, and balanced clips.
     pub fn validate(&self) -> PixuiResult<()> {
+        self.validate_with_styles(&[])
+    }
+    pub(crate) fn validate_with_styles(
+        &self,
+        styles: &[super::render_input::RenderStyle],
+    ) -> PixuiResult<()> {
+        use super::render_input::ResolvedCommand as Command;
+        let input = super::render_input::RenderInput {
+            display: self,
+            styles,
+        };
         let mut depth = 0usize;
         for command in &self.commands {
-            match command {
-                DrawCommand::FillRect { rect, .. }
-                | DrawCommand::StrokeRect { rect, .. }
-                | DrawCommand::DrawImage {
+            let command = input.resolve(command)?;
+            match &command {
+                Command::FillRect { rect, .. }
+                | Command::StrokeRect { rect, .. }
+                | Command::DrawImage {
                     destination: rect, ..
                 }
-                | DrawCommand::PushClip { rect }
+                | Command::PushClip { rect }
                     if ![rect.x, rect.y, rect.width, rect.height]
                         .iter()
                         .all(|v| v.is_finite())
@@ -71,16 +96,16 @@ impl DisplayList {
                 }
                 _ => {}
             }
-            match command {
-                DrawCommand::DrawImage { image, .. } if self.images.get(*image).is_none() => {
+            match &command {
+                Command::DrawImage { image, .. } if self.images.get(*image).is_none() => {
                     return Err(pixui_error!("image index outside display list table"));
                 }
-                DrawCommand::DrawText { origin, .. }
+                Command::DrawText { origin, .. }
                     if !origin.x.is_finite() || !origin.y.is_finite() =>
                 {
                     return Err(pixui_error!("invalid text geometry"));
                 }
-                DrawCommand::DrawText { font, text, .. } => {
+                Command::DrawText { font, text, .. } => {
                     let resource = self
                         .fonts
                         .get(*font)
@@ -94,13 +119,13 @@ impl DisplayList {
                         }
                     }
                 }
-                DrawCommand::PushClip { .. } => depth += 1,
-                DrawCommand::PopClip => {
+                Command::PushClip { .. } => depth += 1,
+                Command::PopClip => {
                     depth = depth
                         .checked_sub(1)
                         .ok_or_else(|| pixui_error!("unmatched PopClip"))?;
                 }
-                DrawCommand::StrokeRect { width, .. } if !width.is_finite() || *width <= 0.0 => {
+                Command::StrokeRect { width, .. } if !width.is_finite() || *width <= 0.0 => {
                     return Err(pixui_error!("invalid stroke width"));
                 }
                 _ => {}
@@ -126,6 +151,8 @@ pub struct RenderOutput {
     /// `revision` while retaining this value and all application geometry.
     pub paint_revision: RenderRevision,
     pub display_list: DisplayList,
+    /// Immutable output-local styles. Retained alongside the font snapshots.
+    pub styles: Vec<super::render_input::RenderStyle>,
     /// Optional scheduling request; no timer is started by headless consumers.
     pub redraw_after: Option<std::time::Duration>,
     /// CPU work for this output, excluding queue waiting.

@@ -1,5 +1,6 @@
 //! Explicit opt-in setup. Components never register their painters implicitly.
 
+use super::painter::Painter;
 use super::{
     button::ButtonPainter, checkbox::CheckboxPainter, image::ImagePainter, label::LabelPainter,
     registry::PainterRegistry,
@@ -39,13 +40,11 @@ pub fn register_components(registry: &mut ComponentRegistry) -> PixuiResult<Stan
 pub fn register_painters(
     registry: &mut PainterRegistry,
     components: &ComponentRegistry,
+    styles: &mut crate::styles::registry::StyleRegistry,
 ) -> PixuiResult<()> {
-    registry.register::<crate::components::text_input::TextInputComponent>(
-        components,
-        super::text_input::TextInputPainter,
-    )?;
-    registry.register::<ButtonComponent>(components, ButtonPainter)?;
-    registry.register::<LabelComponent>(components, LabelPainter)?;
-    registry.register::<CheckboxComponent>(components, CheckboxPainter)?;
+    super::text_input::TextInputPainter::default().register(registry, components, styles)?;
+    ButtonPainter::default().register(registry, components, styles)?;
+    LabelPainter::default().register(registry, components, styles)?;
+    CheckboxPainter::default().register(registry, components, styles)?;
     registry.register::<ImageComponent>(components, ImagePainter)
 }

@@ -1,7 +1,8 @@
 //! Presentation state independent of a native window, allowing lifecycle tests.
 use super::contract::{RenderOutcome, Renderer};
 use pixui_base::PixuiResult;
-use pixui_engine::ui::display_list::{DisplayList, RenderRevision};
+use pixui_engine::ui::display_list::RenderRevision;
+use pixui_engine::ui::render_input::RenderInput;
 use std::time::{Duration, Instant};
 
 pub(crate) struct Presentation {
@@ -21,7 +22,7 @@ impl Presentation {
     }
     pub fn draw(
         &mut self,
-        display: &DisplayList,
+        input: RenderInput<'_>,
         revision: RenderRevision,
         width: u32,
         height: u32,
@@ -31,7 +32,7 @@ impl Presentation {
             return Ok(());
         }
         self.renderer.resize(width, height, scale)?;
-        if self.renderer.render(display)? == RenderOutcome::Presented {
+        if self.renderer.render(input)? == RenderOutcome::Presented {
             self.revision = Some(revision);
             self.retry = None;
         } else {
@@ -56,6 +57,7 @@ impl Presentation {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pixui_engine::ui::display_list::DisplayList;
     use std::{cell::RefCell, collections::VecDeque, rc::Rc};
     struct Fake {
         events: Rc<RefCell<Vec<String>>>,
@@ -66,7 +68,7 @@ mod tests {
             self.events.borrow_mut().push(format!("resize {w} {h} {s}"));
             Ok(())
         }
-        fn render(&mut self, _: &DisplayList) -> PixuiResult<RenderOutcome> {
+        fn render(&mut self, _: RenderInput<'_>) -> PixuiResult<RenderOutcome> {
             self.events.borrow_mut().push("render".into());
             self.outcomes.pop_front().unwrap()
         }
@@ -93,35 +95,35 @@ mod tests {
         let mut presentation = Presentation::new(Box::new(fake));
         let display = DisplayList::default();
         presentation
-            .draw(&display, RenderRevision(1), 100, 50, 1.5)
+            .draw((&display).into(), RenderRevision(1), 100, 50, 1.5)
             .unwrap();
         assert_eq!(presentation.revision, Some(RenderRevision(1)));
         presentation
-            .draw(&display, RenderRevision(2), 100, 50, 1.5)
+            .draw((&display).into(), RenderRevision(2), 100, 50, 1.5)
             .unwrap();
         assert_eq!(presentation.revision, Some(RenderRevision(1)));
         assert!(presentation.retry.is_some());
         assert!(
             presentation
-                .draw(&display, RenderRevision(3), 100, 50, 1.5)
+                .draw((&display).into(), RenderRevision(3), 100, 50, 1.5)
                 .is_err()
         );
         assert_eq!(presentation.revision, Some(RenderRevision(1)));
         let count = events.borrow().len();
         presentation
-            .draw(&display, RenderRevision(4), 0, 50, 1.0)
+            .draw((&display).into(), RenderRevision(4), 0, 50, 1.0)
             .unwrap();
         assert_eq!(events.borrow().len(), count);
         presentation.suspend();
         assert_eq!(presentation.revision, None);
         assert!(presentation.retry.is_none());
         presentation
-            .draw(&display, RenderRevision(4), 100, 50, 1.0)
+            .draw((&display).into(), RenderRevision(4), 100, 50, 1.0)
             .unwrap();
         presentation.resume().unwrap();
         presentation.resume().unwrap();
         presentation
-            .draw(&display, RenderRevision(4), 100, 50, 2.0)
+            .draw((&display).into(), RenderRevision(4), 100, 50, 2.0)
             .unwrap();
         assert_eq!(presentation.revision, Some(RenderRevision(4)));
         assert_eq!(&events.borrow()[..2], ["resize 100 50 1.5", "render"]);

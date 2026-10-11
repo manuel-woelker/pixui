@@ -60,7 +60,9 @@ fn overlay_text(output: &RenderOutput) -> &str {
         .commands
         .iter()
         .find_map(|command| match command {
-            DrawCommand::DrawText { text, .. } if text.starts_with("Performance (F11)") => {
+            DrawCommand::DrawText { text, .. } | DrawCommand::StyledText { text, .. }
+                if text.starts_with("Performance (F11)") =>
+            {
                 Some(text.as_str())
             }
             _ => None,

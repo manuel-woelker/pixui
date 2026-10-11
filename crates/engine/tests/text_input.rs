@@ -529,7 +529,7 @@ fn shared_selection_has_independent_scroll_and_capture_preserves_focus_outside_f
     assert!(!f.state(0).selection.collapsed());
     f.text(Some(session), "replacement").unwrap();
     let output = f.outputs.recv_timeout(Duration::from_secs(3)).unwrap();
-    assert!(output.display_list.commands.iter().any(|command| matches!(command, DrawCommand::DrawText { text, .. } if text.contains("replacement"))));
+    assert!(output.display_list.commands.iter().any(|command| matches!(command, DrawCommand::DrawText { text, .. } | DrawCommand::StyledText { text, .. } if text.contains("replacement"))));
     // Frozen timestamps do not schedule continuous caret redraws.
     assert!(!output.animating);
 }

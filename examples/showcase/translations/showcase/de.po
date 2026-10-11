@@ -62,3 +62,33 @@ msgstr "In Großbuchstaben umgewandelt"
 
 msgid "At most 12 characters; longer edits are rejected"
 msgstr "Maximal 12 Zeichen; längere Eingaben werden abgelehnt"
+
+msgid "Styles"
+msgstr "Stile"
+
+msgid "Theme colors and fonts · reflected painter slots"
+msgstr "Themenfarben und Schriften · reflektierte Zeichenstile"
+
+msgid "Primary"
+msgstr "Primär"
+
+msgid "Quiet"
+msgstr "Dezent"
+
+msgid "Danger"
+msgstr "Gefahr"
+
+msgid "Compact"
+msgstr "Kompakt"
+
+msgid "Monospace"
+msgstr "Festbreitenschrift"
+
+msgid "Local purple override"
+msgstr "Lokale violette Farbe"
+
+msgid "Use compact style"
+msgstr "Kompakten Stil verwenden"
+
+msgid "Dynamic style variant"
+msgstr "Dynamische Stilvariante"

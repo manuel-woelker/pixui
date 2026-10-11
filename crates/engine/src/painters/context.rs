@@ -19,6 +19,7 @@ use pixui_base::PixuiResult;
 pub struct PaintContext<'a, C: Component> {
     /// Shared editing projected into this instance; None for non-input nodes.
     pub text_edit: Option<&'a crate::ui::text_input::geometry::TextEditSnapshot>,
+    pub(crate) styles: &'a [crate::styles::style::PaintStyle],
     pub props: &'a C::Props,
     pub state: &'a C::State,
     pub width: f32,
@@ -53,6 +54,33 @@ impl<C: Component> PaintContext<'_, C> {
             rect
         };
         let command = match command {
+            DrawCommand::StyledFillRect {
+                rect: bounds,
+                style,
+            } => DrawCommand::StyledFillRect {
+                rect: rect(bounds),
+                style,
+            },
+            DrawCommand::StyledStrokeRect {
+                rect: bounds,
+                style,
+            } => DrawCommand::StyledStrokeRect {
+                rect: rect(bounds),
+                style,
+            },
+            DrawCommand::StyledText {
+                mut origin,
+                text,
+                style,
+            } => {
+                origin.x += self.origin.x;
+                origin.y += self.origin.y;
+                DrawCommand::StyledText {
+                    origin,
+                    text,
+                    style,
+                }
+            }
             DrawCommand::FillRect {
                 rect: bounds,
                 color,
@@ -102,6 +130,55 @@ impl<C: Component> PaintContext<'_, C> {
             }
         };
         self.display.emit(command);
+    }
+    pub fn style(
+        &self,
+        index: crate::styles::index::StyleIndex,
+    ) -> PixuiResult<&crate::styles::style::PaintStyle> {
+        self.styles
+            .get(index.index)
+            .ok_or_else(|| pixui_base::pixui_error!("unbound painter style"))
+    }
+    pub fn styled_fill_rect(
+        &mut self,
+        rect: Rect,
+        style: crate::styles::index::StyleIndex,
+    ) -> PixuiResult<()> {
+        if self.style(style)?.fill.is_some() {
+            self.emit(DrawCommand::StyledFillRect { rect, style });
+        }
+        Ok(())
+    }
+    pub fn styled_stroke_rect(
+        &mut self,
+        rect: Rect,
+        style: crate::styles::index::StyleIndex,
+    ) -> PixuiResult<()> {
+        if self.style(style)?.border.is_some() {
+            self.emit(DrawCommand::StyledStrokeRect { rect, style });
+        }
+        Ok(())
+    }
+    pub fn styled_text(
+        &mut self,
+        mut origin: Point,
+        text: impl Into<String>,
+        style: crate::styles::index::StyleIndex,
+    ) -> PixuiResult<()> {
+        let config = self.style(style)?.font_config(self.settings.scale_factor)?;
+        origin.x += self.origin.x;
+        origin.y += self.origin.y;
+        self.display.styled_text(config, origin, text, style)
+    }
+    pub fn styled_baseline(
+        &self,
+        text: &str,
+        style: crate::styles::index::StyleIndex,
+    ) -> PixuiResult<f32> {
+        let config = self.style(style)?.font_config(self.settings.scale_factor)?;
+        let metrics = config.metrics();
+        let height = config.measure_text(text)?.height;
+        Ok(metrics.centered_baseline(self.height) - (height - metrics.line_height) / 2.0)
     }
     pub fn fill_rect(&mut self, rect: Rect, color: Color) {
         self.emit(DrawCommand::FillRect { rect, color });

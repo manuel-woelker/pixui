@@ -17,10 +17,7 @@ use crate::{
         state::{GenericComponentState, LiveState, PartState},
         walk::{Visitor, WalkEntry, walk},
     },
-    painters::{
-        palette::Palette,
-        registry::{MeasureInput, PaintInput},
-    },
+    painters::registry::{MeasureInput, PaintInput},
 };
 use pixui_base::{PixuiResult, pixui_error};
 use std::{any::Any, time::Duration};
@@ -28,6 +25,7 @@ use std::{any::Any, time::Duration};
 struct PreparedComponent {
     path: crate::live_model::identity::ComponentPath,
     focus: super::focus::FocusBehavior,
+    styles: Vec<crate::styles::slots::SlotAssignment>,
     address: ComponentAddress,
     props: Box<dyn Any + Send>,
     change: Option<super::text_input::binding::ChangeBinding>,
@@ -66,7 +64,12 @@ impl Visitor for PrepareVisitor<'_> {
             .activation
             .map(|factory| factory(entry.context, self.settings))
             .transpose()?;
+        let mut styles = part.styles.clone();
+        if let Some(resolve) = part.style_resolver {
+            styles.extend(resolve(entry.context, self.settings)?);
+        }
         self.components.push(PreparedComponent {
+            styles,
             change: part
                 .change
                 .map(|factory| factory(entry.context, self.settings))
@@ -107,10 +110,18 @@ pub fn render(
     scroll: f32,
     focus: Option<&crate::live_model::identity::ComponentPath>,
     hover: Option<&crate::live_model::identity::ComponentPath>,
-) -> PixuiResult<(DisplayList, LayoutState, f32, Option<Duration>)> {
+) -> PixuiResult<(
+    super::render_input::RenderedDisplay,
+    LayoutState,
+    f32,
+    Option<Duration>,
+)> {
     let rendered = render_measured(template, state, application, settings, scroll, focus, hover)?;
     Ok((
-        rendered.display_list,
+        super::render_input::RenderedDisplay {
+            display_list: rendered.display_list,
+            styles: rendered.styles,
+        },
         rendered.layout,
         rendered.scroll,
         rendered.redraw_after,
@@ -120,6 +131,7 @@ pub fn render(
 /// Complete worker render, including native scheduling hints and CPU diagnostics.
 pub struct RenderedUi {
     pub display_list: DisplayList,
+    pub styles: Vec<super::render_input::RenderStyle>,
     pub layout: LayoutState,
     pub scroll: f32,
     pub redraw_after: Option<Duration>,
@@ -207,6 +219,29 @@ pub(crate) fn render_with_pointer(
     if states.len() != visitor.components.len() {
         return Err(pixui_error!("prepared component state count mismatch"));
     }
+    let mut prepared_styles = Vec::new();
+    let bound = visitor
+        .components
+        .iter()
+        .zip(&states)
+        .map(|(component, state)| {
+            application.painters().bind(
+                component.address,
+                component.props.as_ref(),
+                state,
+                settings,
+                application.styles(),
+                &component.styles,
+                &mut prepared_styles,
+            )
+        })
+        .collect::<PixuiResult<Vec<_>>>()?;
+    let mut styles = Vec::with_capacity(prepared_styles.len());
+    for occurrence in &bound {
+        for index in occurrence.range.clone() {
+            styles.push(prepared_styles[index].resolve(occurrence.states, settings.scale_factor)?);
+        }
+    }
     crate::ui::text::font::FontFace::geist()?;
     let preparation = started.elapsed();
     let geometry = crate::layout::adapter::compute(
@@ -216,16 +251,13 @@ pub(crate) fn render_with_pointer(
         scroll,
         |index, constraints| {
             let component = &visitor.components[index];
-            application.painters().measure(
-                component.address,
-                application.components(),
-                MeasureInput {
-                    props: component.props.as_ref(),
-                    state: states[index],
-                    settings,
-                    constraints,
-                },
-            )
+            bound[index].painter.measure(MeasureInput {
+                styles: &styles,
+                props: component.props.as_ref(),
+                state: states[index],
+                settings,
+                constraints,
+            })
         },
     )?;
     let hover = pointer.map_or_else(
@@ -252,6 +284,13 @@ pub(crate) fn render_with_pointer(
                 })
         })
         .cloned();
+    for (index, occurrence) in bound.iter().enumerate() {
+        let mut states = occurrence.states;
+        states.hovered = hover.as_ref() == Some(&visitor.components[index].path);
+        for slot in occurrence.range.clone() {
+            styles[slot] = prepared_styles[slot].resolve(states, settings.scale_factor)?;
+        }
+    }
     let scroll = geometry.scroll;
     let viewport = Rect {
         x: 0.0,
@@ -261,9 +300,10 @@ pub(crate) fn render_with_pointer(
     };
     let started = std::time::Instant::now();
     let mut display = DisplayListBuilder::default();
+    display.set_styles(&styles);
     display.emit(DrawCommand::FillRect {
         rect: viewport,
-        color: Palette::for_theme(settings.theme).background,
+        color: application.styles().tokens(settings.theme).canvas,
     });
     display.emit(DrawCommand::PushClip { rect: viewport });
     let mut layout = LayoutState {
@@ -297,27 +337,24 @@ pub(crate) fn render_with_pointer(
                 .props
                 .downcast_ref::<crate::components::text_input::TextInputProps>()
                 .ok_or_else(|| pixui_error!("input props mismatch"))?;
-            let input_geometry = application
-                .painters()
-                .text_input_geometry(
-                    component.address,
-                    application.components(),
-                    MeasureInput {
-                        props,
-                        state,
-                        settings,
-                        constraints: crate::painters::measure::MeasureConstraints {
-                            width: Some(content.width),
-                            height: Some(content.height),
-                            available_width: crate::painters::measure::AvailableSpace::Definite(
-                                content.width,
-                            ),
-                            available_height: crate::painters::measure::AvailableSpace::Definite(
-                                content.height,
-                            ),
-                        },
+            let input_geometry = bound[index]
+                .painter
+                .text_input_geometry(MeasureInput {
+                    styles: &styles,
+                    props,
+                    state,
+                    settings,
+                    constraints: crate::painters::measure::MeasureConstraints {
+                        width: Some(content.width),
+                        height: Some(content.height),
+                        available_width: crate::painters::measure::AvailableSpace::Definite(
+                            content.width,
+                        ),
+                        available_height: crate::painters::measure::AvailableSpace::Definite(
+                            content.height,
+                        ),
                     },
-                )?
+                })?
                 .ok_or_else(|| pixui_error!("text input painter must provide caret geometry"))?;
             input_geometry.validate(&props.content)?;
             let mut edit = editing
@@ -353,10 +390,9 @@ pub(crate) fn render_with_pointer(
         display.emit(DrawCommand::PushClip {
             rect: geometry.clip.intersect(content),
         });
-        application.painters().paint(
-            component.address,
-            application.components(),
+        bound[index].painter.paint(
             PaintInput {
+                styles: &styles,
                 text_edit: input_snapshot.as_ref(),
                 props: component.props.as_ref(),
                 timestamp_us,
@@ -406,7 +442,7 @@ pub(crate) fn render_with_pointer(
     let painting = started.elapsed();
     let started = std::time::Instant::now();
     let animating = display.animating();
-    let (display, redraw_after) = display.finish_with_text(
+    let (display, styles, redraw_after) = display.finish_styled(
         &mut *application
             .text_service
             .try_borrow_mut()
@@ -414,6 +450,7 @@ pub(crate) fn render_with_pointer(
     )?;
     Ok(RenderedUi {
         display_list: display,
+        styles,
         layout,
         scroll,
         redraw_after,

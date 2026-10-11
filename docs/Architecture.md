@@ -288,16 +288,16 @@ and
 for the lifecycle, constraints, and alternatives.
 
 `RenderOutput` contains the instance ID, monotonic `RenderRevision`, and an
-owned `DisplayList`. Commands paint in order: `FillRect`, `StrokeRect`,
-`DrawText`, `DrawImage`, `PushClip`, and `PopClip`. Rectangles, glyph metrics,
-and stroke widths use logical pixels. Nested clips intersect and must be
-balanced. Colors are opaque sRGB. Commands contain no reflected application
-borrows, callbacks, or native handles. `DrawImage` uses an index into the
-display list's image table. Each immutable RGB snapshot shares pixels through
-`Arc`; the builder deduplicates snapshot identity and discards its reverse
-lookup on completion. Color-key transparency skips matching source pixels, and
-images use nearest-neighbor sampling. Retained outputs keep their exact image
-versions without upload history.
+owned `DisplayList` with a separate output-local style table. Commands paint in
+order: `FillRect`, `StrokeRect`, `DrawText`, `DrawImage`, `PushClip`, and
+`PopClip`. Rectangles, glyph metrics, and stroke widths use logical pixels.
+Nested clips intersect and must be balanced. Colors are opaque sRGB. Commands
+contain no reflected application borrows, callbacks, or native handles.
+`DrawImage` uses an index into the display list's image table. Each immutable
+RGB snapshot shares pixels through `Arc`; the builder deduplicates snapshot
+identity and discards its reverse lookup on completion. Color-key transparency
+skips matching source pixels, and images use nearest-neighbor sampling. Retained
+outputs keep their exact image versions without upload history.
 
 Image and font tables share `ResourceTable<T>` and `ResourceTableBuilder<T>`.
 Images, fonts, and glyph atlases use `Resource<T>` handles with allocation
@@ -305,6 +305,33 @@ identity and immutable Arc-backed ownership. Typed `ResourceIndex<T>` aliases
 prevent mixing image and font indices, while remaining local to a frame/table.
 See [shared render resources](../crates/engine/src/ui/Resources.md) for lifetime
 and validation contracts.
+
+### Theme-derived painter styles
+
+The application owns `StyleRegistry` with semantic Light/Dark tokens and named
+families. Reflected painters declare only `StyleIndex` fields. External defaults
+bind each field; component declarations may replace assignments, select a
+variant, or provide local patches and a pure dynamic resolver.
+
+Preparation constructs a painter per physical occurrence with indices into the
+worker style table. The same painter and metrics are used by layout probes,
+caret geometry and drawing. Recipes and declaration resolvers run once; hover
+is recomputed after layout and applies color-only patches. Shared registered
+painters never retain per-window or occurrence indices.
+
+The worker freezes `RenderOutput::styles`, finalizes its font references and
+deduplicates renderer values before publication. `StyledFillRect`,
+`StyledStrokeRect` and `StyledText` reference that table. Both native backends
+receive `RenderInput`, borrowing the display list and style table together;
+command resolution borrows text without copying it. Raw commands remain
+available for custom drawing and diagnostics. Old outputs retain their tables
+and resource versions after restyling.
+
+Theme/family replacements validate candidates and swap atomically. All instances
+are invalidated; hidden ones paint on restoration. Layout constraints remain
+independent of paint styles. See
+[painter styles](../crates/engine/src/styles/README.md) and
+[DR-019](<decisions/DR-019 Bind reflected painter slots to output local styles.md>).
 
 ### Text resources
 

@@ -9,4 +9,5 @@ pub mod layout;
 pub mod live_model;
 pub mod painters;
 pub mod resources;
+pub mod styles;
 pub mod ui;

@@ -30,12 +30,21 @@ pub struct MeasureConstraints {
 /// space is a probe, not an instruction to wrap text. Font access and advances
 /// share painting's normalization/scale policy and allocate no atlas coverage.
 pub struct MeasureContext<'a, C: Component> {
+    pub styles: &'a [crate::styles::style::PaintStyle],
     pub props: &'a C::Props,
     pub state: &'a C::State,
     pub settings: &'a PresentationSettings,
     pub constraints: MeasureConstraints,
 }
 impl<C: Component> MeasureContext<'_, C> {
+    pub fn style(
+        &self,
+        index: crate::styles::index::StyleIndex,
+    ) -> PixuiResult<&crate::styles::style::PaintStyle> {
+        self.styles
+            .get(index.index)
+            .ok_or_else(|| pixui_base::pixui_error!("unbound measurement style"))
+    }
     pub fn measure_text(&self, text: &str, size: f32) -> PixuiResult<Size> {
         self.font_config(size)?.measure_text(text)
     }

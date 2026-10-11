@@ -25,8 +25,8 @@ context.text(
 returns the widest line and total line height in `Size::width/height`.
 Measurement uses fontdue's metrics-only API, without allocating coverage, with
 the same normalization and unkerned advances as drawing. No automatic wrapping
-occurs; explicit newlines advance by line height. Current component rows remain
-36 logical pixels high, and overflowing text is clipped.
+occurs; explicit newlines advance by line height. Standard controls use a
+theme-derived minimum height; overflowing text in a fixed layout box is clipped.
 
 The lower-level `DisplayListBuilder::text` accepts a validated `FontConfig`.
 `FontFace::from_bytes` loads static TTF/OTF faces with independent identities;
@@ -118,3 +118,14 @@ for the decision and alternatives.
 The image, font, and atlas handles use
 [shared resource infrastructure](Resources.md). Their equality compares snapshot
 identity; pixel and metric comparisons are explicit.
+
+## Styled text
+
+Standard painters call `styled_text` with a reflected `StyleIndex`. The command
+contains a baseline, text and output-local style index; `RenderOutput::styles`
+supplies the foreground and finalized font index. `styled_baseline` and
+`MeasureContext::style(...).font_config(...)` use the same face/size/scale for
+layout, rendering and input geometry. Font demands still batch across the entire
+frame. Pass the complete output through `RenderInput` to preserve its style
+table. See [painter styles](../styles/README.md) for binding and replacement
+rules.

@@ -147,7 +147,7 @@ fn checked_registrations_distinguish_components_sharing_props_and_state() {
     let mut painters = PainterRegistry::default();
     assert!(
         painters
-            .register::<ButtonComponent>(&registry, ButtonPainter)
+            .register::<ButtonComponent>(&registry, ButtonPainter::default())
             .is_err()
     );
     painters
@@ -196,7 +196,7 @@ fn missing_painters_and_foreign_handles_fail_before_empty_loops_are_evaluated() 
         .register_component::<ButtonComponent>("button")
         .unwrap();
     handle
-        .register_painter::<ButtonComponent>(ButtonPainter)
+        .register_painter::<ButtonComponent>(ButtonPainter::default())
         .unwrap();
     handle
         .register_ui(UiDefinition::new(
@@ -235,7 +235,7 @@ fn default_state_persists_props_refresh_and_updates_run_once_before_painting() {
     let serial = state(&live).serial;
     assert_eq!(state(&live).updates.get(), 1);
     assert!(first.commands.iter().any(
-        |command| matches!(command, DrawCommand::DrawText { text, .. } if text.starts_with("7 1 "))
+        |command| matches!(command, DrawCommand::DrawText { text, .. } | DrawCommand::StyledText { text, .. } if text.starts_with("7 1 "))
     ));
     assert_eq!(geometry.component_bounds[0].height, 36.0);
     let settings = PresentationSettings {
@@ -251,7 +251,7 @@ fn default_state_persists_props_refresh_and_updates_run_once_before_painting() {
     assert_eq!(state(&live).serial, serial);
     assert_eq!(state(&live).updates.get(), 2);
     assert_eq!(RESOLVES.load(Ordering::Relaxed), 2);
-    assert!(second.commands.iter().any(|command| matches!(command, DrawCommand::DrawText { text, origin, .. } if text == "9 2 200 36 false" && *origin == Point { x: 18.0, y: 19.0 })));
+    assert!(second.commands.iter().any(|command| matches!(command, DrawCommand::DrawText { text, origin, .. } | DrawCommand::StyledText { text, origin, .. } if text == "9 2 200 36 false" && *origin == Point { x: 18.0, y: 19.0 })));
     assert!(second.commands.iter().any(|command| matches!(command, DrawCommand::PushClip { rect } if *rect == Rect { x: 17.0, y: 18.0, width: 3.0, height: 4.0 })));
 }
 
@@ -291,7 +291,7 @@ fn replacing_component_type_resets_state_even_when_associated_types_match() {
 
 #[test]
 fn separate_applications_choose_different_painters_and_zero_width_is_valid() {
-    fn draw(color: Color) -> pixui_engine::ui::display_list::DisplayList {
+    fn draw(color: Color) -> pixui_engine::ui::render_input::RenderedDisplay {
         let mut app = Application::default();
         let id = app.register_component::<A>("a").unwrap();
         app.register_painter::<A>(painter(color)).unwrap();
@@ -361,7 +361,9 @@ fn fixed_rows_translate_in_order_and_scrolling_is_clamped() {
         .commands
         .iter()
         .filter_map(|command| {
-            if let DrawCommand::DrawText { origin, .. } = command {
+            if let DrawCommand::DrawText { origin, .. } | DrawCommand::StyledText { origin, .. } =
+                command
+            {
                 Some(origin.y)
             } else {
                 None

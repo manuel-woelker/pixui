@@ -14,6 +14,7 @@ mod performance_overlay;
 pub mod presentation;
 pub mod registry;
 pub(crate) mod render_clock;
+pub mod render_input;
 pub mod renderer;
 pub mod resource;
 pub mod resource_table;

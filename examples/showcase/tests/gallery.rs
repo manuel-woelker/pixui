@@ -23,7 +23,7 @@ fn has_text(output: &RenderOutput, expected: &str) -> bool {
         .display_list
         .commands
         .iter()
-        .any(|command| matches!(command, DrawCommand::DrawText { text, .. } if text == expected))
+        .any(|command| matches!(command, DrawCommand::DrawText { text, .. } | DrawCommand::StyledText { text, .. } if text == expected))
 }
 
 fn click(app: &ApplicationHandle, instance: UiInstanceId, output: &RenderOutput, index: usize) {
@@ -66,13 +66,13 @@ fn sidebar_is_fixed_and_footer_follows_window_height() {
         receive(&outputs);
         app.inspect(move |app| {
             let boxes = &app.uis().instance(instance)?.layout().component_bounds;
-            for button in &boxes[2..7] {
+            for button in &boxes[2..8] {
                 assert_eq!(
                     button.width, 200.0,
                     "navigation buttons fill the fixed sidebar"
                 );
             }
-            assert_eq!(boxes[7].x, 236.0, "detail pane follows sidebar and gap");
+            assert_eq!(boxes[8].x, 236.0, "detail pane follows sidebar and gap");
             let footer = boxes.last().unwrap();
             assert_eq!(footer.y + footer.height, height - 16.0);
             Ok(())
@@ -113,13 +113,15 @@ fn widgets_update_shared_windows_conditional_content_collection_and_title() {
     app.inspect(move |app| {
         let boxes = &app.uis().instance(one)?.layout().component_bounds;
         assert!(boxes[0].width > boxes[1].width, "title spans both panes");
-        assert!(boxes[7].x >= boxes[1].x + boxes[1].width + 19.0);
-        assert_eq!(boxes[7].y, boxes[1].y, "pane headings align");
+        assert!(boxes[8].x >= boxes[1].x + boxes[1].width + 19.0);
+        assert_eq!(boxes[8].y, boxes[1].y, "pane headings align");
         Ok(())
     })
     .unwrap();
     assert!(!current.display_list.fonts.is_empty());
-    current.display_list.validate().unwrap();
+    pixui_engine::ui::render_input::RenderInput::from(&current)
+        .validate()
+        .unwrap();
     assert!(matches!(outputs.window_commands().try_recv().unwrap(),
         WindowCommand::SetTitle(title) if title.as_str() == "PixUI Showcase — 0"));
     assert!(matches!(
@@ -127,7 +129,7 @@ fn widgets_update_shared_windows_conditional_content_collection_and_title() {
         WindowCommand::SetIcon(Some(_))
     ));
 
-    click(&app, one, &current, 5);
+    click(&app, one, &current, 6);
     current = receive(&outputs);
     assert!(has_text(&current, "Counter: 1"));
     assert!(has_text(&receive(&other), "Zähler: 1"));
@@ -140,7 +142,7 @@ fn widgets_update_shared_windows_conditional_content_collection_and_title() {
     assert!(has_text(&current, "Checkboxes"));
     assert!(has_text(&german_checkboxes, "Kontrollkästchen"));
     assert!(!has_text(&current, "Counter: 1"));
-    click(&app, one, &current, 5);
+    click(&app, one, &current, 6);
     current = receive(&outputs);
     receive(&other);
     app.inspect(|app| {
@@ -156,7 +158,7 @@ fn widgets_update_shared_windows_conditional_content_collection_and_title() {
     let initial_bounds = app
         .inspect(move |app| Ok(app.uis().instance(one)?.layout().component_bounds.len()))
         .unwrap();
-    click(&app, one, &current, 6);
+    click(&app, one, &current, 7);
     current = receive(&outputs);
     receive(&other);
     assert!(!has_text(&current, explanation));
@@ -182,7 +184,7 @@ fn widgets_update_shared_windows_conditional_content_collection_and_title() {
     current = receive(&outputs);
     receive(&other);
     assert!(has_text(&current, "Sample 1"));
-    click(&app, one, &current, 5);
+    click(&app, one, &current, 6);
     current = receive(&outputs);
     assert!(has_text(&current, "Sample 2"));
     assert!(has_text(&receive(&other), "Sample 2"));
@@ -191,7 +193,7 @@ fn widgets_update_shared_windows_conditional_content_collection_and_title() {
     current = receive(&outputs);
     receive(&other);
     assert!(has_text(&current, "Counter: 1"));
-    click(&app, one, &current, 6);
+    click(&app, one, &current, 7);
     current = receive(&outputs);
     assert!(has_text(&current, "Counter: 0"));
     receive(&other);
@@ -203,7 +205,7 @@ fn widgets_update_shared_windows_conditional_content_collection_and_title() {
         !has_text(&current, explanation),
         "page switching retains demo data"
     );
-    click(&app, one, &current, 6);
+    click(&app, one, &current, 7);
     current = receive(&outputs);
     assert!(has_text(&current, explanation));
     receive(&other);
@@ -275,7 +277,7 @@ fn keyboard_navigation_activates_buttons_and_facade_updates_named_entities() {
         Ok(())
     })
     .unwrap();
-    assert!(actions.select(5).is_err());
+    assert!(actions.select(6).is_err());
 }
 
 #[test]
@@ -337,4 +339,84 @@ fn text_page_has_a_focus_target_without_an_activation() {
     })
     .unwrap();
     assert!(outputs.try_recv().is_err());
+}
+
+#[test]
+fn style_gallery_resolves_variants_local_overrides_and_per_window_fonts() {
+    use pixui_engine::ui::render_input::{RenderInput, ResolvedCommand};
+    let (app, definition) = setup::create().unwrap();
+    let (_, light) = app
+        .create_ui(definition, PresentationSettings::default())
+        .unwrap();
+    let (_, dark) = app
+        .create_ui(
+            definition,
+            PresentationSettings {
+                theme: Theme::Dark,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    receive(&light);
+    receive(&dark);
+    let actions = ShowcaseActions::bind(&app).unwrap();
+    actions.select(5).unwrap();
+    let first = receive(&light);
+    let second = receive(&dark);
+    for output in [&first, &second] {
+        for title in [
+            "Styles",
+            "Primary",
+            "Quiet",
+            "Danger",
+            "Compact",
+            "Monospace",
+            "Local purple override",
+            "Dynamic style variant",
+        ] {
+            assert!(has_text(output, title));
+        }
+        let input = RenderInput::from(output);
+        input.validate().unwrap();
+        assert!(output.display_list.commands.iter().any(|command| matches!(
+            input.resolve(command).unwrap(),
+            ResolvedCommand::FillRect {
+                color: pixui_engine::ui::display_list::Color(100, 45, 150),
+                ..
+            }
+        )));
+    }
+    assert_ne!(first.styles, second.styles);
+    assert!(
+        first.display_list.fonts.len() > 1,
+        "regular plus explicit monospace variant"
+    );
+    let before = app.inspect(move |app| Ok(app.styles().revision())).unwrap();
+    actions.toggle_checked().unwrap();
+    let compact = receive(&light);
+    receive(&dark);
+    let dynamic_index = |output: &RenderOutput| {
+        output
+            .display_list
+            .commands
+            .iter()
+            .find_map(|command| match command {
+                DrawCommand::StyledText { text, style, .. } if text == "Dynamic style variant" => {
+                    Some(*style)
+                }
+                _ => None,
+            })
+            .unwrap()
+    };
+    assert_ne!(
+        dynamic_index(&compact),
+        dynamic_index(&first),
+        "the compact recipe is already in the table; this occurrence switches its command index"
+    );
+    assert_eq!(
+        before,
+        app.inspect(|app| Ok(app.styles().revision())).unwrap(),
+        "local dynamic variants leave the registry unchanged"
+    );
+    RenderInput::from(&first).validate().unwrap();
 }

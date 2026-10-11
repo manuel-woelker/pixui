@@ -106,3 +106,11 @@ geometry. Containers clip by default. See the
 [layout guide](../../crates/engine/src/layout/README.md). The header and footer
 span both panes. Counter actions use a nested Flex row; images are shown only on
 the Images page.
+
+## Style gallery
+
+Select **Styles** to compare primary, quiet and danger recipes; compact and
+monospace variants; and a local purple override. **Use compact style** changes
+the dynamic style assignment in both windows. Light uses Geist, while Dark uses
+Geist Mono; both resolve the same reflected painter slots against their tokens.
+The recipes live in [styles.rs](src/styles.rs).

@@ -230,7 +230,7 @@ mod tests {
         })
         .unwrap();
         let label = app.register_component::<LabelComponent>("label").unwrap();
-        app.register_painter::<LabelComponent>(LabelPainter)
+        app.register_painter::<LabelComponent>(LabelPainter::default())
             .unwrap();
         let part = ComponentPart::typed(label, |_, settings| {
             Ok(LabelProps {

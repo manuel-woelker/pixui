@@ -1,6 +1,6 @@
 # Theme derived painter styles
 
-Status: proposed outline; API names are illustrative.
+Status: implemented; native showcase validation pending.
 
 ## Goal
 
@@ -16,7 +16,7 @@ Start with Rust declarations and explicit assignment. A CSS parser, selectors,
 implicit inheritance, arbitrary token expressions and style animations are
 outside the initial scope.
 
-## Current constraints
+## Starting constraints
 
 - `PresentationSettings::theme` selects Light/Dark per instance. Painters call
   `Palette::for_theme` and embed their own font sizes, insets and border widths.
@@ -47,11 +47,14 @@ outside the initial scope.
 ### Theme tokens
 
 Use a small typed `ThemeTokens` struct rather than a map of arbitrary names.
-Suggested colors include canvas, surface, foreground, muted foreground, accent,
-on-accent, border, selection and on-selection. Include regular/mono font roles,
+Colors include canvas, surface, foreground, muted foreground, accent, on-accent,
+border, selection and danger. Selected text uses the common foreground. Include
+regular/mono font selection,
 logical font sizes, control insets and stroke widths.
 
-Defaults reproduce Light/Dark. Applications can replace the token sets for those
+Defaults preserve the Light/Dark palette and control geometry, with selection
+fills adjusted for contrast against the common input foreground. Applications
+can replace the token sets for those
 modes, creating branded themes without replacing painters. Initially keep the
 existing Light/Dark selection; named arbitrary theme IDs can follow when
 exercised. Tokens contain values, not references to other tokens, avoiding
@@ -86,7 +89,7 @@ an example needs them; avoid a universal property bag of unused values.
 A painter declares its slots as ordinary reflected `StyleIndex` fields:
 
 ```rust
-#[pixui_reflect::reflect]
+#[pixui_reflect::reflect(send)]
 mod button_painter {
     pub struct ButtonPainter {
         pub body: StyleIndex,
@@ -189,10 +192,12 @@ into a small slot bundle. Borrow the same bundle in `MeasureContext`,
 must not resolve recipes, allocate atlases, mutate styles or perform I/O.
 
 `StyleIndex` is local to one output, not a persistent family ID or field index.
-Maintain the same slot ordering in the worker's prepared style table and the
-immutable `RenderOutput::styles` table. The former contains font configurations
-for measurement/glyph collection; finalization freezes renderer-facing entries
-with font indices into the existing font resource table. Retained outputs own
+The prepared table follows reflected slot order. Finalization fills font
+indices, deduplicates concrete renderer values and remaps command indices into
+`RenderOutput::styles`. Temporary painter indices therefore need not equal the
+final command indices. The prepared values supply fonts and validated metrics
+for measurement/glyph collection; renderer entries refer to the existing font
+resource table. Retained outputs own
 all resources needed to render their styles, independently of later updates.
 
 Add indexed drawing helpers such as `context.fill_rect(rect, self.body)` and
@@ -236,76 +241,107 @@ start with straightforward table building and optimize only if measured.
 Resolve canvas/background through theme tokens too, avoiding a styled UI painted
 on an unrelated hard-coded palette background.
 
-## Illustrative flow
+## Implemented flow
 
 ```rust
-// Conceptual assignment API; the painter declares body/focus_ring through reflection.
-let primary = styles.define("primary control", |theme| {
-    StyleFamily::new(PaintStyle {
-        fill: Some(theme.accent),
-        text: theme.body_text.with_color(theme.on_accent),
-        ..theme.control_style()
-    }).hover(StylePatch::fill(theme.accent_hover))
-});
-styles.assign::<ButtonPainter>("body", primary)?;
+let primary = application.register_style("primary", StyleFamily::new(|tokens| {
+    let mut style = PaintStyle::text(tokens);
+    style.fill = Some(tokens.accent);
+    style.foreground = tokens.on_accent;
+    style
+}))?;
+let part = part.with_style("body", StyleAssignment::new(primary));
 
 // Inside the bound painter: no name lookup or theme evaluation.
-context.fill_rect(context.bounds(), self.body);
-context.text(origin, label, self.body)?;
+context.styled_fill_rect(context.bounds(), self.body)?;
+context.styled_text(origin, label, self.body)?;
 ```
 
-The sketch demonstrates independent recipes and reflected assignment. Exact
-builder signatures remain to be finalized. The token struct must include every
-role used by shipped recipes, including `accent_hover` here.
+See
+[the executable registration example](../../crates/engine/src/styles/README.md).
+
+## Final decisions and implementation notes
+
+- Styled painters contain only slots and use `#[reflect(send)]` construction.
+  Raw configurable painters retain their registration path without Reflect/Sync.
+  Standard painters install external defaults through the Painter registration
+  hook.
+- `ThemeFont` selects embedded regular/mono faces or a custom immutable face.
+  Common metrics are font size, scalar inset and minimum height; outer layout
+  stays independent. Focus is a separate slot; interaction patches expose colors
+  only, so they cannot change border presence/width or text geometry.
+- Precedence is base, variant, family active/hover/disabled, local patch, local
+  active/hover/disabled. Dynamic resolvers run once during preparation. The base
+  recipe is retained while hover colors refresh after layout.
+- Frozen styles are deduplicated and commands remapped after font finalization.
+  Renderer inputs borrow both tables; headless rendering owns both in
+  `RenderedDisplay`. Raw lists remain supported with an empty style table.
+- Theme/family replacement validates defaults and constant overrides before
+  swapping and invalidating all instances. Existing variant names must remain.
+  Dynamic future resolver results are validated during rendering; errors keep
+  the last good output. Replacement invalidates geometry conservatively.
+- Selected and unselected input text use the same body foreground. Selection
+  defaults preserve its contrast. Separate selected-text foreground, directional
+  inset values, gradients/radii/shadows and additional theme IDs remain
+  deferred.
+- `./n check` passed, including nextest, doctests and software/femtovg parity
+  coverage. New tests cover reflected construction, invalid assignments,
+  precedence, recipe reuse, font/inset/caret agreement at multiple DPI,
+  occurrence ownership, runtime replacement and hidden-window restoration.
+- Manual check pending: run the showcase, select Styles in both windows, switch
+  the compact checkbox, resize, exercise focus and input selection, and inspect
+  contrast and fonts. Keep this plan active until that result is recorded.
 
 ## Implementation checklist
 
-- [ ] Finalize reflected slot binding/construction, common style fields and
+- [x] Finalize reflected slot binding/construction, common style fields and
       state precedence; explicitly decide support for non-slot painter fields.
-- [ ] Add typed theme tokens, concrete styles, sparse patches and validated
-      family registration; provide Light/Dark defaults matching existing output.
-- [ ] Discover reflected `StyleIndex` fields, validate external default
+- [x] Add typed theme tokens, concrete styles, sparse patches and validated
+      family registration; preserve Light/Dark defaults and improve selection
+      contrast.
+- [x] Discover reflected `StyleIndex` fields, validate external default
       assignments and cache field/name lookup at registration.
-- [ ] Add declaration-local assignments/overrides and a pure dynamic resolver.
-- [ ] Build occurrence-specific bound painters and prepared style tables; share
+- [x] Add declaration-local assignments/overrides and a pure dynamic resolver.
+- [x] Build occurrence-specific bound painters and prepared style tables; share
       them across measurement, painting and text-input caret geometry.
-- [ ] Freeze `RenderOutput::styles`, add indexed drawing helpers/commands and
+- [x] Freeze `RenderOutput::styles`, add indexed drawing helpers/commands and
       update renderer inputs, validation and diagnostics to retain the table.
-- [ ] Add font-style measurement/drawing helpers and migrate standard painters
+- [x] Add font-style measurement/drawing helpers and migrate standard painters
       and canvas background from hard-coded palette/constants.
-- [ ] Add validated runtime theme/style replacement and invalidation.
-- [ ] Extend the showcase with primary/quiet/danger styles, shared token reuse,
+- [x] Add validated runtime theme/style replacement and invalidation.
+- [x] Extend the showcase with primary/quiet/danger styles, shared token reuse,
       a local color override and different themes/fonts across its two windows.
-- [ ] Update architecture, painter/text/input documentation and record the
+- [x] Update architecture, painter/text/input documentation and record the
       significant ownership/precedence decisions in a decision record.
-- [ ] Run `./n check` after each unit; record manual verification before moving
-      the plan to completed.
+- [x] Run `./n check` after each unit.
+- [ ] Record native manual verification before moving the plan to completed.
 
 ## Verification checklist
 
-- [ ] Token derivation, sparse merge/removal and deterministic
+- [x] Token derivation, sparse merge/removal and deterministic
       variant/state/local precedence, including hover+focus+checked
       combinations.
-- [ ] Reflected slot discovery and construction, missing/duplicate/foreign
+- [x] Reflected slot discovery and construction, missing/duplicate/foreign
       assignments, unbound/out-of-range output indices, unknown variants,
       nonfinite/negative metrics and invalid font configurations fail clearly.
-- [ ] Runtime replacement is atomic; errors keep last-good styles and outputs.
-- [ ] Multiple occurrences bind distinct overrides without mutating the shared
+- [x] Runtime replacement is atomic; errors keep last-good styles and outputs.
+- [x] Multiple occurrences bind distinct overrides without mutating the shared
       registered painter; old outputs retain independent style/resource tables.
-- [ ] One definition renders different themes/fonts in two instances without
+- [x] One definition renders different themes/fonts in two instances without
       styles, focus or selection leaking across definitions/applications.
-- [ ] Font/inset changes agree across intrinsic sizing, glyph placement, text
+- [x] Font/inset changes agree across intrinsic sizing, glyph placement, text
       selection, caret/IME rectangles and pointer hit testing at different DPI.
-- [ ] Hover/focus colors preserve layout and safe input revision compatibility;
+- [x] Hover/focus colors preserve layout and safe input revision compatibility;
       metric/theme changes reject stale geometry and retain logical identity.
-- [ ] Repeated solver probes reuse prepared styles; color-only changes reuse
+- [x] Repeated solver probes reuse prepared styles; color-only changes reuse
       existing font/image resource identities without unnecessary rasterization.
-- [ ] Hidden-window updates, keyed loops and conditional removal retain the
+- [x] Hidden-window updates, keyed loops and conditional removal retain the
       existing state/resource lifecycle contracts.
-- [ ] Software/femtovg agree for styled rectangles, text and clipping. Manually
-      inspect contrast, focus visibility, selection and resized example windows.
+- [x] Software/femtovg agree for styled rectangles, text and clipping.
+- [ ] Manually inspect contrast, focus visibility, selection and resized example
+      windows.
 
-## Open questions and recommended defaults
+## Original questions and selected defaults
 
 - **Slot API:** reflected `StyleIndex` fields are the selected direction.
   Keep persistent family IDs distinct from output-local indices. Decide how

@@ -535,7 +535,10 @@ fn definition_registration_and_owned_sendable_boundary_are_explicit() {
             .display_list
             .commands
             .iter()
-            .any(|command| matches!(command, DrawCommand::DrawText { .. }))
+            .any(|command| matches!(
+                command,
+                DrawCommand::DrawText { .. } | DrawCommand::StyledText { .. }
+            ))
     );
     app.ui_command(UiCommand::Close { instance: id }).unwrap();
 }
@@ -572,7 +575,7 @@ fn visual_redraws_preserve_targets_and_do_not_starve_presented_clicks() {
     .unwrap();
     let marked = output(&receiver);
     assert!(marked.display_list.commands.iter().any(
-        |command| matches!(command, DrawCommand::DrawText { text, .. } if text.contains("[x]"))
+        |command| matches!(command, DrawCommand::DrawText { text, .. } | DrawCommand::StyledText { text, .. } if text.contains("[x]"))
     ));
     assert!(click(&app, &focused).is_err()); // A content change invalidated it.
     app.ui_command(UiCommand::Close { instance: id }).unwrap();
@@ -642,7 +645,7 @@ fn hidden_instances_skip_rendering_keep_changes_and_refresh_when_shown() {
     assert!(restored.revision > initial.revision);
     assert_eq!(restored.animation_request, Some(7));
     assert_eq!(state_ids(&app, hidden).len(), 3);
-    assert!(restored.display_list.commands.iter().any(|command| matches!(command, DrawCommand::DrawText { text, .. } if text.contains("while hidden"))));
+    assert!(restored.display_list.commands.iter().any(|command| matches!(command, DrawCommand::DrawText { text, .. } | DrawCommand::StyledText { text, .. } if text.contains("while hidden"))));
     app.ui_command(UiCommand::Visibility {
         instance: hidden,
         visible: true,
