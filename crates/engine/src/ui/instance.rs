@@ -116,6 +116,7 @@ pub struct UiInstance {
     pub(crate) state: LiveState,
     pub(crate) settings: PresentationSettings,
     pub(crate) layout: LayoutState,
+    pub(crate) layout_cache: crate::layout::cache::LayoutCache,
     pub(crate) revision: RenderRevision,
     pub(crate) compatible_revision: RenderRevision,
     pub(crate) redraw_only: bool,

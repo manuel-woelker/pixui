@@ -110,8 +110,27 @@ pointer position is tested against new geometry before painting; peers redraw
 with that shared result. Hiding, closing or leaving the active source clears
 hover. Leaving an inactive peer does not clear another window's hover.
 
-Full layout runs on every normal render initially. F11 reports tree construction
-and solving separately; worker timings also record measurement-call count.
-Layout reuse, virtualization and offscreen painter culling are deferred.
+Each UI instance retains its Taffy tree and solver caches. After preparation,
+the engine compares the physical hierarchy and layout styles, then rechecks
+every distinct painter measurement from the previous full solve against current
+props, state, resolved styles and presentation settings. Identical results let
+Taffy reuse its cached geometry, without requiring equality on arbitrary props
+or state. A measurement/style change clears all solver entries and measurement
+history; changed hierarchy rebuilds the tree. Invalidating the whole solver is
+conservative: tracking individual subtree dependencies is deferred.
+
+This supports constraint-sensitive custom painters: every previously used set
+of known dimensions and available space is checked, rather than assuming that
+one intrinsic size describes every constraint. Measurement must be deterministic
+for the same prepared inputs. No props, state references or action bindings are
+kept in the solver cache. Measurement failures discard it; published geometry
+remains independently owned and usable. Standalone `render`/`render_measured`
+calls use a fresh cache; application-managed instances retain theirs.
+
+Geometry, clips and input targets are extracted anew on every render, including
+scroll-only changes. F11 reports tree reconciliation/construction and layout
+separately; layout includes measurement validation, and measurement-call counts
+include those validation calls. Preparation and painting still run on unchanged
+redraws. Virtualization and offscreen painter culling are deferred.
 Offscreen painters still run and can request animation; clipping alone does not
 suspend component work.

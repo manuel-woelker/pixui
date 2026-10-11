@@ -95,6 +95,7 @@ impl UiRegistry {
                 state: LiveState::new(),
                 settings,
                 layout: LayoutState::default(),
+                layout_cache: Default::default(),
                 revision: RenderRevision::default(),
                 compatible_revision: RenderRevision::default(),
                 redraw_only: false,
@@ -622,6 +623,7 @@ impl UiRegistry {
                     active: self.focus_sources.get(&instance.definition) == Some(id)
                         && instance.native_focused,
                 }),
+                &mut instance.layout_cache,
             );
             match result {
                 Ok(renderer::RenderedUi {

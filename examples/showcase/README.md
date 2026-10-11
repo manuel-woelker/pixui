@@ -117,7 +117,7 @@ the Images page.
 Profile the complete Layout page without opening native windows:
 
 ```bash
-./t cargo run --release -p pixui-example-showcase --bin profile_layout -- --frames 300
+./t cargo run --release -p pixui-example-showcase --bin profile_showcase_layout -- --frames 300
 ```
 
 See [layout profiling](../../docs/performance/Layout%20profiling.md) for the

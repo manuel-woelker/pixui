@@ -263,10 +263,11 @@ appearance preserves behavior.
 Definitions compose explicit Flex/Grid `ContainerPart` boxes with constant
 engine-owned styles. Components resolve props and prepare state once; pure
 `Painter::measure` callbacks provide intrinsic content sizes, with shared text
-metrics. A temporary Taffy tree represents expanded loops and selected match
-arms without reevaluating expressions. Composites, loops, and matches add no
-implicit boxes. Taffy assigns per-instance border/content rectangles in logical
-units; painters receive final content-box dimensions and draw into one builder.
+metrics. A retained Taffy tree per instance represents expanded loops and
+selected match arms without reevaluating expressions. Composites, loops, and
+matches add no implicit boxes. Taffy assigns per-instance border/content
+rectangles in logical units; painters receive final content-box dimensions and
+draw into one builder.
 
 Containers clip by default. Drawing, hover and pointer activation share ancestor
 clips; keyboard targets retain offscreen controls separately. The implicit root
@@ -275,8 +276,13 @@ natural scrolling height. Each instance clamps the shared scroll request to its
 extent. The active pointer window renders first and recomputes shared hover
 against new geometry, then peers paint that same shared result. Compatible
 redraws preserve published action targets only with matching identities, target
-order, geometry and clips. Full layout runs on every normal frame initially;
-F11 exposes tree construction and solving separately.
+order, geometry and clips. Physical structure and layout styles are compared
+each frame; prior measurement constraints are rechecked against current prepared
+inputs. Unchanged answers allow cached solving without requiring equality on
+type-erased props/state. Measurement or style changes clear all solver entries;
+structural changes rebuild the tree. Geometry and input targets are extracted
+again, so scrolling and action bindings remain current. F11 exposes tree
+reconciliation/construction and layout including measurement validation.
 
 See the [layout guide](../crates/engine/src/layout/README.md) and
 [DR-016](<decisions/DR-016 Measure with painters and layout physical containers per UI instance.md>)

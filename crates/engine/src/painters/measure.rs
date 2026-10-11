@@ -19,7 +19,7 @@ pub enum AvailableSpace {
     MinContent,
     MaxContent,
 }
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct MeasureConstraints {
     pub width: Option<f32>,
     pub height: Option<f32>,

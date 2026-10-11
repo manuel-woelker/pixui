@@ -162,6 +162,7 @@ pub fn render_measured(
         hover,
         None,
         None,
+        &mut crate::layout::cache::LayoutCache::default(),
     )
 }
 
@@ -176,6 +177,7 @@ pub(crate) fn render_with_pointer(
     hover: Option<&crate::live_model::identity::ComponentPath>,
     pointer: Option<Point>,
     editing: Option<&super::text_input::target::RenderEditing<'_>>,
+    layout_cache: &mut crate::layout::cache::LayoutCache,
 ) -> PixuiResult<RenderedUi> {
     let started = std::time::Instant::now();
     settings.validate()?;
@@ -245,6 +247,7 @@ pub(crate) fn render_with_pointer(
     crate::ui::text::font::FontFace::geist()?;
     let preparation = started.elapsed();
     let geometry = crate::layout::adapter::compute(
+        layout_cache,
         &template,
         state.root_state(),
         settings.viewport,

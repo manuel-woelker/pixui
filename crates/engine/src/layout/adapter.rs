@@ -1,5 +1,6 @@
-//! Temporary physical layout tree. Expressions and preparation have already
+//! Retained physical layout tree. Expressions and preparation have already
 //! completed; only recorded loop counts and match selections are traversed here.
+use super::cache::{LayoutCache, Node, Probe};
 use crate::{
     live_model::{part::LivePart, state::PartState},
     painters::measure::{AvailableSpace, MeasureConstraints},
@@ -23,12 +24,30 @@ pub(crate) struct LayoutResult {
     pub construction: std::time::Duration,
     pub solving: std::time::Duration,
 }
-fn failure(error: taffy::TaffyError) -> pixui_base::PixuiError {
+pub(super) fn failure(error: taffy::TaffyError) -> pixui_base::PixuiError {
     pixui_error!("layout: {error}")
 }
 /// Returns layout and measurement errors before any frame is published. Logical
 /// rounding is disabled so drawing and hit testing share exactly the same edges.
 pub(crate) fn compute(
+    cache: &mut LayoutCache,
+    template: &LivePart,
+    state: &PartState,
+    viewport: Size,
+    requested_scroll: f32,
+    measure: impl FnMut(usize, MeasureConstraints) -> PixuiResult<Size>,
+) -> PixuiResult<LayoutResult> {
+    let result = compute_inner(cache, template, state, viewport, requested_scroll, measure);
+    if result.is_err() {
+        // Partial solver updates must not poison the next render. Published
+        // geometry is owned separately and stays usable after a failure.
+        *cache = LayoutCache::default();
+    }
+    result
+}
+
+fn compute_inner(
+    cache: &mut LayoutCache,
     template: &LivePart,
     state: &PartState,
     viewport: Size,
@@ -36,11 +55,10 @@ pub(crate) fn compute(
     mut measure: impl FnMut(usize, MeasureConstraints) -> PixuiResult<Size>,
 ) -> PixuiResult<LayoutResult> {
     let started = std::time::Instant::now();
-    let mut tree = TaffyTree::<usize>::new();
-    tree.disable_rounding();
+    let mut nodes = Vec::new();
     let mut index = 0;
     let mut children = Vec::new();
-    build(&mut tree, template, state, &mut index, &mut children)?;
+    build(&mut nodes, template, state, &mut index, &mut children)?;
     // A definite viewport width and indefinite content height establish a
     // vertical scroll surface. Percent heights in this subtree resolve as auto
     // unless an explicit ancestor provides a definite height. Min-height alone
@@ -51,13 +69,20 @@ pub(crate) fn compute(
         .to_taffy()?;
     root_style.size.width = taffy::style::Dimension::length(viewport.width);
     root_style.min_size.height = taffy::style::LengthPercentageAuto::length(viewport.height);
-    let root = tree
-        .new_with_children(root_style, &children)
-        .map_err(failure)?;
+    nodes.push(Node {
+        style: root_style,
+        children,
+        component: None,
+    });
+    cache.sync(nodes, index)?;
+    let root = *cache.ids.last().expect("implicit layout root");
     let construction = started.elapsed();
     let started = std::time::Instant::now();
     let mut error = None;
     let mut measurements = 0;
+    cache.validate(&mut measure, &mut measurements)?;
+    let probes = &mut cache.probes;
+    let tree = &mut cache.tree;
     tree.compute_layout_with_measure(
         root,
         taffy::geometry::Size {
@@ -77,22 +102,28 @@ pub(crate) fn compute(
                     if error.is_some() {
                         return taffy::geometry::Size::ZERO;
                     }
-                    match measure(
-                        *index,
-                        MeasureConstraints {
-                            // Intrinsic Grid probes can subtract padding from a
-                            // zero-sized track. Painters see empty content boxes,
-                            // consistent with the geometry passed to painting.
-                            width: known.width.map(|value| value.max(0.0)),
-                            height: known.height.map(|value| value.max(0.0)),
-                            available_width: space(available.width),
-                            available_height: space(available.height),
-                        },
-                    ) {
-                        Ok(size) => taffy::geometry::Size {
-                            width: size.width,
-                            height: size.height,
-                        },
+                    let constraints = MeasureConstraints {
+                        // Intrinsic Grid probes can subtract padding from a
+                        // zero-sized track. Painters see empty content boxes,
+                        // consistent with the geometry passed to painting.
+                        width: known.width.map(|value| value.max(0.0)),
+                        height: known.height.map(|value| value.max(0.0)),
+                        available_width: space(available.width),
+                        available_height: space(available.height),
+                    };
+                    match measure(*index, constraints) {
+                        Ok(size) => {
+                            if !probes[*index]
+                                .iter()
+                                .any(|probe| probe.constraints == constraints)
+                            {
+                                probes[*index].push(Probe { constraints, size });
+                            }
+                            taffy::geometry::Size {
+                                width: size.width,
+                                height: size.height,
+                            }
+                        }
                         Err(failure) => {
                             error = Some(failure);
                             taffy::geometry::Size::ZERO
@@ -124,7 +155,7 @@ pub(crate) fn compute(
         height: viewport.height,
     };
     collect(
-        &tree,
+        tree,
         root,
         0.0,
         -scroll,
@@ -148,47 +179,51 @@ fn space(space: taffy::style::AvailableSpace) -> AvailableSpace {
     }
 }
 fn build(
-    tree: &mut TaffyTree<usize>,
+    nodes: &mut Vec<Node>,
     part: &LivePart,
     state: &PartState,
     index: &mut usize,
-    output: &mut Vec<NodeId>,
+    output: &mut Vec<usize>,
 ) -> PixuiResult<()> {
     match (part, state) {
         (LivePart::Component(part), PartState::Component(_))
             if part.component_address().is_some() =>
         {
-            output.push(
-                tree.new_leaf_with_context(part.layout.to_taffy()?, *index)
-                    .map_err(failure)?,
-            );
+            output.push(nodes.len());
+            nodes.push(Node {
+                style: part.layout.to_taffy()?,
+                children: Vec::new(),
+                component: Some(*index),
+            });
             *index += 1;
         }
         (LivePart::Component(_), PartState::Component(_)) => {}
         (LivePart::Composite(part), PartState::Composite(state)) => {
             for (part, state) in part.parts.iter().zip(&state.parts) {
-                build(tree, part, state, index, output)?;
+                build(nodes, part, state, index, output)?;
             }
         }
         (LivePart::Container(part), PartState::Container(state)) => {
             let mut children = Vec::new();
             for (part, state) in part.children.iter().zip(&state.parts) {
-                build(tree, part, state, index, &mut children)?;
+                build(nodes, part, state, index, &mut children)?;
             }
-            output.push(
-                tree.new_with_children(part.to_taffy()?, &children)
-                    .map_err(failure)?,
-            );
+            output.push(nodes.len());
+            nodes.push(Node {
+                style: part.to_taffy()?,
+                children,
+                component: None,
+            });
         }
         (LivePart::ForLoop(part), PartState::ForLoop(state)) => {
             for state in &state.items {
-                build(tree, &part.body, state, index, output)?;
+                build(nodes, &part.body, state, index, output)?;
             }
         }
         (LivePart::Match(part), PartState::Match(state)) => {
             if let Some(selected) = state.selected {
                 build(
-                    tree,
+                    nodes,
                     &part.candidates[selected].part,
                     &state.part,
                     index,

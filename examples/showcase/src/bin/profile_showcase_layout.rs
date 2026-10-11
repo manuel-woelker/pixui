@@ -43,9 +43,10 @@ fn main() -> PixuiResult<()> {
             ..Default::default()
         },
     )?;
-    outputs
+    let initial = outputs
         .recv_timeout(Duration::from_secs(10))
-        .map_err(|error| pixui_error!("initial output: {error}"))?;
+        .map_err(|error| pixui_error!("initial output: {error}"))?
+        .timings;
     let mut samples = Vec::with_capacity(frames);
     for index in 0..frames + 20 {
         app.ui_command(UiCommand::Redraw { instance })?;
@@ -69,6 +70,11 @@ fn main() -> PixuiResult<()> {
         }
     );
     report("Preparation", &samples, |sample| sample.preparation);
+    println!(
+        "Initial layout: {:.3} ms; {} measurements",
+        initial.layout.as_secs_f64() * 1000.0,
+        initial.measurements
+    );
     report("Tree construction", &samples, |sample| {
         sample.tree_construction
     });

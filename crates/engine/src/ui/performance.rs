@@ -6,9 +6,11 @@ use std::{collections::HashSet, mem::size_of, time::Duration};
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct WorkerTimings {
     pub preparation: Duration,
+    /// Physical hierarchy comparison, style updates and solver-tree construction.
     pub tree_construction: Duration,
-    /// Solver probes plus geometry/clip extraction and scroll transforms.
+    /// Measurement validation, solver probes, geometry extraction and scrolling.
     pub layout: Duration,
+    /// Painter measurement calls, including validation of retained solver results.
     pub measurements: usize,
     pub painting: Duration,
     pub text: Duration,

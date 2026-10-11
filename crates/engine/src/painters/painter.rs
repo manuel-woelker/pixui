@@ -28,6 +28,8 @@ pub trait Painter<C: Component>: Send + 'static {
     }
     /// Returns finite nonnegative content size. May run repeatedly; no I/O,
     /// mutation, atlas allocation, actions, or animation requests are permitted.
+    /// Equal prepared inputs and constraints must return equal sizes. The engine
+    /// rechecks prior measurements to validate retained layout across frames.
     fn measure(
         &self,
         context: &super::measure::MeasureContext<'_, C>,
