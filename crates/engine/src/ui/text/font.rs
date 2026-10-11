@@ -76,7 +76,7 @@ impl FontConfig {
     }
 
     pub fn metrics(&self) -> FontMetrics {
-        self.face.0.line_metrics(self.size, self.scale)
+        self.face.0.line_metrics(self.size)
     }
 
     /// Widest normalized unkerned line and total explicit-line height. No
@@ -87,7 +87,7 @@ impl FontConfig {
             .split('\n')
             .map(|line| {
                 line.chars()
-                    .map(|character| self.face.0.advance(character, self.size, self.scale))
+                    .map(|character| self.face.0.advance(character, self.size))
                     .sum::<f32>()
             })
             .fold(0.0_f32, f32::max);

@@ -190,3 +190,46 @@ geometry. Containers clip by default. See the
 [layout guide](../../crates/engine/src/layout/README.md). The header uses a Flex
 row inside a column; the animated canvas has an explicit 320 by 120
 logical-pixel allocation.
+
+### Profiling layout
+
+Repeat worker rendering without a native window:
+
+```sh
+./t cargo run -p pixui-example-todo --bin profile_layout -- --frames 1000 --todos 2
+```
+
+The profiler excludes initialization and 20 warmup frames, freezes animation,
+and uses an 800 by 600 viewport. It reports median and p95 worker stage times
+and the number of painter measurement calls. Layout includes those callbacks
+and geometry extraction; tree construction is reported separately. Add
+`--release` before `-p` to compare an optimized build.
+
+A debug run with two todos measured 0.964 ms median layout: 0.681 ms in
+measurement callbacks, 0.276 ms in the solver, and 0.007 ms extracting geometry.
+There were 59 measurement calls per frame. Repeated text measurement computes
+full glyph metrics for each character, although sizing only needs advances.
+Optimizing just Taffy and fontdue reduced total layout to 0.654 ms on the same
+workload. These timings depend on the machine and content; they are diagnostic
+observations rather than performance targets.
+
+#### Cached face metrics improvement
+
+The face now caches scalable advances, line metrics and replacement aliases
+once at load time. This removes repeated fontdue glyph-metric calculations from
+measurement while preserving size-specific bitmap rasterization.
+
+Before/after measurements used the command above with `--frames 500 --todos 2`,
+the same unoptimized debug build and no concurrent checks or compilation:
+
+| Stage | Before median | After median | Reduction |
+| --- | ---: | ---: | ---: |
+| Layout including measurement/extraction | 0.946 ms | 0.382 ms | 60% |
+| Painting | 0.205 ms | 0.129 ms | 37% |
+
+Layout p95 fell from 0.971 ms to 0.392 ms. Both runs made 59 measurement calls
+per frame, so the improvement comes from cheaper measurement rather than fewer
+solver probes. Painting also benefits from cheaper text measurement and alias
+lookup. Preparation, tree construction and text finalization stayed close to
+their previous times. Full-release performance and native renderer timings were
+not measured in this comparison.

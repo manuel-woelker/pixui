@@ -23,8 +23,14 @@ context.text(
 
 `font_metrics` exposes logical ascent, descent, and line height. `measure_text`
 returns the widest line and total line height in `Size::width/height`.
-Measurement uses fontdue's metrics-only API, without allocating coverage, with
-the same normalization and unkerned advances as drawing. No automatic wrapping
+Each parsed face caches character aliases, unkerned advances and line metrics
+at logical size 1 in an immutable table. Measurement scales these values by font
+size; DPI cancels out of logical metrics. The Latin table and replacement entry
+use approximately 4.5 KiB per face and require no locks or per-size cache.
+Bitmap dimensions, rounded bearings and atlas rectangles remain specific to
+physical rasterization size. Measurement allocates no coverage and uses the
+same normalization and unkerned advances as drawing, within floating-point
+rounding tolerance. No automatic wrapping
 occurs; explicit newlines advance by line height. Standard controls use a
 theme-derived minimum height; overflowing text in a fixed layout box is clipped.
 
