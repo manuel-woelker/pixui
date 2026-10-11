@@ -21,6 +21,7 @@ pub struct UiDefinitionState {
 }
 
 pub struct UiDefinition {
+    pub(crate) source_origin: Option<crate::ui_language::source::origin::Origin>,
     pub(crate) name: String,
     pub(crate) translation_domain: String,
     pub(crate) window_expressions: Option<super::window_properties::WindowPropertyExpressions>,
@@ -35,6 +36,7 @@ impl UiDefinition {
     pub fn new(name: impl Into<String>, template: LivePart) -> Self {
         let name = name.into();
         Self {
+            source_origin: None,
             translation_domain: name.clone(),
             name,
             window_expressions: None,

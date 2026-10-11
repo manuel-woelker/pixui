@@ -66,13 +66,13 @@ fn sidebar_is_fixed_and_footer_follows_window_height() {
         receive(&outputs);
         app.inspect(move |app| {
             let boxes = &app.uis().instance(instance)?.layout().component_bounds;
-            for button in &boxes[2..9] {
+            for button in &boxes[2..10] {
                 assert_eq!(
                     button.width, 200.0,
                     "navigation buttons fill the fixed sidebar"
                 );
             }
-            assert_eq!(boxes[9].x, 236.0, "detail pane follows sidebar and gap");
+            assert_eq!(boxes[10].x, 236.0, "detail pane follows sidebar and gap");
             let footer = boxes.last().unwrap();
             assert_eq!(footer.y + footer.height, height - 16.0);
             Ok(())
@@ -113,8 +113,8 @@ fn widgets_update_shared_windows_conditional_content_collection_and_title() {
     app.inspect(move |app| {
         let boxes = &app.uis().instance(one)?.layout().component_bounds;
         assert!(boxes[0].width > boxes[1].width, "title spans both panes");
-        assert!(boxes[9].x >= boxes[1].x + boxes[1].width + 19.0);
-        assert_eq!(boxes[9].y, boxes[1].y, "pane headings align");
+        assert!(boxes[10].x >= boxes[1].x + boxes[1].width + 19.0);
+        assert_eq!(boxes[10].y, boxes[1].y, "pane headings align");
         Ok(())
     })
     .unwrap();
@@ -129,7 +129,7 @@ fn widgets_update_shared_windows_conditional_content_collection_and_title() {
         WindowCommand::SetIcon(Some(_))
     ));
 
-    click(&app, one, &current, 7);
+    click(&app, one, &current, 8);
     current = receive(&outputs);
     assert!(has_text(&current, "Counter: 1"));
     assert!(has_text(&receive(&other), "Zähler: 1"));
@@ -142,7 +142,7 @@ fn widgets_update_shared_windows_conditional_content_collection_and_title() {
     assert!(has_text(&current, "Checkboxes"));
     assert!(has_text(&german_checkboxes, "Kontrollkästchen"));
     assert!(!has_text(&current, "Counter: 1"));
-    click(&app, one, &current, 7);
+    click(&app, one, &current, 8);
     current = receive(&outputs);
     receive(&other);
     app.inspect(|app| {
@@ -158,7 +158,7 @@ fn widgets_update_shared_windows_conditional_content_collection_and_title() {
     let initial_bounds = app
         .inspect(move |app| Ok(app.uis().instance(one)?.layout().component_bounds.len()))
         .unwrap();
-    click(&app, one, &current, 8);
+    click(&app, one, &current, 9);
     current = receive(&outputs);
     receive(&other);
     assert!(!has_text(&current, explanation));
@@ -184,7 +184,7 @@ fn widgets_update_shared_windows_conditional_content_collection_and_title() {
     current = receive(&outputs);
     receive(&other);
     assert!(has_text(&current, "Sample 1"));
-    click(&app, one, &current, 7);
+    click(&app, one, &current, 8);
     current = receive(&outputs);
     assert!(has_text(&current, "Sample 2"));
     assert!(has_text(&receive(&other), "Sample 2"));
@@ -193,7 +193,7 @@ fn widgets_update_shared_windows_conditional_content_collection_and_title() {
     current = receive(&outputs);
     receive(&other);
     assert!(has_text(&current, "Counter: 1"));
-    click(&app, one, &current, 8);
+    click(&app, one, &current, 9);
     current = receive(&outputs);
     assert!(has_text(&current, "Counter: 0"));
     receive(&other);
@@ -205,7 +205,7 @@ fn widgets_update_shared_windows_conditional_content_collection_and_title() {
         !has_text(&current, explanation),
         "page switching retains demo data"
     );
-    click(&app, one, &current, 8);
+    click(&app, one, &current, 9);
     current = receive(&outputs);
     assert!(has_text(&current, explanation));
     receive(&other);
@@ -277,7 +277,7 @@ fn keyboard_navigation_activates_buttons_and_facade_updates_named_entities() {
         Ok(())
     })
     .unwrap();
-    assert!(actions.select(7).is_err());
+    assert!(actions.select(8).is_err());
 }
 
 #[test]
@@ -467,15 +467,15 @@ fn layout_gallery_places_nested_cards_wraps_actions_and_dispatches_clicks() {
                 "layout stress pane prepares all loop occurrences"
             );
             // Six metric cards form two rows of three inside the spanning main pane.
-            assert!(boxes[15].x < boxes[17].x && boxes[17].x < boxes[19].x);
-            assert_eq!(boxes[15].y, boxes[19].y);
-            assert!(boxes[21].y > boxes[15].y);
+            assert!(boxes[16].x < boxes[18].x && boxes[18].x < boxes[20].x);
+            assert_eq!(boxes[16].y, boxes[20].y);
+            assert!(boxes[22].y > boxes[16].y);
             assert!(
-                boxes[28].x > boxes[19].x,
+                boxes[29].x > boxes[20].x,
                 "activity occupies the third outer track"
             );
-            let first_action = boxes[33];
-            let last_action = boxes[38];
+            let first_action = boxes[34];
+            let last_action = boxes[39];
             if width == 800.0 {
                 assert!(last_action.y > first_action.y, "narrow action row wraps");
             } else {
@@ -487,8 +487,8 @@ fn layout_gallery_places_nested_cards_wraps_actions_and_dispatches_clicks() {
             Ok(())
         })
         .unwrap();
-        // Seven navigation buttons and two toolbar buttons precede the action row.
-        click(&app, instance, &output, 9);
+        // Eight navigation buttons and two toolbar buttons precede the action row.
+        click(&app, instance, &output, 10);
         let changed = outputs
             .recv_timeout(Duration::from_secs(2))
             .expect("layout action output");
@@ -501,4 +501,39 @@ fn layout_gallery_places_nested_cards_wraps_actions_and_dispatches_clicks() {
             }
         ));
     }
+}
+
+#[test]
+fn pixui_pane_renders_translates_and_dispatches_compiled_actions() {
+    let (app, definition) = setup::create().unwrap();
+    let actions = ShowcaseActions::bind(&app).unwrap();
+    actions.select(7).unwrap();
+    let (instance, outputs) = app
+        .create_ui(definition, PresentationSettings::default())
+        .unwrap();
+    let (_, german) = app
+        .create_ui(
+            definition,
+            app.presentation_language(PresentationSettings::default(), "de")
+                .unwrap(),
+        )
+        .unwrap();
+    let initial = receive(&outputs);
+    assert!(has_text(&initial, "Defined in a .pixui file"));
+    assert!(has_text(&initial, "Untranslated template: 0"));
+    let translated = receive(&german);
+    assert!(has_text(&translated, "In einer .pixui Datei definiert"));
+    assert!(has_text(&translated, "Untranslated template: 0"));
+    click(&app, instance, &initial, 8);
+    let incremented = receive(&outputs);
+    assert!(has_text(&incremented, "Counter: 1"));
+    assert!(has_text(&incremented, "Untranslated template: 1"));
+    assert!(has_text(&receive(&german), "Zähler: 1"));
+    click(&app, instance, &incremented, 9);
+    let appended = receive(&outputs);
+    assert!(has_text(&appended, "Sample 2"));
+    receive(&german);
+    click(&app, instance, &appended, 10);
+    assert!(has_text(&receive(&outputs), "Details hidden"));
+    assert!(has_text(&receive(&german), "Details ausgeblendet"));
 }

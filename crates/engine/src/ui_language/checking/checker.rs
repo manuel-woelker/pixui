@@ -1,0 +1,362 @@
+//! Type checking does not run props resolvers or mutate application state.
+use super::{
+    conversions::value_type,
+    typed::{ExpressionKind, PartKind, TypedDefinition, TypedPart},
+};
+use crate::{
+    expression::expression::ExpressionKind as RuntimeKind,
+    layout::{
+        container::ContainerPart,
+        grid::Track,
+        style::{Insets, Length},
+    },
+    ui_language::{
+        ast::part::PartKind as AstPart,
+        diagnostic::report::{Diagnostic, Stage},
+        resolution::{
+            environment::Environment,
+            resolved::{self, ResolvedDefinition, ResolvedPart, Root, Segment},
+        },
+        source::span::Span,
+    },
+};
+use pixui_reflect::TypeDescriptor;
+use std::{any::TypeId, collections::HashMap};
+pub(super) type CheckResult<T> = Result<T, Diagnostic>;
+pub fn check(
+    definition: ResolvedDefinition,
+    environment: &Environment,
+) -> Result<TypedDefinition, Vec<Diagnostic>> {
+    let mut checker = Checker {
+        environment,
+        locals: vec![],
+        collection_locals: vec![],
+        errors: vec![],
+    };
+    match checker.part(definition.root) {
+        Ok(root) if checker.errors.is_empty() => Ok(TypedDefinition {
+            syntax: definition.syntax,
+            root,
+        }),
+        Ok(_) => Err(checker.errors),
+        Err(error) => {
+            if checker.errors.len() < crate::ui_language::lexer::scan::MAX_DIAGNOSTICS {
+                checker.errors.push(error);
+            }
+            Err(checker.errors)
+        }
+    }
+}
+pub(super) struct Checker<'a> {
+    pub(super) environment: &'a Environment,
+    pub(super) locals: Vec<&'static TypeDescriptor>,
+    pub(super) collection_locals: Vec<bool>,
+    pub(super) errors: Vec<Diagnostic>,
+}
+impl Checker<'_> {
+    fn children(&mut self, children: Vec<ResolvedPart>) -> Vec<TypedPart> {
+        let mut result = vec![];
+        for child in children {
+            match self.part(child) {
+                Ok(child) => result.push(child),
+                Err(error)
+                    if self.errors.len() < crate::ui_language::lexer::scan::MAX_DIAGNOSTICS =>
+                {
+                    self.errors.push(error)
+                }
+                Err(_) => break,
+            }
+        }
+        result
+    }
+    pub(super) fn error(&self, span: Span, message: impl Into<String>) -> Diagnostic {
+        Diagnostic::new(Stage::Checking, "T004", span, message)
+    }
+    fn part(&mut self, part: ResolvedPart) -> CheckResult<TypedPart> {
+        let span = part.syntax.span;
+        let kind = match part.kind {
+            resolved::PartKind::Element {
+                component: Some(export),
+                attributes,
+                children,
+            } => {
+                if !children.is_empty() {
+                    return Err(self.error(span, "leaf components cannot have children"));
+                }
+                let mut values: HashMap<_, _> = attributes
+                    .into_iter()
+                    .map(|(name, expression)| (name.value, expression))
+                    .collect();
+                let activation = values
+                    .remove("on_activate")
+                    .map(|expression| self.action(&expression))
+                    .transpose()?;
+                let layout = values
+                    .remove("layout")
+                    .map(|expression| self.layout_export(&expression))
+                    .transpose()?
+                    .unwrap_or_default();
+                let styles = values
+                    .remove("styles")
+                    .map(|expression| self.style_export(&expression))
+                    .transpose()?
+                    .unwrap_or_default();
+                let mut props = vec![];
+                let mut types = vec![];
+                for field in export.props.fields() {
+                    let expression = values.remove(field.name).ok_or_else(|| {
+                        self.error(span, format!("missing required property `{}`", field.name))
+                    })?;
+                    let id = field.type_id().ok_or_else(|| {
+                        self.error(expression.span, "property has no type metadata")
+                    })?;
+                    props.push(self.expression(&expression, Some(id))?);
+                    types.push(value_type(self.environment, id, expression.span)?);
+                }
+                PartKind::Component {
+                    export,
+                    props,
+                    types,
+                    activation,
+                    layout,
+                    styles,
+                }
+            }
+            resolved::PartKind::Element {
+                component: None,
+                attributes,
+                children,
+            } => {
+                let AstPart::Element { name, .. } = part.syntax.kind else {
+                    unreachable!()
+                };
+                let Some(name) = name else {
+                    if !attributes.is_empty() {
+                        return Err(self.error(span, "fragments cannot have attributes"));
+                    }
+                    return Ok(TypedPart {
+                        span,
+                        kind: PartKind::Composite(self.children(children)),
+                    });
+                };
+                let mut container = match name.value.as_str() {
+                    "Row" => ContainerPart::row(),
+                    "Column" => ContainerPart::column(),
+                    "Grid" => ContainerPart::grid(),
+                    _ => unreachable!(),
+                };
+                for (name, expression) in attributes {
+                    match name.value.as_str() {
+                        "layout" => container.style = self.layout_export(&expression)?,
+                        "columns" | "rows" => {
+                            if !matches!(
+                                container.layout,
+                                crate::layout::container::ContainerLayout::Grid(_)
+                            ) {
+                                return Err(self.error(name.span, "tracks require Grid"));
+                            }
+                            let text = self.literal_text(&expression)?;
+                            let tracks = text
+                                .split_whitespace()
+                                .map(|track| {
+                                    if track == "auto" {
+                                        Ok(Track::auto())
+                                    } else if let Some(value) = track.strip_suffix("fr") {
+                                        value.parse().map(Track::fraction).map_err(|_| {
+                                            self.error(expression.span, "invalid fraction track")
+                                        })
+                                    } else if let Some(value) = track.strip_suffix("px") {
+                                        value.parse().map(Track::length).map_err(|_| {
+                                            self.error(expression.span, "invalid pixel track")
+                                        })
+                                    } else {
+                                        Err(self.error(
+                                            expression.span,
+                                            "tracks must be auto, Npx, or Nfr",
+                                        ))
+                                    }
+                                })
+                                .collect::<CheckResult<Vec<_>>>()?;
+                            container = if name.value == "columns" {
+                                container.with_columns(tracks)
+                            } else {
+                                container.with_rows(tracks)
+                            };
+                        }
+                        "gap" | "padding" | "width" | "height" | "grow" => {
+                            let typed = self.expression(&expression, Some(TypeId::of::<f32>()))?;
+                            let ExpressionKind::Constant { value, .. } = typed.kind else {
+                                return Err(self.error(
+                                    expression.span,
+                                    "layout values must be numeric constants",
+                                ));
+                            };
+                            let value = *value.downcast_ref::<f32>().unwrap();
+                            match name.value.as_str() {
+                                "gap" => container.gap = value,
+                                "padding" => container.style.padding = Insets::all(value),
+                                "width" => container.style.width = Length::Pixels(value),
+                                "height" => container.style.height = Length::Pixels(value),
+                                "grow" => container.style.grow = value,
+                                _ => unreachable!(),
+                            }
+                        }
+                        _ => return Err(self.error(name.span, "unknown container attribute")),
+                    }
+                }
+                container
+                    .to_taffy()
+                    .map_err(|error| self.error(span, error.to_string()))?;
+                PartKind::Container {
+                    container,
+                    children: self.children(children),
+                }
+            }
+            resolved::PartKind::For { sequence, body } => {
+                let sequence = self.expression(&sequence, None)?;
+                let element = sequence.descriptor.element_type().ok_or_else(|| {
+                    self.error(sequence.span, "for expression must be a sequence")
+                })?;
+                let collection_backed = matches!(&sequence.kind,ExpressionKind::Path {root:Root::Data(data),fields} if fields.is_empty() && matches!(data.expression.kind(),RuntimeKind::Collection(_)));
+                self.collection_locals.push(collection_backed);
+                self.locals.push(element);
+                let body = self.part(*body);
+                self.locals.pop();
+                self.collection_locals.pop();
+                PartKind::For {
+                    sequence,
+                    body: Box::new(body?),
+                }
+            }
+            resolved::PartKind::Match { value, arms } => {
+                let value = self.expression(&value, None)?;
+                let id = value.descriptor.type_id();
+                let mut patterns = HashMap::new();
+                let mut wildcard = false;
+                let mut checked = vec![];
+                let mut booleans = [false, false];
+                for (pattern, body, arm_span) in arms {
+                    if wildcard {
+                        return Err(self.error(arm_span, "unreachable arm after wildcard"));
+                    }
+                    let pattern = if let Some(pattern) = pattern {
+                        let typed = self.expression(&pattern, Some(id))?;
+                        let key = match &typed.kind {
+                            ExpressionKind::Constant { value, .. }
+                                if id == TypeId::of::<bool>() =>
+                            {
+                                let value = *value.downcast_ref::<bool>().unwrap();
+                                booleans[usize::from(value)] = true;
+                                value.to_string()
+                            }
+                            ExpressionKind::Constant { value, .. } => format!(
+                                "{:?}",
+                                crate::ui_language::lowering::runtime::scalar_snapshot(
+                                    value.as_ref(),
+                                    id
+                                )
+                                .map_err(|error| self.error(pattern.span, error.to_string()))?
+                            ),
+                            ExpressionKind::Template {
+                                translated: false,
+                                source,
+                                arguments,
+                            } if arguments.is_empty() => source.clone(),
+                            _ => {
+                                return Err(self.error(
+                                    pattern.span,
+                                    "match patterns must be untranslated scalar literals",
+                                ));
+                            }
+                        };
+                        if let Some(previous) = patterns.insert(key, pattern.span) {
+                            return Err(self
+                                .error(pattern.span, "duplicate match pattern")
+                                .secondary(previous, "first pattern"));
+                        }
+                        Some(typed)
+                    } else {
+                        wildcard = true;
+                        None
+                    };
+                    checked.push((pattern, self.part(body)?));
+                }
+                if !wildcard && !(id == TypeId::of::<bool>() && booleans == [true, true]) {
+                    return Err(
+                        self.error(span, "match requires a wildcard or exhaustive boolean arms")
+                    );
+                }
+                PartKind::Match {
+                    value,
+                    arms: checked,
+                }
+            }
+        };
+        Ok(TypedPart { span, kind })
+    }
+    fn literal_text(&self, expression: &resolved::Expression) -> CheckResult<String> {
+        if let resolved::ExpressionKind::Template {
+            translated: false,
+            segments,
+        } = &expression.kind
+        {
+            let mut text = String::new();
+            for segment in segments {
+                match segment {
+                    Segment::Text(value, _) => text.push_str(value),
+                    _ => {
+                        return Err(self.error(
+                            expression.span,
+                            "expected an untranslated literal without interpolation",
+                        ));
+                    }
+                }
+            }
+            Ok(text)
+        } else {
+            Err(self.error(
+                expression.span,
+                "expected an untranslated single-quoted literal",
+            ))
+        }
+    }
+    fn layout_export(
+        &self,
+        expression: &resolved::Expression,
+    ) -> CheckResult<crate::layout::style::LayoutStyle> {
+        if let resolved::ExpressionKind::Path {
+            root: Root::Layout(layout),
+            fields,
+        } = &expression.kind
+            && fields.is_empty()
+        {
+            layout
+                .to_taffy()
+                .map_err(|error| self.error(expression.span, error.to_string()))?;
+            Ok((**layout).clone())
+        } else {
+            Err(self.error(
+                expression.span,
+                "layout requires an exported layouts.name value",
+            ))
+        }
+    }
+    fn style_export(
+        &self,
+        expression: &resolved::Expression,
+    ) -> CheckResult<Vec<crate::styles::slots::SlotAssignment>> {
+        if let resolved::ExpressionKind::Path {
+            root: Root::Styles(styles),
+            fields,
+        } = &expression.kind
+            && fields.is_empty()
+        {
+            Ok(styles.clone())
+        } else {
+            Err(self.error(
+                expression.span,
+                "styles requires an exported styles.name value",
+            ))
+        }
+    }
+}

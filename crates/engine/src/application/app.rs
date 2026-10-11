@@ -139,15 +139,22 @@ impl Application {
         &mut self,
         mut definition: crate::ui::definition::UiDefinition,
     ) -> PixuiResult<crate::ui::definition::UiDefinitionId> {
-        self.components
-            .validate(&definition.template, &self.painters)?;
-        self.painters
-            .validate_template_styles(&definition.template, &self.styles)?;
-        let mut translations = self.translations.clone();
-        crate::i18n::registration::register(&mut definition, &mut translations)?;
-        let id = self.uis.register(definition)?;
-        self.translations = translations;
-        Ok(id)
+        let origin = definition.source_origin.clone();
+        (|| {
+            self.components
+                .validate(&definition.template, &self.painters)?;
+            self.painters
+                .validate_template_styles(&definition.template, &self.styles)?;
+            let mut translations = self.translations.clone();
+            crate::i18n::registration::register(&mut definition, &mut translations)?;
+            let id = self.uis.register(definition)?;
+            self.translations = translations;
+            Ok(id)
+        })()
+        .map_err(|error| match origin {
+            Some(origin) => origin.error(error),
+            None => error,
+        })
     }
 
     /// Starts an owner thread immediately, using a bounded queue of 128 commands.

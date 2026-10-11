@@ -42,6 +42,8 @@ pub struct ComponentPart {
     pub(crate) binding: Option<Arc<dyn ErasedBinding>>,
     pub(crate) change: Option<crate::ui::text_input::binding::ChangeFactory>,
     pub(crate) activation: Option<ActivationFactory>,
+    pub(crate) compiled_activation:
+        Option<Arc<crate::ui_language::lowering::runtime::ActionProgram>>,
 }
 
 impl ComponentPart {
@@ -56,6 +58,7 @@ impl ComponentPart {
             expressions: Vec::new(),
             binding: None,
             activation: None,
+            compiled_activation: None,
             change: None,
         }
     }
@@ -98,6 +101,7 @@ impl ComponentPart {
                 },
             )),
             activation: None,
+            compiled_activation: None,
             change: None,
         }
     }
@@ -125,6 +129,7 @@ impl ComponentPart {
                 marker: PhantomData,
             })),
             activation: None,
+            compiled_activation: None,
             change: None,
         }
     }
@@ -148,6 +153,7 @@ impl ComponentPart {
     /// Resolves an owned activation binding separately from the painter. Bounds
     /// and hit testing remain the renderer's responsibility.
     pub fn with_activation(mut self, activation: ActivationFactory) -> Self {
+        self.compiled_activation = None;
         self.activation = Some(activation);
         self
     }

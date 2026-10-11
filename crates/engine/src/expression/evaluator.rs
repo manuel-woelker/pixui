@@ -22,7 +22,10 @@ pub fn evaluate<'a>(
     context: &ExpressionContext<'a>,
     expression: &Expression,
 ) -> PixuiResult<DynamicObject<'a>> {
-    evaluate_depth(context, expression, 0)
+    evaluate_depth(context, expression, 0).map_err(|error| match &expression.origin {
+        Some(origin) => origin.error(error),
+        None => error,
+    })
 }
 
 fn evaluate_depth<'a>(
@@ -36,6 +39,7 @@ fn evaluate_depth<'a>(
         ));
     }
     match expression.kind() {
+        ExpressionKind::Program(program) => program.evaluate(context),
         ExpressionKind::Computed(resolve) => resolve(context),
         ExpressionKind::I18n(message) => {
             let template = context
@@ -65,7 +69,7 @@ fn evaluate_depth<'a>(
 }
 
 /// Formatting is deliberately locale independent; arbitrary objects are not debug-formatted.
-fn scalar_text(value: &DynamicObject<'_>) -> PixuiResult<String> {
+pub(crate) fn scalar_text(value: &DynamicObject<'_>) -> PixuiResult<String> {
     if let Some(text) = value.downcast_ref::<String>() {
         check_text_size(text.len())?;
         return Ok(text.clone());

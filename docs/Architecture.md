@@ -16,6 +16,28 @@ generate the ignored SVG automatically on changes, or `./n render-diagrams`
 for a single export pass. A fresh checkout needs an export before this image
 is available.
 
+### UI definition compiler
+
+The engine's `ui_language` module compiles `.pixui` source through lexing,
+parsing, explicit name resolution, type checking, and lowering to existing live
+parts. It does not create native windows or mutate application state. Rust host
+code exports components, application bindings, actions, and constant
+layouts/styles. The worker installs successfully compiled definitions through
+existing registration.
+
+Immutable source snapshots and byte spans accompany syntax, resolved and typed
+nodes. Diagnostics use one representation across compiler stages; compiled
+expressions and bindings retain source origins for evaluation/registration
+errors. Translated templates register through the same i18n mechanism as Rust
+definitions. Indexed loop scopes retain outer values; compiled event bindings
+capture owned request snapshots and generational references rather than
+borrowing application data.
+
+See [the language reference](../crates/engine/src/ui_language/README.md) and
+[the showcase template](../examples/showcase/ui/language.pixui). Rust-built and
+compiled templates share traversal, state identity, layout, painters and
+renderers.
+
 ### State organization
 
 `Application` owns an append-only vector of homogeneous collections and named

@@ -8,6 +8,10 @@ use crate::application::app::Application;
 pub struct ExpressionContext<'a> {
     language: crate::i18n::indices::LanguageIndex,
     application: Option<&'a Application>,
+    locals: Vec<(
+        &'a DynamicObject<'a>,
+        Option<(crate::application::collection_key::CollectionKey, usize)>,
+    )>,
     value: Option<&'a DynamicObject<'a>>,
 }
 
@@ -17,6 +21,7 @@ impl<'a> ExpressionContext<'a> {
         Self {
             language: Default::default(),
             application: Some(application),
+            locals: vec![],
             value: None,
         }
     }
@@ -26,6 +31,7 @@ impl<'a> ExpressionContext<'a> {
         Self {
             language: Default::default(),
             application: None,
+            locals: vec![],
             value: Some(value),
         }
     }
@@ -50,15 +56,50 @@ impl<'a> ExpressionContext<'a> {
             .ok_or_else(|| pixui_error!("expression requires a current value"))
     }
 
-    /// Sets the current loop element while retaining application access.
+    /// Indexed lexical loop inputs; zero selects the innermost loop.
+    pub fn local(&self, depth: usize) -> PixuiResult<&'a DynamicObject<'a>> {
+        self.locals
+            .iter()
+            .rev()
+            .nth(depth)
+            .map(|(value, _)| *value)
+            .ok_or_else(|| pixui_error!("invalid loop scope depth"))
+    }
+    /// Address of a collection-backed loop item. Positions are used only during
+    /// the immutable render to immediately mint a checked generational handle.
+    pub fn local_address(
+        &self,
+        depth: usize,
+    ) -> PixuiResult<(crate::application::collection_key::CollectionKey, usize)> {
+        self.locals
+            .iter()
+            .rev()
+            .nth(depth)
+            .and_then(|(_, address)| *address)
+            .ok_or_else(|| pixui_error!("action item references require a collection-backed loop"))
+    }
+    /// Sets the current loop element and retains access to enclosing loops.
     pub fn with_value<'b>(&self, value: &'b DynamicObject<'b>) -> ExpressionContext<'b>
     where
         'a: 'b,
     {
+        self.with_loop_value(value, None)
+    }
+    pub(crate) fn with_loop_value<'b>(
+        &self,
+        value: &'b DynamicObject<'b>,
+        address: Option<(crate::application::collection_key::CollectionKey, usize)>,
+    ) -> ExpressionContext<'b>
+    where
+        'a: 'b,
+    {
+        let mut locals = self.locals.clone();
+        locals.push((value, address));
         ExpressionContext {
             language: self.language,
             application: self.application,
             value: Some(value),
+            locals,
         }
     }
 }

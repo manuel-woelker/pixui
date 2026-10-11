@@ -64,6 +64,11 @@ impl Visitor for PrepareVisitor<'_> {
             .activation
             .map(|factory| factory(entry.context, self.settings))
             .transpose()?;
+        let activate = if let Some(program) = &part.compiled_activation {
+            Some(program.prepare(entry.context, &values)?)
+        } else {
+            activate
+        };
         let mut styles = part.styles.clone();
         if let Some(resolve) = part.style_resolver {
             styles.extend(resolve(entry.context, self.settings)?);
@@ -91,7 +96,11 @@ impl Visitor for PrepareVisitor<'_> {
             address: binding.address(),
             props,
             activate,
-            activation_factory: part.activation.map(|factory| factory as usize),
+            activation_factory: part
+                .compiled_activation
+                .as_ref()
+                .map(|program| std::sync::Arc::as_ptr(program) as usize)
+                .or_else(|| part.activation.map(|factory| factory as usize)),
         });
         Ok(())
     }

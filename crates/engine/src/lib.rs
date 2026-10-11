@@ -11,3 +11,5 @@ pub mod painters;
 pub mod resources;
 pub mod styles;
 pub mod ui;
+
+pub mod ui_language;

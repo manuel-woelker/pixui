@@ -138,6 +138,11 @@ impl TranslationRegistry {
         if depth >= MAX_NESTING {
             return Err(pixui_error!("i18n nesting exceeds limit"));
         }
+        if let ExpressionKind::Program(program) = expression.kind_mut() {
+            for child in &mut std::sync::Arc::make_mut(program).children {
+                self.resolve(domain, child, depth + 1)?;
+            }
+        }
         if let ExpressionKind::I18n(message) = expression.kind_mut() {
             let source = message.validate()?;
             for (_, argument) in &mut message.arguments {

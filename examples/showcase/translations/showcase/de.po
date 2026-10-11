@@ -158,3 +158,15 @@ msgstr "Projekt archivieren"
 
 msgid "Project board · 36 projects / 216 tasks"
 msgstr "Projektübersicht · 36 Projekte / 216 Aufgaben"
+
+msgid "UI language"
+msgstr "UI Sprache"
+
+msgid "Counter: {entities_count}"
+msgstr "Zähler: {entities_count}"
+
+msgid "Defined in a .pixui file"
+msgstr "In einer .pixui Datei definiert"
+
+msgid "Details hidden"
+msgstr "Details ausgeblendet"

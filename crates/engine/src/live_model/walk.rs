@@ -147,7 +147,15 @@ fn walk_at<V: Visitor>(
                     walk_at(
                         &mut for_loop.body,
                         item_state,
-                        &context.with_value(item),
+                        &context.with_loop_value(
+                            item,
+                            match for_loop.expression.kind() {
+                                crate::expression::expression::ExpressionKind::Collection(key) => {
+                                    Some((*key, index))
+                                }
+                                _ => None,
+                            },
+                        ),
                         visitor,
                         path.child(segment),
                     )?;

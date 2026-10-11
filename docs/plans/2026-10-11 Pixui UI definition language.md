@@ -1,7 +1,7 @@
 # Pixui UI definition language
 
-Status: proposed; syntax and unresolved choices below need review before
-implementation.
+Status: implemented; automated repository checks passed and manual showcase
+validation pending. The plan remains active until manual verification passes.
 
 ## Goal
 
@@ -16,10 +16,10 @@ resolution, type checking, and lowering. Keep application behavior in Rust.
 ui Todos domain 'todos' {
     <Column gap=8 padding=16>
         <Label text="Todos" />
-        <Button text="Add todo" on_activate=actions.add_todo() />
+        <Button label="Add todo" on_activate=actions.add_todo() />
         {for todo in collections.todos =>
             <Row gap=8>
-                <Checkbox checked=todo.done
+                <Checkbox label="Completed" checked=todo.done
                           on_activate=actions.mark_done(todo) />
                 <Label text=todo.title />
             </Row>
@@ -244,46 +244,48 @@ typed event-local `content` value and separate change adapter; include it in a
 follow-up only after specifying ownership and request argument rules. Do not
 allow arbitrary Rust callbacks or reflected methods to execute from source text.
 
-## Suggested module layout
+## Implemented module layout
 
 ```text
 ui_language/
   mod.rs                    # module declarations only
   compiler.rs               # public pipeline and compiled result
-  source/{mod.rs, source.rs, span.rs, source_map.rs}
-  diagnostic/{mod.rs, diagnostic.rs, render.rs}
-  lexer/{mod.rs, lexer.rs, token.rs}
+  source/{mod.rs, snapshot.rs, span.rs, origin.rs}
+  diagnostic/{mod.rs, report.rs, render.rs}
+  lexer/{mod.rs, scan.rs, token.rs}
   ast/{mod.rs, definition.rs, part.rs, expression.rs}
-  parser/{mod.rs, parser.rs, expression.rs, recovery.rs}
-  resolution/{mod.rs, environment.rs, resolver.rs, resolved.rs, scope.rs}
-  checking/{mod.rs, checker.rs, typed.rs, conversions.rs}
-  lowering/{mod.rs, lower.rs, binding.rs, source_origins.rs}
+  parser/{mod.rs, parse.rs, expression.rs, tests.rs}
+  resolution/{mod.rs, environment.rs, resolver.rs, resolved.rs}
+  checking/{mod.rs, checker.rs, expression.rs, typed.rs, conversions.rs}
+  lowering/{mod.rs, lower.rs, binding.rs, runtime.rs}
+  tests.rs
   README.md
 ```
 
-Place focused tests in named test modules or integration tests, with `.pixui`
-fixtures for complete examples and diagnostic cases. Split files by actual
-responsibility; all `mod.rs` files contain only declarations.
+Files use distinct names inside their stage modules to avoid redundant module
+names. Markup and expression parsing/checking have separate files. Compiler
+intermediates retain spans; immutable source snapshots provide the source map.
+All module roots contain only declarations.
 
 ## Implementation checklist
 
-- [ ] Resolve the open syntax/API choices below and document the initial
+- [x] Resolve the open syntax/API choices below and document the initial
       grammar.
-- [ ] Implement source snapshots, spans, structured diagnostics, and rendering.
-- [ ] Implement lexer and parser with located AST nodes and bounded recovery.
-- [ ] Add explicit host bindings and opt-in reflected component props metadata.
-- [ ] Implement name resolution, nested lexical scopes, and indexed field
+- [x] Implement source snapshots, spans, structured diagnostics, and rendering.
+- [x] Implement lexer and parser with located AST nodes and bounded recovery.
+- [x] Add explicit host bindings and opt-in reflected component props metadata.
+- [x] Implement name resolution, nested lexical scopes, and indexed field
       lookup.
-- [ ] Implement type checking, checked literal conversion, and match validation.
-- [ ] Add expression runtime/scopes and captured props/event binding support.
-- [ ] Lower components, containers, loops, matches, and declared i18n
+- [x] Implement type checking, checked literal conversion, and match validation.
+- [x] Add expression runtime/scopes and captured props/event binding support.
+- [x] Lower components, containers, loops, matches, and declared i18n
       expressions; propagate source origins into registration and runtime
       errors.
-- [ ] Load a `.pixui` showcase definition with loops, expressions, and an
+- [x] Load a `.pixui` showcase definition with loops, expressions, and an
       action; compare its behavior with the equivalent Rust-built definition.
-- [ ] Document embedding/loading APIs, supported syntax, ownership, diagnostics,
+- [x] Document embedding/loading APIs, supported syntax, ownership, diagnostics,
   and limits. Update architecture documentation for the compiler boundary.
-- [ ] Run `./n check` after each completed unit and resolve introduced failures.
+- [x] Run `./n check` after each completed unit and resolve introduced failures.
 - [ ] Complete manual showcase validation and move this plan to `completed/`.
 
 ## Verification
@@ -310,22 +312,69 @@ responsibility; all `mod.rs` files contain only declarations.
   render behavior continue to work. Manual showcase checks cover activation,
   translations, and focus across loop/branch changes.
 
-## Open questions and recommendations
+## Implementation choices and refinements
 
-1. Confirm this JSX-like syntax versus literal JSX: recommend a deliberately
-   small language with explicit `for`/`match`, not JavaScript compatibility.
-2. Binding scope: recommend explicit exported collection/entity aliases rather
-   than selecting slices implicitly from definition names.
-3. Expression storage: prototype shared indexed programs versus enum extension;
-   choose the smallest approach supporting outer-loop locals and source origins.
-4. Defaults: recommend required props plus explicit adapter defaults initially;
-   a reflection-wide default metadata mechanism is unnecessary for the first UI.
-5. Layout/style syntax: recommend typed constant records and host-exported style
-   names; specify field names, units, Grid tracks, and variant selection first.
-6. File loading: accept caller-supplied text first; the resource filesystem can
-   load `.pixui` text later. Compilation timing is explicit, after host metadata
-   exists and before definition installation; avoid GUI/font work in the
-   compiler.
-7. Source reload and reusable source components are deferred. Reload will need
-   explicit state identity reconciliation and transactional definition
-   replacement.
+1. JSX-like elements use the agreed single-brace controls and bare attributes.
+   Double quotes translate; single quotes interpolate without translation.
+   Parser fixtures exercise separators, nesting, fragments and adjacent
+   attributes.
+2. Host bindings live in an opt-in `Environment`, preserving ordinary component
+   registration. Reflected props use sendable constructors in field order.
+   All fields are required; reserved layout/styles/event names cannot be props.
+3. Shared indexed expression programs extend `ExpressionKind`. Their declared
+   children are traversed by i18n registration. Collection expressions remain
+   direct collection nodes so loop arena identity is preserved.
+4. Runtime lexical scopes retain outer loop inputs. Opaque action refs are
+   allowed only for collection-loop variables and exported entities. General
+   sequence items cannot become arena refs. Action payloads are owned snapshots;
+   collection injections remain omitted from requests.
+5. Reflection metadata and ownership adapters are separate: field chains need
+   `Reflect`; owned custom values require explicit Clone/Send/Sync adapters.
+   Standard Label/Button/Checkbox props opt into sendable reflection. Borrowed
+   field chains use safe consuming reflected views, including typed Any fields.
+6. Layout uses constant numeric container attributes, explicit exported
+   `LayoutStyle` values, and Grid track literals (`Npx`, `Nfr`, `auto`). Styles
+   use exported slot assignments. Painter slot/family validation uses existing
+   application registration; errors retain the definition source origin.
+7. Template placeholders derive from source paths, not numeric runtime indices.
+   Identical paths reuse arguments; conflicting normalized names are errors.
+   More complex expressions use deterministic occurrence names. Path/source
+   edits can change catalog keys and require updated translations.
+8. Input is caller-supplied text, with `include_str!` used by the showcase.
+   `CompiledDefinition::install` installs a whole definition; `into_template`
+   embeds it with the enclosing definition's domain. Compilation is headless;
+   installation uses existing transactional registration and source locations.
+9. Stage diagnostics are structured; runtime/registration errors retain
+   filename/line/column through the existing shared error vocabulary.
+   Independent sibling errors are collected with a bounded count. Parser limits
+   and malformed source mutations are tested. Diagnostic columns count Unicode
+   scalars.
+10. `on_change`, imports, source components, dynamic layouts/styles, native
+    metadata syntax, and source hot reload remain deferred as planned. Plain
+    collection views cannot be assigned to owned props/action fields; read an
+    exported owned sequence or its fields instead.
+
+## Verification record
+
+- Source/lexer/parser checks passed, including UTF-8/CRLF, nested quoted
+  interpolations, single-brace controls, brace-free attributes and malformed
+  input.
+- Compiler/runtime checks passed before final hardening: nested scopes and field
+  chains, scalar conversion, match validation, default i18n/source templates,
+  deferred actions, stale refs, and foreign application indices.
+- The showcase includes a UI language pane from
+  `examples/showcase/ui/language.pixui`. Worker tests exercise actual clicks,
+  shared updates, new loop rows, conditionals and German translations.
+- Architecture, root README and showcase documentation reference the compiler.
+- Final `./n check` passed all seven tasks, including formatting, compilation,
+  Clippy, nextest and documentation tests. Parser tests include bounded
+  input/depth, character-deletion mutations, and valid source spans for
+  malformed inputs.
+- Follow-up tests verify short-circuit evaluation of stale entity reads,
+  independent type diagnostics, general-sequence reference rejection, and atomic
+  installation failure. Reflection tests cover borrowed field chains, owned-view
+  rejection, descriptor mismatches and sequence storage limits.
+- Manual validation is pending: select the UI language showcase pane, activate
+  its buttons/checkbox, and compare collection rows and translated/source-only
+  templates in the English and German windows. The plan stays active until this
+  verification succeeds.

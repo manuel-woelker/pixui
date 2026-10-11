@@ -6,11 +6,12 @@ use crate::application::collection_key::CollectionKey;
 #[derive(Clone)]
 pub struct Expression {
     kind: ExpressionKind,
+    pub(crate) origin: Option<crate::ui_language::source::origin::Origin>,
 }
 
 impl Expression {
     pub fn new(kind: ExpressionKind) -> Self {
-        Self { kind }
+        Self { kind, origin: None }
     }
 
     /// Read a derived value. The callback must not hide translatable declarations;
@@ -91,6 +92,7 @@ impl Expression {
 /// Operations supported by the expression evaluator.
 #[derive(Clone)]
 pub enum ExpressionKind {
+    Program(std::sync::Arc<crate::ui_language::lowering::runtime::Program>),
     Computed(
         for<'a> fn(
             &crate::expression::context::ExpressionContext<'a>,

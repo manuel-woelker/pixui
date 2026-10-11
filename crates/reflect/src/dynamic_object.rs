@@ -220,6 +220,39 @@ impl<'a> DynamicObject<'a> {
         self.descriptor.read_object(self.as_any()?, index)
     }
 
+    /// Borrows a struct view for the lifetime of this object. Sequence adapters
+    /// expose iteration instead and cannot be viewed through Any.
+    pub fn shared_view(&self) -> PixuiResult<DynamicObject<'_>> {
+        DynamicObject::borrow(self.as_any()?, self.descriptor)
+    }
+
+    /// Reads a field while consuming a borrowed view, preserving the underlying
+    /// receiver lifetime across a field chain. Owned storage is rejected because
+    /// dropping its owner would invalidate the returned reference.
+    pub fn into_read_object(self, index: FieldIndex) -> PixuiResult<DynamicObject<'a>> {
+        match self.storage {
+            Storage::Shared(value) => self.descriptor.read_object(value, index),
+            Storage::Mutable(value) => self.descriptor.read_object(value, index),
+            _ => Err(pixui_error!("field chains require borrowed struct storage")),
+        }
+    }
+
+    /// Reads an indexed Any field with a separately registered descriptor.
+    /// Receiver and field types are checked. This also supports fields registered
+    /// with `Field::typed` instead of a reflected object getter.
+    pub fn into_read_with_descriptor(
+        self,
+        index: FieldIndex,
+        descriptor: &'static TypeDescriptor,
+    ) -> PixuiResult<DynamicObject<'a>> {
+        let value = match self.storage {
+            Storage::Shared(value) => value,
+            Storage::Mutable(value) => value,
+            _ => return Err(pixui_error!("field chains require borrowed struct storage")),
+        };
+        DynamicObject::borrow(self.descriptor.read(value, index)?, descriptor)
+    }
+
     pub fn read_object_named(&self, name: &str) -> PixuiResult<DynamicObject<'_>> {
         self.read_object(self.field_index(name)?)
     }

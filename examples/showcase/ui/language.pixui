@@ -1,0 +1,20 @@
+ui LanguageDemo domain 'showcase' {
+    <Column gap=8>
+        <Label text="UI language" />
+        <Label text="Counter: {entities.count}" />
+        <Row gap=8>
+            <Button label="Increment counter" on_activate=actions.increment() />
+            <Button label="Add sample" on_activate=actions.add_sample() />
+        </Row>
+        <Checkbox label="Show details" checked=entities.details
+                  on_activate=actions.toggle_details() />
+        {match entities.details;
+            true => <Label text="Defined in a .pixui file" />,
+            false => <Label text="Details hidden" />,
+        }
+        {for sample in collections.samples =>
+            <Label text=sample.label />
+        }
+        <Label text='Untranslated template: {entities.count}' />
+    </Column>
+}

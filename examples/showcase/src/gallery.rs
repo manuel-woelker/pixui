@@ -259,6 +259,7 @@ pub fn definition(
     let projects =
         app.entity_ref::<Vec<crate::model::data::LayoutProject>>(slice, "layout_projects")?;
     let layout_page = crate::layout_demo::page(components, count, projects)?;
+    let language_page = crate::language_demo::page(app, components)?;
     let navigation = ContainerPart::column()
         .with_layout(LayoutStyle {
             width: Length::Pixels(SIDEBAR_WIDTH),
@@ -277,6 +278,7 @@ pub fn definition(
             navigation_item::<4>(components, "Text and translations")?,
             navigation_item::<5>(components, "Styles")?,
             navigation_item::<6>(components, "Layout")?,
+            navigation_item::<7>(components, "UI language")?,
         ])
         .into();
     let selected_page = LivePart::Match(MatchPart::new(
@@ -289,6 +291,7 @@ pub fn definition(
             text_page,
             styles_page,
             layout_page,
+            language_page,
         ]
         .into_iter()
         .enumerate()
