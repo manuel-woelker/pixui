@@ -3,6 +3,7 @@ name = "pixui-example-showcase"
 version.workspace = true
 edition.workspace = true
 publish = false
+default-run = "pixui-example-showcase"
 
 [dependencies]
 pixui-base = { path = "../../crates/base" }

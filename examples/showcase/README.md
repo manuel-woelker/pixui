@@ -114,6 +114,16 @@ geometry. Containers clip by default. See the
 span both panes. Counter actions use a nested Flex row; images are shown only on
 the Images page.
 
+Profile the complete Layout page without opening native windows:
+
+```bash
+./t cargo run --release -p pixui-example-showcase --bin profile_layout -- --frames 300
+```
+
+See [layout profiling](../../docs/performance/Layout%20profiling.md) for the
+stage breakdown, measured experiments and proposed improvements. `--width` and
+`--height` select a viewport; startup and 20 warmup frames are excluded.
+
 ## Style gallery
 
 Select **Styles** to compare primary, quiet and danger recipes; compact and
