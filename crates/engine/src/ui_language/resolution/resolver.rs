@@ -23,6 +23,8 @@ pub fn resolve(
         environment,
         locals: vec![],
         errors: vec![],
+        slice: None,
+        event: None,
     };
     let root = resolver.part(&definition.root);
     match root {
@@ -43,9 +45,18 @@ struct Resolver<'a> {
     environment: &'a Environment,
     locals: Vec<String>,
     errors: Vec<Diagnostic>,
+    slice: Option<String>,
+    event: Option<&'static pixui_reflect::TypeDescriptor>,
 }
 impl Resolver<'_> {
     fn part(&mut self, part: &Part) -> Result<ResolvedPart, Diagnostic> {
+        let previous = self.slice.clone();
+        let result = self.part_inner(part);
+        self.slice = previous;
+        self.event = None;
+        result
+    }
+    fn part_inner(&mut self, part: &Part) -> Result<ResolvedPart, Diagnostic> {
         let kind = match &part.kind {
             AstPart::Element {
                 name,
@@ -71,6 +82,46 @@ impl Resolver<'_> {
                     }
                     _ => None,
                 };
+                if component.is_none()
+                    && name.is_some()
+                    && let Some(scope) = attributes
+                        .iter()
+                        .find(|attribute| attribute.name.value == "slice")
+                {
+                    let AstExpression::Template {
+                        translated: false,
+                        segments,
+                    } = &scope.value.kind
+                    else {
+                        return Err(Diagnostic::new(
+                            Stage::Resolution,
+                            "R011",
+                            scope.value.span,
+                            "slice requires a static single-quoted name",
+                        ));
+                    };
+                    let mut scope_name = String::new();
+                    for segment in segments {
+                        let SegmentKind::Text(text) = &segment.kind else {
+                            return Err(Diagnostic::new(
+                                Stage::Resolution,
+                                "R011",
+                                segment.span,
+                                "slice cannot contain interpolation",
+                            ));
+                        };
+                        scope_name.push_str(text);
+                    }
+                    if !self.environment.slices.contains_key(&scope_name) {
+                        return Err(Diagnostic::new(
+                            Stage::Resolution,
+                            "R011",
+                            scope.value.span,
+                            format!("unknown exported slice `{scope_name}`"),
+                        ));
+                    }
+                    self.slice = Some(scope_name);
+                }
                 let mut seen = std::collections::HashMap::new();
                 let mut resolved = vec![];
                 for attribute in attributes {
@@ -85,10 +136,8 @@ impl Resolver<'_> {
                         .secondary(previous, "first attribute"));
                     }
                     if let Some(component) = &component
-                        && !matches!(
-                            attribute.name.value.as_str(),
-                            "on_activate" | "layout" | "styles"
-                        )
+                        && !matches!(attribute.name.value.as_str(), "layout" | "styles" | "focus")
+                        && !attribute.name.value.starts_with('@')
                         && !component
                             .props
                             .fields()
@@ -102,7 +151,47 @@ impl Resolver<'_> {
                             format!("unknown property `{}`", attribute.name.value),
                         ));
                     }
-                    resolved.push((attribute.name.clone(), self.expression(&attribute.value)?));
+                    if attribute.name.value == "slice" && component.is_none() {
+                        continue;
+                    }
+                    self.event = if let Some(event_name) = attribute.name.value.strip_prefix('@') {
+                        let Some(component) = &component else {
+                            return Err(Diagnostic::new(
+                                Stage::Resolution,
+                                "R012",
+                                attribute.name.span,
+                                "containers do not declare component events",
+                            ));
+                        };
+                        Some(
+                            component
+                                .events
+                                .iter()
+                                .find(|event| event.name == event_name)
+                                .ok_or_else(|| {
+                                    Diagnostic::new(
+                                        Stage::Resolution,
+                                        "R012",
+                                        attribute.name.span,
+                                        format!(
+                                            "unknown event `{event_name}`; available: {}",
+                                            component
+                                                .events
+                                                .iter()
+                                                .map(|event| event.name)
+                                                .collect::<Vec<_>>()
+                                                .join(", ")
+                                        ),
+                                    )
+                                })?
+                                .payload,
+                        )
+                    } else {
+                        None
+                    };
+                    let value = self.expression(&attribute.value)?;
+                    self.event = None;
+                    resolved.push((attribute.name.clone(), value));
                 }
                 let mut parts = vec![];
                 for child in children {
@@ -228,7 +317,15 @@ impl Resolver<'_> {
                     });
                 }
 
-                let (root, skip) = if let Some(depth) = self
+                let (root, skip) = if let Some(payload) = self.event.filter(|payload| {
+                    first.value == "event"
+                        || payload
+                            .fields()
+                            .iter()
+                            .any(|field| field.name == first.value)
+                }) {
+                    (Root::Event(payload), usize::from(first.value == "event"))
+                } else if let Some(depth) = self
                     .locals
                     .iter()
                     .rev()
@@ -276,26 +373,55 @@ impl Resolver<'_> {
                 }
             }
             AstExpression::Call { path, arguments } => {
-                if path.len() != 2 || path[0].value != "actions" {
+                let (slice, action) = match path.as_slice() {
+                    [action] => (
+                        self.slice.as_ref().ok_or_else(|| {
+                            Diagnostic::new(
+                                Stage::Resolution,
+                                "R007",
+                                action.span,
+                                "unqualified action requires an enclosing container slice",
+                            )
+                        })?,
+                        action,
+                    ),
+                    [slice, action] => (&slice.value, action),
+                    _ => {
+                        return Err(Diagnostic::new(
+                            Stage::Resolution,
+                            "R007",
+                            expression.span,
+                            "expected slice.action or action",
+                        ));
+                    }
+                };
+                if !self.environment.slices.contains_key(slice) {
                     return Err(Diagnostic::new(
                         Stage::Resolution,
-                        "R007",
-                        expression.span,
-                        "only exported action calls are supported",
+                        "R008",
+                        path[0].span,
+                        format!("unknown exported slice `{slice}`"),
                     ));
                 }
                 let handle = *self
                     .environment
                     .actions
-                    .get(&path[1].value)
+                    .get(&(slice.clone(), action.value.clone()))
                     .ok_or_else(|| {
-                        Diagnostic::new(Stage::Resolution, "R008", path[1].span, "unknown action")
+                        Diagnostic::new(
+                            Stage::Resolution,
+                            "R008",
+                            action.span,
+                            format!("unknown exported action `{slice}.{}`", action.value),
+                        )
                     })?;
                 ExpressionKind::Call {
                     handle,
                     arguments: arguments
                         .iter()
-                        .map(|argument| self.expression(argument))
+                        .map(|argument| {
+                            Ok((argument.name.clone(), self.expression(&argument.value)?))
+                        })
                         .collect::<Result<_, _>>()?,
                 }
             }

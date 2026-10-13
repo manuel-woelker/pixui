@@ -25,6 +25,7 @@ use pixui_base::{PixuiResult, pixui_error};
 
 struct Block;
 impl Component for Block {
+    type Events = crate::events::interface::NoEvents;
     type Props = ();
     type State = ();
 }

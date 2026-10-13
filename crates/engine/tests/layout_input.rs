@@ -28,6 +28,7 @@ mod actions {
 }
 struct Node;
 impl Component for Node {
+    type Events = dyn pixui_engine::events::standard::ActivationEvents;
     type Props = ();
     type State = ();
 }
@@ -154,6 +155,17 @@ fn clipped_pointer_targets_and_offscreen_keyboard_targets_are_separate() {
     let revision = app
         .inspect(move |app| Ok(app.uis().instance(id)?.revision()))
         .unwrap();
+    app.ui_command(UiCommand::Input {
+        instance: id,
+        revision,
+        input: UiInput::MouseButton {
+            button: MouseButton::Left,
+            state: ButtonState::Pressed,
+            position: Point { x: 17.0, y: 17.0 },
+            modifiers: Default::default(),
+        },
+    })
+    .unwrap();
     app.ui_command(UiCommand::Input {
         instance: id,
         revision,

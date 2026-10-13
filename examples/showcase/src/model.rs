@@ -51,6 +51,12 @@ pub mod actions {
         Ok(())
     }
 
+    /// Record a custom component click using its typed payload coordinates.
+    #[action]
+    pub fn record_click(mut last_click: EntityMut<String>, x: f32, y: f32) {
+        *last_click = format!("{x:.0}, {y:.0}");
+    }
+
     /// Select a gallery page in every presentation, preserving demo data.
     #[action]
     pub fn select(mut selected: EntityMut<u64>, page: u64) -> PixuiResult<()> {
@@ -101,6 +107,7 @@ pub fn register(application: &ApplicationHandle) -> PixuiResult<()> {
     let samples =
         application.register_collection(Collection::new_reflected::<data::Sample>("samples"))?;
     slice.bind_collection("samples", samples)?;
+    slice.bind("last_click", String::new())?;
     slice.bind("text", String::new())?;
     slice.bind("uppercase", String::new())?;
     slice.bind("limited", String::new())?;

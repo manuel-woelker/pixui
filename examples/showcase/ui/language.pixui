@@ -1,13 +1,13 @@
 ui LanguageDemo domain 'showcase' {
-    <Column gap=8>
+    <Column slice='showcase' gap=8>
         <Label text="UI language" />
         <Label text="Counter: {entities.count}" />
         <Row gap=8>
-            <Button label="Increment counter" on_activate=actions.increment() />
-            <Button label="Add sample" on_activate=actions.add_sample() />
+            <Button label="Increment counter" @activate=increment() />
+            <Button label="Add sample" @activate=add_sample() />
         </Row>
         <Checkbox label="Show details" checked=entities.details
-                  on_activate=actions.toggle_details() />
+                  @activate=toggle_details() />
         {match entities.details;
             true => <Label text="Defined in a .pixui file" />,
             false => <Label text="Details hidden" />,
@@ -15,6 +15,9 @@ ui LanguageDemo domain 'showcase' {
         {for sample in collections.samples =>
             <Label text=sample.label />
         }
+        <ClickArea label="Click to report pointer coordinates" layout=layouts.click_area
+                   @click=record_click(y: y, x: event.x) />
+        <Label text="Last click: {entities.last_click}" />
         <Label text='Untranslated template: {entities.count}' />
     </Column>
 }

@@ -30,6 +30,7 @@ mod actions {
 }
 struct Node;
 impl Component for Node {
+    type Events = dyn pixui_engine::events::standard::ActivationEvents;
     type Props = ();
     type State = ();
 }

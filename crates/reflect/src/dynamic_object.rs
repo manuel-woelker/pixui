@@ -45,6 +45,19 @@ pub struct DynamicObject<'a> {
 }
 
 impl DynamicObject<'static> {
+    /// Owns an already erased sendable value after checking its descriptor.
+    /// Useful when reflected constructors or callback adapters return SendValue.
+    pub fn from_send(
+        value: pixui_base::erased_value::SendValue,
+        descriptor: &'static TypeDescriptor,
+    ) -> PixuiResult<Self> {
+        descriptor.check_receiver(value.as_ref())?;
+        Ok(Self {
+            storage: Storage::Owned(value),
+            descriptor,
+        })
+    }
+
     /// Erases a reflected value using its automatically generated descriptor.
     pub fn from_reflect<T: Reflect>(value: T) -> Self {
         Self::new(value, T::type_descriptor())

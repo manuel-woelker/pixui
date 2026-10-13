@@ -66,11 +66,11 @@ fn setup(capacity: usize) -> (ApplicationHandle, SliceId, ActionIndex) {
 }
 
 fn call(slice: SliceId, action: ActionIndex, amount: i32) -> ActionCall {
-    ActionCall {
+    ActionCall::new(
         slice,
         action,
-        request: Box::new(increment_action::request::Request { amount }),
-    }
+        Box::new(increment_action::request::Request { amount }),
+    )
 }
 
 fn count(application: &ApplicationHandle, slice: SliceId) -> i32 {
@@ -225,11 +225,7 @@ fn handler_and_validation_errors_do_not_stop_worker() {
         .unwrap()
         .wait();
     assert!(result.err().unwrap().to_string().contains("nonnegative"));
-    let wrong = ActionCall {
-        slice,
-        action,
-        request: Box::new(String::new()),
-    };
+    let wrong = ActionCall::new(slice, action, Box::new(String::new()));
     assert!(application.dispatch(wrong).unwrap().wait().is_err());
     assert_eq!(
         *application

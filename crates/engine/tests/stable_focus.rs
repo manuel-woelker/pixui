@@ -45,6 +45,7 @@ fn noop() {}
 
 struct Node;
 impl Component for Node {
+    type Events = dyn pixui_engine::events::standard::ActivationEvents;
     type Props = ();
     type State = ();
 }
@@ -175,8 +176,8 @@ impl Fixture {
         result
     }
     fn command(&mut self, command: UiCommand) -> PixuiResult<()> {
-        if let Some(call) = self.uis.command(command, &self.app)? {
-            self.app.dispatch(call)?;
+        for call in self.uis.command(command, &self.app)? {
+            self.app.dispatch(call?)?;
             self.uis.invalidate_all();
         }
         self.uis.render_dirty(&self.app);
@@ -440,6 +441,18 @@ fn focus_navigation_is_independent_of_activation_and_scoped_to_a_definition() {
     drain(&outputs);
     // An explicitly nonfocusable action still activates with the pointer.
     let rect = f.uis.instance(instance).unwrap().layout().component_bounds[2];
+    f.input(
+        instance,
+        UiInput::MouseButton {
+            button: MouseButton::Left,
+            state: ButtonState::Pressed,
+            position: Point {
+                x: rect.x + 1.0,
+                y: rect.y + 1.0,
+            },
+            modifiers: Default::default(),
+        },
+    );
     f.input(
         instance,
         UiInput::MouseButton {

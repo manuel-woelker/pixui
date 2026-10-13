@@ -48,6 +48,8 @@ impl ActionHandle {
     /// Wrong counts and types return constructor errors before anything is queued.
     pub fn call(&self, fields: SendValues) -> PixuiResult<ActionCall> {
         Ok(ActionCall {
+            callback_origin: None,
+            event_name: None,
             slice: self.slice,
             action: self.index,
             request: self.descriptor.arguments().construct_send(fields)?,

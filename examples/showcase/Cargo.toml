@@ -6,6 +6,7 @@ publish = false
 default-run = "pixui-example-showcase"
 
 [dependencies]
+pixui-engine-macros = { path = "../../crates/engine-macros" }
 pixui-base = { path = "../../crates/base" }
 pixui-reflect = { path = "../../crates/reflect" }
 pixui-engine = { path = "../../crates/engine" }

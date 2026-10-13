@@ -32,6 +32,7 @@ impl ImageState {
     }
 }
 impl Component for ImageComponent {
+    type Events = crate::events::interface::NoEvents;
     type Props = ImageProps;
     type State = ImageState;
     fn prepare(

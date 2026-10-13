@@ -43,6 +43,7 @@ mod data {
 }
 struct CountComponent;
 impl crate::live_model::component::Component for CountComponent {
+    type Events = crate::events::interface::NoEvents;
     type Props = data::CountProps;
     type State = ();
 }
@@ -105,7 +106,7 @@ fn fixture() -> Fixture {
     env.collection::<data::Item>("todos", &app, collection)
         .unwrap();
     env.entity("first", &app, reference).unwrap();
-    env.action("mark_done", handle).unwrap();
+    env.action(&app, "items", "mark_done", handle).unwrap();
     Fixture {
         app,
         env,
@@ -142,8 +143,18 @@ impl Visitor for Inspect {
             if let Some(button) = props.downcast_ref::<ButtonProps>() {
                 self.texts.push(button.label.clone());
             }
-            if let Some(program) = &part.compiled_activation {
-                self.actions.push(program.prepare(entry.context, &values)?);
+            for callback in &part.events {
+                if let crate::events::binding::Callback::Program(program) = &callback.callback {
+                    let binding = program.prepare(entry.context)?;
+                    self.actions.push(Box::new(move |app| {
+                        binding(
+                            app,
+                            &pixui_reflect::DynamicObject::from_reflect(
+                                crate::events::standard::ActivationEventsActivatePayload {},
+                            ),
+                        )
+                    }));
+                }
             }
             self.paths.push(entry.path.clone());
         }
@@ -174,7 +185,7 @@ fn compiled_loops_fields_templates_match_and_deferred_actions_work() {
         {for todo in collections.todos => <>
             <Label text="Todo: {todo.title}" />
             <Label text='Raw {todo.detail.name} {{ok}}' />
-            <Button label="Done" on_activate=actions.mark_done(todo) />
+            <Button label="Done" @activate=items.mark_done(item: todo) />
             {match todo.done; true => <Label text="Completed" />, false => <Label text="Open" />,}
             {for child in todo.children => <Label text='{todo.title}: {child.name}' />}
         </>}
@@ -246,7 +257,7 @@ fn translation_is_default_and_untranslated_templates_are_not_exported() {
 fn errors_are_precise_at_all_stages() {
     let f = fixture();
     for (source, stage, fragment) in [
-        ("ui X {<Label text=@ />}", Stage::Lexer, "@"),
+        ("ui X {<Label text=$ />}", Stage::Lexer, "$"),
         ("ui X {<Label text='x'></Button>}", Stage::Parser, "Button"),
         ("ui X {<Unknown />}", Stage::Resolution, "Unknown"),
         ("ui X {<Label unknown='x' />}", Stage::Resolution, "unknown"),
@@ -258,9 +269,9 @@ fn errors_are_precise_at_all_stages() {
         ("ui X {<Label text=true />}", Stage::Checking, "true"),
         ("ui X {<Count value=256 />}", Stage::Checking, "256"),
         (
-            "ui X {<Label text=actions.mark_done(entities.first) />}",
+            "ui X {<Label text=items.mark_done(item: entities.first) />}",
             Stage::Checking,
-            "actions.mark_done(entities.first)",
+            "items.mark_done(item: entities.first)",
         ),
     ] {
         let errors = match compile("error.pixui", source, &f.env) {
@@ -288,7 +299,7 @@ fn rejects_invalid_loop_match_and_template_contracts() {
         "ui X {<Label text='x' text='y'/>}",
         "ui X {<Label text=entities.first />}",
         "ui X {<Label text=\"{collections.todos}\" />}",
-        "ui X {<Button label='x' on_activate=actions.mark_done(true) />}",
+        "ui X {<Button label='x' @activate=items.mark_done(item: true) />}",
         "ui X {<Row gap=-1/>}",
         "ui X {<Grid columns='bad'/>}",
     ] {
@@ -449,7 +460,7 @@ fn general_sequence_loop_items_cannot_become_entity_references() {
         .unwrap();
     let reference = f.app.entity_ref::<Vec<data::Item>>(slice, "list").unwrap();
     f.env.entity("list", &f.app, reference).unwrap();
-    assert!(compile("refs.pixui","ui X {{for item in entities.list => <Button label='x' on_activate=actions.mark_done(item)/>}}",&f.env).is_err());
+    assert!(compile("refs.pixui","ui X {{for item in entities.list => <Button label='x' @activate=items.mark_done(item: item)/>}}",&f.env).is_err());
 }
 #[test]
 fn installation_is_transactional_and_errors_retain_source() {

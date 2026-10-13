@@ -1,4 +1,5 @@
 //! Explicit host exports. No source name implies a slice, Rust type, or callback.
+pub use crate::events::value::{ReferenceExport, Snapshot, ValueType};
 use crate::ui_language::lowering::binding::LanguageBinding;
 use crate::{
     application::{
@@ -9,47 +10,14 @@ use crate::{
     expression::expression::Expression,
     live_model::component::Component,
 };
-use pixui_base::{PixuiResult, erased_value::SendValue, pixui_error};
-use pixui_reflect::{DynamicObject, Reflect, TypeDescriptor};
-use std::{
-    any::{Any, TypeId},
-    collections::HashMap,
-    sync::Arc,
-};
+use pixui_base::{PixuiResult, pixui_error};
+use pixui_reflect::{Reflect, TypeDescriptor};
+use std::{any::TypeId, collections::HashMap, sync::Arc};
 
-pub type Snapshot = Arc<dyn Any + Send + Sync>;
-#[derive(Clone)]
-pub struct ValueType {
-    pub descriptor: &'static TypeDescriptor,
-    pub(crate) snapshot: fn(&DynamicObject<'_>) -> PixuiResult<Snapshot>,
-    pub(crate) send: fn(&dyn Any) -> PixuiResult<SendValue>,
-}
-impl ValueType {
-    pub fn of<T: Reflect + Clone + Send + Sync>() -> Self {
-        Self {
-            descriptor: T::type_descriptor(),
-            snapshot: |value| {
-                Ok(Arc::new(
-                    value
-                        .downcast_ref::<T>()
-                        .ok_or_else(|| pixui_error!("expected {}", std::any::type_name::<T>()))?
-                        .clone(),
-                ))
-            },
-            send: |value| {
-                Ok(Box::new(
-                    value
-                        .downcast_ref::<T>()
-                        .ok_or_else(|| pixui_error!("incorrect snapshot type"))?
-                        .clone(),
-                ))
-            },
-        }
-    }
-}
 #[derive(Clone)]
 pub struct ComponentExport {
     pub props: &'static TypeDescriptor,
+    pub events: &'static [crate::events::interface::EventDescriptor],
     pub(crate) build: Arc<
         dyn Fn(Vec<ValueType>) -> Arc<dyn crate::component_registry::binding::ErasedBinding>
             + Send
@@ -62,21 +30,14 @@ pub struct DataExport {
     pub expression: Expression,
     pub descriptor: &'static TypeDescriptor,
 }
-#[derive(Clone)]
-pub struct ReferenceExport {
-    pub item: TypeId,
-    pub value: ValueType,
-    pub(crate) entity:
-        fn(&crate::application::erased_object_ref::ErasedObjectRef) -> PixuiResult<Snapshot>,
-    pub(crate) make: fn(&Application, CollectionKey, usize) -> PixuiResult<Snapshot>,
-}
 /// Environments are application-local. Duplicate exports are rejected atomically.
 #[derive(Clone)]
 pub struct Environment {
     pub(crate) components: HashMap<String, ComponentExport>,
     pub(crate) collections: HashMap<String, DataExport>,
     pub(crate) entities: HashMap<String, DataExport>,
-    pub(crate) actions: HashMap<String, ActionHandle>,
+    pub(crate) actions: HashMap<(String, String), ActionHandle>,
+    pub(crate) slices: HashMap<String, crate::application::application_slice::SliceId>,
     pub(crate) types: HashMap<TypeId, ValueType>,
     pub(crate) descriptors: HashMap<TypeId, &'static TypeDescriptor>,
     pub(crate) layouts: HashMap<String, crate::layout::style::LayoutStyle>,
@@ -95,6 +56,7 @@ impl Environment {
             collections: HashMap::new(),
             entities: HashMap::new(),
             actions: HashMap::new(),
+            slices: HashMap::new(),
             types: HashMap::new(),
             descriptors: HashMap::new(),
             references: HashMap::new(),
@@ -132,7 +94,7 @@ impl Environment {
         if props
             .fields()
             .iter()
-            .any(|field| matches!(field.name, "layout" | "styles" | "on_activate"))
+            .any(|field| matches!(field.name, "layout" | "styles" | "focus"))
         {
             return Err(pixui_error!(
                 "component props collide with reserved language attributes"
@@ -149,6 +111,7 @@ impl Environment {
             name,
             ComponentExport {
                 props,
+                events: <C::Events as crate::events::interface::EventInterface>::descriptors(),
                 build: Arc::new(move |types| {
                     Arc::new(LanguageBinding::<C> {
                         address,
@@ -157,7 +120,13 @@ impl Environment {
                     })
                 }),
             },
-        )
+        )?;
+        for event in <C::Events as crate::events::interface::EventInterface>::descriptors() {
+            for descriptor in &event.parameter_types {
+                self.descriptors.insert(descriptor.type_id(), descriptor);
+            }
+        }
+        Ok(())
     }
     /// Checks collection ownership/type and reflection immediately.
     pub fn collection<T: Reflect + Send>(
@@ -206,8 +175,39 @@ impl Environment {
         self.reference::<T>();
         Ok(())
     }
-    pub fn action(&mut self, name: &str, handle: ActionHandle) -> PixuiResult<()> {
-        insert(&mut self.actions, name, handle)
+    /// Exposes an action under its application slice name. Checks ownership before
+    /// inserting; exporting one action grants no access to its unexported peers.
+    pub fn action(
+        &mut self,
+        app: &Application,
+        slice: &str,
+        name: &str,
+        handle: ActionHandle,
+    ) -> PixuiResult<()> {
+        let owner = app.slice_named(slice)?;
+        self.action_alias(slice, owner.id(), name, handle)
+    }
+    /// Explicit identifier alias for a slice whose application name is unsuitable
+    /// for dotted language calls. Registration identities remain checked.
+    pub fn action_alias(
+        &mut self,
+        slice: &str,
+        id: crate::application::application_slice::SliceId,
+        name: &str,
+        handle: ActionHandle,
+    ) -> PixuiResult<()> {
+        validate_identifier(slice)?;
+        validate_identifier(name)?;
+        if handle.slice_id() != id || self.slices.get(slice).is_some_and(|old| *old != id) {
+            return Err(pixui_error!("action export has incorrect slice ownership"));
+        }
+        let key = (slice.to_owned(), name.to_owned());
+        if self.actions.contains_key(&key) {
+            return Err(pixui_error!("duplicate action export"));
+        }
+        self.slices.insert(slice.to_owned(), id);
+        self.actions.insert(key, handle);
+        Ok(())
     }
     pub fn layout(
         &mut self,
@@ -261,5 +261,16 @@ fn insert<T>(map: &mut HashMap<String, T>, name: &str, value: T) -> PixuiResult<
         ));
     }
     map.insert(name.to_owned(), value);
+    Ok(())
+}
+
+fn validate_identifier(name: &str) -> PixuiResult<()> {
+    if name.is_empty()
+        || !name.bytes().enumerate().all(|(index, ch)| {
+            ch.is_ascii_alphabetic() || ch == b'_' || (index > 0 && ch.is_ascii_digit())
+        })
+    {
+        return Err(pixui_error!("invalid language identifier `{name}`"));
+    }
     Ok(())
 }

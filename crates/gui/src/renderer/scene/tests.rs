@@ -428,6 +428,7 @@ fn gpu_and_software_draw_engine_flex_and_grid_layouts_with_the_same_clips() {
     };
     struct Tile;
     impl Component for Tile {
+        type Events = pixui_engine::events::interface::NoEvents;
         type Props = ();
         type State = ();
     }

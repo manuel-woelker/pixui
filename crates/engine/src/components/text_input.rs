@@ -11,6 +11,32 @@ pub struct TextInputProps {
 #[derive(Default)]
 pub struct TextInputState;
 impl Component for TextInputComponent {
+    const INPUT_INTEREST: crate::events::interface::InputInterest =
+        crate::events::interface::InputInterest {
+            keyboard: true,
+            ..crate::events::interface::InputInterest::NONE
+        };
+    type Events = dyn crate::events::standard::TextInputEvents;
+    fn handle_input(
+        _props: &Self::Props,
+        _state: &mut Self::State,
+        input: &crate::events::interface::ComponentInput,
+        events: &Self::Events,
+    ) -> pixui_base::PixuiResult<bool> {
+        if let crate::events::interface::ComponentInput::Raw(crate::ui::input::UiInput::Keyboard(
+            event,
+        )) = input
+            && event.state == crate::ui::input::ButtonState::Pressed
+            && !event.repeat
+            && !event.synthetic
+            && matches!(&event.key, crate::ui::input::Key::Named(name) if name == "Enter")
+        {
+            events.submit()?;
+            return Ok(true);
+        }
+        Ok(false)
+    }
+
     type Props = TextInputProps;
     type State = TextInputState;
     fn prepare(

@@ -19,6 +19,9 @@ static NEXT_REGISTRY: AtomicU64 = AtomicU64::new(1);
 /// physical node; descriptors never contain per-instance state.
 pub struct ComponentDescriptor {
     pub name: String,
+    pub events: &'static [crate::events::interface::EventDescriptor],
+    pub(crate) input_interest: crate::events::interface::InputInterest,
+    pub(crate) input: crate::events::routing::InputHandler,
     pub component_type: TypeId,
     pub props_type: TypeId,
     pub state_type: TypeId,
@@ -63,11 +66,22 @@ impl ComponentRegistry {
                 "empty or duplicate component registration `{name}`"
             ));
         }
+        use crate::events::interface::EventInterface;
+        let events = C::Events::descriptors();
+        let mut event_names = std::collections::HashSet::new();
+        for event in events {
+            if event.name.is_empty() || !event_names.insert(event.name) {
+                return Err(pixui_error!("empty or duplicate component event"));
+            }
+        }
         let index = self.descriptors.len();
         self.names.insert(name.clone(), index);
         self.types.insert(TypeId::of::<C>(), index);
         self.descriptors.push(ComponentDescriptor {
             name,
+            events,
+            input: crate::events::routing::handle::<C>,
+            input_interest: C::INPUT_INTEREST,
             component_type: TypeId::of::<C>(),
             props_type: TypeId::of::<C::Props>(),
             state_type: TypeId::of::<C::State>(),
@@ -130,6 +144,62 @@ impl ComponentRegistry {
                     if let Some(address) = part.component_address() {
                         let descriptor = self.resolve(address)?;
                         painters.require(address, descriptor)?;
+                        let mut events = std::collections::HashSet::new();
+                        for event in &part.events {
+                            let declared = descriptor
+                                .events
+                                .iter()
+                                .find(|declared| declared.name == event.name)
+                                .ok_or_else(|| {
+                                    pixui_error!("unknown component event `{}`", event.name)
+                                })?;
+                            if !events.insert(&event.name) {
+                                return Err(pixui_error!(
+                                    "duplicate component event binding `{}`",
+                                    event.name
+                                ));
+                            }
+                            if let crate::events::binding::Callback::Rust { payload, .. } =
+                                &event.callback
+                                && payload.type_id() != declared.payload.type_id()
+                            {
+                                return Err(pixui_error!("event key belongs to another interface"));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Resolves declaration names before publication; input uses indices only.
+    pub(crate) fn resolve_events(&self, template: &mut LivePart) -> PixuiResult<()> {
+        let mut pending = vec![template];
+        while let Some(part) = pending.pop() {
+            match part {
+                LivePart::Composite(part) => pending.extend(&mut part.parts),
+                LivePart::Container(part) => pending.extend(&mut part.children),
+                LivePart::ForLoop(part) => pending.push(&mut part.body),
+                LivePart::Match(part) => pending.extend(
+                    part.candidates
+                        .iter_mut()
+                        .map(|candidate| &mut candidate.part),
+                ),
+                LivePart::Component(part) => {
+                    if let Some(address) = part.component_address() {
+                        let descriptor = self.resolve(address)?;
+                        for event in &mut part.events {
+                            event.index = Some(
+                                descriptor
+                                    .events
+                                    .iter()
+                                    .position(|declared| declared.name == event.name)
+                                    .ok_or_else(|| {
+                                        pixui_error!("unknown component event `{}`", event.name)
+                                    })?,
+                            );
+                        }
                     }
                 }
             }

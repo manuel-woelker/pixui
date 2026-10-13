@@ -31,12 +31,38 @@ expressions and bindings retain source origins for evaluation/registration
 errors. Translated templates register through the same i18n mechanism as Rust
 definitions. Indexed loop scopes retain outer values; compiled event bindings
 capture owned request snapshots and generational references rather than
-borrowing application data.
+borrowing application data. Payload-dependent work runs when a component emits
+an event; ordinary application reads retain their published snapshot.
 
 See [the language reference](../crates/engine/src/ui_language/README.md) and
 [the showcase template](../examples/showcase/ui/language.pixui). Rust-built and
 compiled templates share traversal, state identity, layout, painters and
 renderers.
+
+### Component events
+
+Components declare an associated event trait beside their props and state.
+`pixui-engine-macros` generates object-safe proxy implementations, reflected
+parameter payloads and indexed descriptors. Worker input hooks receive typed
+props, retained source-instance state and a shared event proxy. A local queue
+holds emissions until the hook returns; actions then execute in order through
+the existing dispatch path. Painters never invoke callbacks.
+
+Published instance geometry carries resolved props and event bindings. Targeted
+input uses source-window clipping and revision checks; stable paths locate
+retained state directly. Focus, hover and editing remain shared by the UI
+definition. Valid pointer clicks require a press/release over the same target;
+hiding, focus loss and application invalidation cancel pending gestures.
+
+In `.pixui`, `@change=set_draft(value: content)` binds an event to an action.
+Reflected event parameters are implicit callback locals, with `event.content`
+available explicitly. Actions use named request fields. Containers establish
+inherited slice scopes; an explicit `todos.set_draft(...)` overrides the scope.
+The compiler resolves the exported slice/action pair to a handle.
+Worker-injected arguments remain absent from source requests.
+
+See [component events](../crates/engine/src/events/README.md) and
+[the controlled text template](../examples/showcase/ui/text.pixui).
 
 ### State organization
 

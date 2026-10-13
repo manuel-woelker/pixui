@@ -41,12 +41,24 @@ fn click(app: &ApplicationHandle, instance: UiInstanceId, output: &RenderOutput,
         revision: output.revision,
         input: UiInput::MouseButton {
             button: MouseButton::Left,
+            state: ButtonState::Pressed,
+            position,
+            modifiers: Default::default(),
+        },
+    })
+    .unwrap();
+    app.ui_command(UiCommand::Input {
+        instance,
+        revision: output.revision,
+        input: UiInput::MouseButton {
+            button: MouseButton::Left,
             state: ButtonState::Released,
             position,
             modifiers: Default::default(),
         },
     })
     .unwrap();
+    app.inspect(|_| Ok(())).unwrap();
 }
 
 #[test]

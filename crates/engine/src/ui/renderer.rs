@@ -1,7 +1,6 @@
 //! Prepare once, then paint into one shared builder at final hierarchical layout positions.
 
 use super::{
-    activation::ActionBinding,
     display_list::{DisplayList, DrawCommand},
     display_list_builder::DisplayListBuilder,
     geometry::{Point, Rect},
@@ -28,10 +27,9 @@ struct PreparedComponent {
     styles: Vec<crate::styles::slots::SlotAssignment>,
     address: ComponentAddress,
     props: Box<dyn Any + Send>,
-    change: Option<super::text_input::binding::ChangeBinding>,
-    change_factory: Option<usize>,
-    activate: Option<ActionBinding>,
-    activation_factory: Option<usize>,
+    events: Vec<Option<crate::events::binding::EventBinding>>,
+    event_identities: Vec<Option<usize>>,
+    event_descriptors: &'static [crate::events::interface::EventDescriptor],
 }
 struct PrepareVisitor<'a> {
     settings: &'a PresentationSettings,
@@ -54,32 +52,31 @@ impl Visitor for PrepareVisitor<'_> {
             .map(|expression| crate::expression::evaluator::evaluate(entry.context, expression))
             .collect::<PixuiResult<Vec<_>>>()?;
         let props = binding.prepare(entry.context, self.settings, &mut state.state, &values)?;
-        if part.change.is_some()
-            && binding.address().component_type
-                != std::any::TypeId::of::<crate::components::text_input::TextInputComponent>()
-        {
-            return Err(pixui_error!("change bindings require TextInputComponent"));
-        }
-        let activate = part
-            .activation
-            .map(|factory| factory(entry.context, self.settings))
-            .transpose()?;
-        let activate = if let Some(program) = &part.compiled_activation {
-            Some(program.prepare(entry.context, &values)?)
-        } else {
-            activate
-        };
+        let descriptors = entry
+            .context
+            .application()?
+            .components
+            .resolve(binding.address())?
+            .events;
+        let (events, event_identities) = crate::events::binding::prepare(
+            &part.events,
+            descriptors,
+            entry.context,
+            self.settings,
+        )?;
+        let activates = descriptors
+            .iter()
+            .enumerate()
+            .any(|(index, descriptor)| descriptor.name == "activate" && events[index].is_some());
         let mut styles = part.styles.clone();
         if let Some(resolve) = part.style_resolver {
             styles.extend(resolve(entry.context, self.settings)?);
         }
         self.components.push(PreparedComponent {
             styles,
-            change: part
-                .change
-                .map(|factory| factory(entry.context, self.settings))
-                .transpose()?,
-            change_factory: part.change.map(|factory| factory as usize),
+            events,
+            event_identities,
+            event_descriptors: descriptors,
             path: entry.path.clone(),
             focus: part
                 .focus_resolver
@@ -87,7 +84,7 @@ impl Visitor for PrepareVisitor<'_> {
                 .transpose()?
                 .unwrap_or(part.focus)
                 .resolved(
-                    activate.is_some()
+                    activates
                         || binding.address().component_type
                             == std::any::TypeId::of::<
                                 crate::components::text_input::TextInputComponent,
@@ -95,12 +92,6 @@ impl Visitor for PrepareVisitor<'_> {
                 ),
             address: binding.address(),
             props,
-            activate,
-            activation_factory: part
-                .compiled_activation
-                .as_ref()
-                .map(|program| std::sync::Arc::as_ptr(program) as usize)
-                .or_else(|| part.activation.map(|factory| factory as usize)),
         });
         Ok(())
     }
@@ -337,9 +328,7 @@ pub(crate) fn render_with_pointer(
             .insert(component.path.clone(), index);
         layout.component_paths.push(component.path.clone());
         layout.component_addresses.push(component.address);
-        layout
-            .activation_factories
-            .push(component.activation_factory);
+        layout.event_identities.push(component.event_identities);
         layout.content_bounds.push(content);
         layout.component_clips.push(geometry.clip);
         let input_target = if component.address.component_type
@@ -390,8 +379,18 @@ pub(crate) fn render_with_pointer(
                 bounds: content,
                 clip: geometry.clip.intersect(content),
                 scroll,
-                change: component.change,
-                change_factory: component.change_factory,
+                editable: component
+                    .event_descriptors
+                    .iter()
+                    .enumerate()
+                    .any(|(index, event)| {
+                        event.name == "change" && component.events[index].is_some()
+                    }),
+                change_factory: component
+                    .event_descriptors
+                    .iter()
+                    .position(|event| event.name == "change")
+                    .and_then(|index| layout.event_identities.last().unwrap()[index]),
             })
         } else {
             None
@@ -439,13 +438,30 @@ pub(crate) fn render_with_pointer(
                 });
             }
         }
-        if component.activate.is_some() && geometry.clip.width > 0.0 && geometry.clip.height > 0.0 {
+        let interest = application
+            .components
+            .resolve(component.address)?
+            .input_interest;
+        let pointer_events = (interest.pointer || interest.click)
+            && !component.event_descriptors.is_empty()
+            || component
+                .event_descriptors
+                .iter()
+                .enumerate()
+                .any(|(index, event)| {
+                    event.name == "activate" && component.events[index].is_some()
+                });
+        if pointer_events && geometry.clip.width > 0.0 && geometry.clip.height > 0.0 {
             layout.hit_regions.push(HitRegion {
                 bounds: geometry.clip,
                 component_index: index,
             });
         }
-        layout.activations.push(component.activate);
+        layout.events.push(crate::events::binding::PreparedEvents {
+            descriptors: component.event_descriptors,
+            bindings: component.events,
+            props: component.props,
+        });
         if let Some(target) = input_target {
             layout.text_inputs.push(target);
         }

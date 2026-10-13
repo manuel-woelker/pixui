@@ -1,9 +1,11 @@
 # Typed components and painters
 
-A component declares identity, owned props, and persistent state. State
-implements `Default`; props and state implement `Send + 'static`. Neither needs
-`Clone`, `Sync`, or reflection. Two component types can share associated types
-and still have independent identities.
+A component declares identity, owned props, persistent state and an associated
+`Events` interface. Use `NoEvents` for inert components or a trait annotated
+with `#[component_events]`. State implements `Default`; props and state
+implement `Send + 'static`. Neither needs `Clone`, `Sync`, or reflection. Two
+component types can share associated types and still have independent
+identities.
 
 Register components and then painters before registering UI definitions:
 
@@ -121,3 +123,13 @@ and drawing; raw custom painters remain shared and may hold configuration.
 Declaration-local assignments and variants do not mutate registrations. See
 [painter styles](../styles/README.md) for reflection, registration, precedence,
 font metrics and output-table ownership.
+
+## Component events
+
+Components translate targeted worker input into typed event methods through
+`Component::handle_input`. Generated proxies queue owned payloads; the worker
+invokes callbacks after releasing the hook's state borrow. Event names and
+payload identities are checked at registration, then indexed for emission.
+Painters remain independent of behavior. See
+[component events](../events/README.md) for interfaces, binding factories, input
+interests and ownership contracts.

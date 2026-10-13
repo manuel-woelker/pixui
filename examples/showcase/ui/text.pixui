@@ -1,0 +1,17 @@
+ui TextDemo domain 'showcase' {
+    <Column slice='showcase' gap=12 layout=layouts.full>
+        <Label text="Text and translations" />
+        <Label text="Shared data, hover and focus · independent theme and locale" />
+        <Label text="Counter: {entities.count}" />
+        <Label text="Controlled text" />
+        <TextInput content=entities.text layout=layouts.full
+                   @change=edit_text(content: content) />
+        <Label text="Normalized to uppercase" />
+        <TextInput content=entities.uppercase layout=layouts.full
+                   @change=edit_uppercase(content: event.content) />
+        <Label text="At most 12 characters; longer edits are rejected" />
+        <TextInput content=entities.limited layout=layouts.full
+                   @change=edit_limited(content: content) />
+        <Button label="Focus without activation" focus='sequential' />
+    </Column>
+}

@@ -1,8 +1,8 @@
 //! Worker-side UI state for one native window or headless rendering target.
 
 use super::{
-    activation::ActionBinding, definition::UiDefinitionId, display_list::RenderRevision,
-    geometry::Rect, mailbox::OutputSender, presentation::PresentationSettings,
+    definition::UiDefinitionId, display_list::RenderRevision, geometry::Rect,
+    mailbox::OutputSender, presentation::PresentationSettings,
 };
 use crate::live_model::{identity::ComponentPath, state::LiveState};
 
@@ -36,7 +36,7 @@ pub struct LayoutState {
     pub component_paths: Vec<ComponentPath>,
     /// Index lookup in this successful preparation, never a persistent identity.
     pub component_indices: std::collections::HashMap<ComponentPath, usize>,
-    pub(crate) activations: Vec<Option<ActionBinding>>,
+    pub(crate) events: Vec<crate::events::binding::PreparedEvents>,
     /// Focusable pointer regions, independent of activation hit regions.
     pub focus_regions: Vec<HitRegion>,
     pub hit_regions: Vec<HitRegion>,
@@ -45,7 +45,7 @@ pub struct LayoutState {
     pub component_clips: Vec<Rect>,
     pub container_bounds: Vec<Rect>,
     pub(crate) component_addresses: Vec<crate::component_registry::component_id::ComponentAddress>,
-    pub(crate) activation_factories: Vec<Option<usize>>,
+    pub(crate) event_identities: Vec<Vec<Option<usize>>>,
     pub content_height: f32,
     /// Derived geometry: shared requested scroll clamped for this viewport.
     pub scroll_offset: f32,
@@ -79,7 +79,7 @@ impl LayoutState {
             && self.content_bounds == previous.content_bounds
             && self.component_clips == previous.component_clips
             && self.component_addresses == previous.component_addresses
-            && self.activation_factories == previous.activation_factories
+            && self.event_identities == previous.event_identities
             && self
                 .focus_targets
                 .iter()

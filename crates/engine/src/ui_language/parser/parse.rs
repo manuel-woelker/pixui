@@ -155,7 +155,12 @@ impl Parser<'_> {
             if self.token().span.start == previous {
                 return Err(self.error("attributes require separating whitespace or a comment"));
             }
-            let name = self.name()?;
+            let at = self.consume(&TokenKind::At);
+            let mut name = self.name()?;
+            if let Some(at) = at {
+                name.value.insert(0, '@');
+                name.span = at.span.join(name.span);
+            }
             self.expect(TokenKind::Equal)?;
             let value = self.expression(0)?;
             previous = value.span.end;

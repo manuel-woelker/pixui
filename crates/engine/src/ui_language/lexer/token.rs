@@ -17,6 +17,7 @@ pub enum TokenKind {
     Comma,
     Semicolon,
     Colon,
+    At,
     Arrow,
     LeftBrace,
     RightBrace,

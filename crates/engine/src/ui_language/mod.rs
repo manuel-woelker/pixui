@@ -10,3 +10,6 @@ pub mod source;
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod event_tests;

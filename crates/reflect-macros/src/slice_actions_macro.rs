@@ -149,11 +149,11 @@ pub(super) fn expand(options: Options, mut module: ItemMod) -> syn::Result<Token
             #(#conditional)*
             #(#docs)*
             pub fn #name(&self, #(#parameters),*) -> ::pixui_base::PixuiResult<#output> {
-                let call = ::pixui_engine::application::action::ActionCall {
-                    slice: self.#field.slice_id(),
-                    action: self.#field.index(),
-                    request: ::std::boxed::Box::new(#action_module::request::Request { #(#request_fields),* }),
-                };
+                let call = ::pixui_engine::application::action::ActionCall::new(
+                    self.#field.slice_id(),
+                    self.#field.index(),
+                    ::std::boxed::Box::new(#action_module::request::Request { #(#request_fields),* }),
+                );
                 let output = self.application.dispatch(call)?.wait()?;
                 output.downcast::<#output>().map(|value| *value)
                     .map_err(|_| ::pixui_base::pixui_error!("action `{}` returned an unexpected output type", stringify!(#name)))

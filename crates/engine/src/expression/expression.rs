@@ -92,7 +92,7 @@ impl Expression {
 /// Operations supported by the expression evaluator.
 #[derive(Clone)]
 pub enum ExpressionKind {
-    Program(std::sync::Arc<crate::ui_language::lowering::runtime::Program>),
+    Program(std::sync::Arc<crate::expression::program::Program>),
     Computed(
         for<'a> fn(
             &crate::expression::context::ExpressionContext<'a>,

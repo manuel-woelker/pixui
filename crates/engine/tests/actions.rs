@@ -96,11 +96,7 @@ fn dispatches_without_collection_injection_and_avoids_parameter_name_collisions(
     );
     assert!(
         application
-            .dispatch(ActionCall {
-                slice: id,
-                action: ActionIndex(99),
-                request: Box::new(false),
-            })
+            .dispatch(ActionCall::new(id, ActionIndex(99), Box::new(false)))
             .is_err()
     );
 }

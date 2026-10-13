@@ -31,3 +31,5 @@ props!(super::checkbox::CheckboxProps {
     label: String,
     checked: bool
 });
+
+props!(super::text_input::TextInputProps { content: String });

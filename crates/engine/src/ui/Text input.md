@@ -3,9 +3,10 @@
 `TextInputComponent` is a single-line core component. Register it and its
 standard painter with the ordinary standard registration helpers.
 `TextInputProps` has one field, `content: String`, which is the sole source of
-committed displayed text. Add `ComponentPart::with_change` to make it editable.
-Without this binding, the field supports focus, selection and copying but cannot
-change content.
+committed displayed text. Bind its `change` event to make it editable, using
+`@change` in `.pixui`, a generated typed event key in Rust, or the
+`ComponentPart::with_change` migration helper. Without this binding, the field
+supports focus, selection and copying but cannot change content.
 
 ## Binding an application value
 
@@ -192,3 +193,17 @@ advances, horizontal scrolling and IME geometry. All are measured from the same
 resolved occurrence style at its DPI. Interaction color patches preserve these
 metrics. Selection uses the body foreground; custom selection fills should
 preserve its contrast. See [painter styles](../styles/README.md).
+
+## Source callbacks
+
+```text
+<Column slice='todos'>
+    <TextInput content=entities.draft @change=set_draft(value: content) />
+</Column>
+```
+
+The component declares `TextInputEvents::change(&self, content: String)`.
+`content` and `event.content` refer to that proposal; `value:` names the
+action's request field. Props remain authoritative. Change bindings share the
+engine's [component event mechanism](../events/README.md), including indexed
+dispatch, owned payloads and source-aware errors.

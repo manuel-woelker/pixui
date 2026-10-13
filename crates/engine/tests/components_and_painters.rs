@@ -48,10 +48,12 @@ impl Default for State {
     }
 }
 impl Component for A {
+    type Events = dyn pixui_engine::events::standard::ActivationEvents;
     type Props = Props;
     type State = State;
 }
 impl Component for B {
+    type Events = dyn pixui_engine::events::standard::ActivationEvents;
     type Props = Props;
     type State = State;
 }
@@ -478,6 +480,7 @@ fn shared_image_table_spans_multiple_component_painters() {
     use pixui_engine::ui::{display_list_builder::ImageIndex, image::Image};
     struct Picture;
     impl Component for Picture {
+        type Events = dyn pixui_engine::events::standard::ActivationEvents;
         type Props = ();
         type State = ();
     }
@@ -552,6 +555,7 @@ fn shared_image_table_spans_multiple_component_painters() {
 fn shared_builder_guards_renderer_clips_even_when_painter_tries_to_rebalance() {
     struct BadClip;
     impl Component for BadClip {
+        type Events = dyn pixui_engine::events::standard::ActivationEvents;
         type Props = ();
         type State = ();
     }

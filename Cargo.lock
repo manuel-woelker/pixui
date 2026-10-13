@@ -1838,6 +1838,7 @@ dependencies = [
  "image",
  "notify",
  "pixui-base",
+ "pixui-engine-macros",
  "pixui-reflect",
  "pixui-reflect-macros",
  "png",
@@ -1847,11 +1848,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "pixui-engine-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "pixui-example-showcase"
 version = "0.1.0"
 dependencies = [
  "pixui-base",
  "pixui-engine",
+ "pixui-engine-macros",
  "pixui-gui",
  "pixui-reflect",
 ]

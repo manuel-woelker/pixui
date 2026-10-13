@@ -1,6 +1,5 @@
 //! Published worker-local input target: authoritative props and fresh action binding.
 use super::{
-    binding::ChangeBinding,
     editing::EditState,
     geometry::{TextEditSnapshot, TextInputGeometry},
 };
@@ -13,7 +12,7 @@ pub struct TextInputTarget {
     pub bounds: Rect,
     pub clip: Rect,
     pub scroll: f32,
-    pub(crate) change: Option<ChangeBinding>,
+    pub(crate) editable: bool,
     pub(crate) change_factory: Option<usize>,
 }
 pub(crate) struct RenderEditing<'a> {

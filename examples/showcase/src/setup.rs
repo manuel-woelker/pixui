@@ -14,6 +14,9 @@ pub fn register() -> PixuiResult<(ApplicationHandle, UiDefinitionId)> {
     crate::model::register(&application)?;
     let components = application.register_standard_components()?;
     application.register_standard_painters()?;
+    application.register_component::<crate::click_area::ClickArea>("click-area")?;
+    application
+        .register_painter::<crate::click_area::ClickArea>(crate::click_area::ClickAreaPainter)?;
     crate::styles::register(&application)?;
     let definition =
         application.register_ui(crate::gallery::definition(&application, components)?)?;

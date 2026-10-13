@@ -35,6 +35,7 @@ pub struct CometState {
     pub paused: bool,
 }
 impl Component for OrbitingComets {
+    type Events = pixui_engine::events::interface::NoEvents;
     type Props = CometProps;
     type State = CometState;
     fn prepare(

@@ -15,6 +15,7 @@ pub enum Root {
     Styles(Vec<crate::styles::slots::SlotAssignment>),
     Data(Box<DataExport>),
     Local(usize),
+    Event(&'static pixui_reflect::TypeDescriptor),
 }
 #[derive(Clone)]
 pub struct Expression {
@@ -36,7 +37,7 @@ pub enum ExpressionKind {
     },
     Call {
         handle: ActionHandle,
-        arguments: Vec<Expression>,
+        arguments: Vec<(Name, Expression)>,
     },
     Not(Box<Expression>),
     Binary {

@@ -7,6 +7,7 @@ pub struct LabelProps {
 #[derive(Default)]
 pub struct LabelState;
 impl Component for LabelComponent {
+    type Events = crate::events::interface::NoEvents;
     type Props = LabelProps;
     type State = LabelState;
 }

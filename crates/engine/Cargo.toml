@@ -5,6 +5,7 @@ edition.workspace = true
 publish = false
 
 [dependencies]
+pixui-engine-macros = { path = "../engine-macros" }
 fontdue = "=0.9.4"
 etagere = "=0.2.15"
 crossbeam-channel = "0.5.17"

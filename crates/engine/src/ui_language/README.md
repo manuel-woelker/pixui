@@ -10,11 +10,11 @@ methods.
 
 ```text
 ui Todos domain 'todos' {
-    <Column gap=8 padding=16>
+    <Column slice='todos' gap=8 padding=16>
         <Label text="Todos" />
         {for todo in collections.todos => <Row gap=8>
             <Label text="Todo: {todo.title}" />
-            <Button label="Mark done" on_activate=actions.mark_done(todo) />
+            <Button label="Mark done" @activate=mark_done(todo: todo) />
         </Row>}
         {match entities.hide_done;
             true => <Label text="Completed items hidden" />,
@@ -92,16 +92,19 @@ assert_eq!(definition.name(), "Example");
 `Environment::collection::<T>(alias, app, key)` and
 `entity(alias, app, reference)` validate application ownership, concrete types
 and liveness immediately. They export `collections.alias` and `entities.alias`.
-`action(alias, handle)` exports `actions.alias(...)`, retaining the registered
-request schema. Namespace exports reject duplicates; aliases are explicit and
-unrelated to definition names.
+`action(app, slice, alias, handle)` exports `slice.alias(...)`, validates slice
+ownership and retains the registered request schema. `action_alias` provides an
+explicit identifier alias for slice names unsuitable for dotted calls. Namespace
+exports reject duplicates; aliases are explicit and unrelated to definition
+names.
 
 `component(alias, id)` is opt-in: props must implement `Reflect` with a sendable
 field-ordered constructor. `#[pixui_reflect::reflect(send)]` on an inline module
-provides this for custom props. Label, Button and Checkbox props already support
-it. Ordinary Rust component registration and unreflected component state remain
-supported. Every props field is required; there are no implicit
-defaults/coercions. Attribute order is independent of constructor order.
+provides this for custom props. Label, Button, Checkbox and TextInput props
+already support it. Ordinary Rust component registration and unreflected
+component state remain supported. Every props field is required; there are no
+implicit defaults/coercions. Attribute order is independent of constructor
+order.
 
 Primitive/string ownership adapters are provided. Export custom metadata through
 `reflected_type::<T>()` for nested field/sequence access. If a field must become
@@ -124,19 +127,51 @@ Loop variables have lexical scopes; inner loops may shadow names while other
 outer names remain accessible. Collection loops retain full generational arena
 identity. Other reflected sequences retain positional identity.
 
-`on_activate=actions.name(arguments...)` prepares an owned request recipe during
-rendering. It dispatches only after activation. Arguments are positional request
-fields; collection/entity injections are absent, as in Rust action facades.
-Scalar/value arguments become owned snapshots. A bare collection-loop variable
-or exported entity can satisfy an `ObjectRef<T>` request field. Loops over
-general sequences cannot supply opaque item refs. The source cannot construct
-arbitrary addresses. Dispatch still checks generations, application identity and
-liveness.
+Bind declared component events with `@name=action(...)`, for example:
 
-Repeated activations clone captured payloads to make fresh requests. Source
-expressions do not run again when activating an already published binding.
-Definition content invalidation refreshes the binding through existing
-rendering. Controlled text input and `on_change` bindings are deferred.
+```text
+<Column slice='todos'>
+    <TextInput content=entities.draft @change=set_draft(value: content) />
+    <Button label="Add" @activate=add(title: entities.draft) />
+</Column>
+```
+
+A container's static `slice='name'` scope is inherited by descendants, including
+loops, fragments and match arms. Nested containers override it for their
+subtree. An explicit `todos.add(...)` call overrides that scope. Unqualified
+calls require an enclosing scope; actions are never searched globally. Hosts
+export an allowlist of slice/action pairs, so an inherited scope cannot grant
+access to other actions.
+
+Arguments are named request fields: `edit(content: content)`. Their order is
+independent of constructor order. Unknown, duplicate, missing or positional
+arguments are errors; zero-field requests use `action()`. Injected collections
+and entities are absent from the request schema and cannot be supplied
+explicitly.
+
+Event method parameters are locals inside their callback: `content` and
+`event.content` access the same field. Parameters shadow loop locals there;
+rename a loop binding if both are needed. There is no explicit parameter binding
+syntax. The `event`, `entities`, `collections`, `layouts` and `styles` parameter
+names are reserved. Ordinary props cannot access callback parameters. Action
+names have separate lookup rules, so a parameter cannot hide a slice in a call
+target.
+
+Callbacks capture owned application/loop values during successful preparation;
+payload-dependent expressions run only when the component emits the event.
+Logical operators remain lazy. Custom captured roots require explicit
+`value_type::<T>()` ownership adapters, including for callback field chains.
+A bare collection-loop variable or exported entity can satisfy an `ObjectRef<T>`
+request field. General sequence elements cannot supply opaque refs. Dispatch
+checks generations, application identity and liveness again.
+
+Repeated emissions produce fresh requests from published captures. Source
+application reads do not retarget to a newer tree. Compatible visual redraws
+retain bindings; content/presentation invalidation prepares fresh ones.
+Controlled text inputs display `content` props and propose replacements through
+`@change`. Callbacks are optional: unbound text inputs remain selectable and
+read-only. See [component events](../events/README.md) for Rust declarations and
+routing.
 
 ## Layout and styles
 
@@ -150,6 +185,9 @@ assignments with `environment.styles(name, assignments)` and use
 `styles=styles.name` on components. Styles and layouts are constants; dynamic
 expressions are deferred. Painter slot/family validation runs during
 installation using the application's registered painters and styles.
+
+Components accept constant `focus='automatic'`, `'sequential'`, `'direct'` or
+`'none'` to preserve focus participation independently of callback bindings.
 
 ## Diagnostics and stages
 

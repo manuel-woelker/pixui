@@ -170,3 +170,10 @@ msgstr "In einer .pixui Datei definiert"
 
 msgid "Details hidden"
 msgstr "Details ausgeblendet"
+
+
+msgid "Click to report pointer coordinates"
+msgstr "Klicken, um Zeigerkoordinaten anzuzeigen"
+
+msgid "Last click: {entities_last_click}"
+msgstr "Letzter Klick: {entities_last_click}"

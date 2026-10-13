@@ -129,7 +129,23 @@ pub struct ActionIndex(pub usize);
 /// The request payload is constructed using the registered action's descriptor.
 /// No serialization, scheduling, or concurrency is implied.
 pub struct ActionCall {
+    pub(crate) callback_origin: Option<Box<crate::ui_language::source::origin::Origin>>,
+    pub(crate) event_name: Option<String>,
     pub slice: SliceId,
     pub action: ActionIndex,
     pub request: ActionRequest,
+}
+
+impl ActionCall {
+    /// Creates an owned request at an explicit address. Dispatch validates its
+    /// request type and target; prefer ActionHandle::call for field construction.
+    pub fn new(slice: SliceId, action: ActionIndex, request: ActionRequest) -> Self {
+        Self {
+            slice,
+            action,
+            request,
+            callback_origin: None,
+            event_name: None,
+        }
+    }
 }

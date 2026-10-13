@@ -1,6 +1,6 @@
 # Component events and callback expressions
 
-Status: proposed.
+Status: completed.
 
 ## Goal
 
@@ -326,29 +326,30 @@ async callbacks or painter-generated events in this iteration.
 
 ## Implementation checklist
 
-- [ ] Finalize and document the associated event trait, payload contracts and
+- [x] Finalize and document the associated event trait, payload contracts and
   callback snapshot semantics.
-- [ ] Implement `#[component_events]`, generated descriptors/payloads/proxies,
+- [x] Implement `#[component_events]`, generated descriptors/payloads/proxies,
   the empty interface and the associated-type adapter.
-- [ ] Add registration validation, index lookup and safe typed emission
+- [x] Add registration validation, index lookup and safe typed emission
       adapters.
-- [ ] Introduce shared prepared callback programs with capture and payload
+- [x] Introduce shared prepared callback programs with capture and payload
       stages.
-- [ ] Add worker event routing/emission, ordered action execution and published
+- [x] Add worker event routing/emission, ordered action execution and published
   binding compatibility/invalidation.
-- [ ] Migrate core activation and text editing without duplicate runtime paths.
-- [ ] Add generalized `.pixui` callback resolution, checking, lowering and
+- [x] Migrate core activation and text editing without duplicate runtime paths.
+- [x] Add generalized `.pixui` callback resolution, checking, lowering and
       spans.
-- [ ] Add `@event` syntax, inherited container slice scopes, slice-qualified
+- [x] Add `@event` syntax, inherited container slice scopes, slice-qualified
   environment exports and checked action resolution; migrate existing sources.
-- [ ] Add named action arguments, implicit event parameter locals, explicit
+- [x] Add named action arguments, implicit event parameter locals, explicit
   `event.field` access and shadowing diagnostics; migrate positional callbacks.
-- [ ] Reflect text-input props and migrate the showcase input pane.
-- [ ] Demonstrate a custom event component with a mouse-generated payload.
-- [ ] Update component, input, text-input and language documentation, plus
+- [x] Reflect text-input props and migrate the showcase input pane.
+- [x] Demonstrate a custom event component with a mouse-generated payload.
+- [x] Update component, input, text-input and language documentation, plus
   `docs/Architecture.md`; record significant decisions following DR-000.
-- [ ] Run `./n check` after each unit of work and complete manual validation.
-- [ ] Move this plan to `completed` after implementation and validation.
+- [x] Run the final `./n check` successfully.
+- [x] Complete native validation in both showcase windows and languages.
+- [x] Move this plan to `completed` after implementation and validation.
 
 ## Verification
 
@@ -395,3 +396,51 @@ async callbacks or painter-generated events in this iteration.
 - Should mouse capture or event bubbling be included? Defer general versions;
   preserve existing text-selection capture and add only press identity tracking
   necessary for correct clicks.
+
+## Implementation notes
+
+- Implementation started after committing this plan as `ef6c133`.
+- Runtime event bindings, capture adapters and dispatch programs live in
+  `events`; general expression programs live in `expression`. Language
+  compilation retains spans and source origins without owning a separate
+  activation runtime.
+- Rust event bindings use generated typed keys such as
+  `TextInputEventsBindings::CHANGE`. `NoEvents` is the empty associated
+  interface. Input hooks declare `INPUT_INTEREST` explicitly; its default is no
+  raw input.
+- Proxy implementations own a clone of their local sink, sharing only its
+  `Rc<RefCell<_>>` queue. This permits a static trait-object associated type
+  without requiring a borrowed proxy to implement a static interface lifetime.
+- Captures currently preserve owned data roots and defer field chains/operators.
+  Custom captured roots require explicit `value_type` adapters. Reflected event
+  parameter descriptors are exported automatically; merely inspecting their
+  fields does not require Clone or Sync.
+- Source callbacks require named arguments, including during migration. Reserved
+  parameter roots also include `layouts` and `styles` to avoid namespace
+  ambiguity.
+- Constant `focus` attributes were added to preserve the showcase's deliberately
+  focusable button without an activation binding during its source conversion.
+- The showcase uses `ui/text.pixui` for controlled inputs and demonstrates a
+  custom mouse payload in `ui/language.pixui`. Full showcase conversion remains
+  separate work because image, dynamic style and container layout gaps remain.
+- Rust requires proc-macro entry points at the crate root (verified with the
+  pinned compiler). `engine-macros/lib.rs` contains only the necessary thin
+  entry point and its module declaration; expansion logic lives in a named
+  module.
+- Input batches can contain an ordered request-building error. Earlier requests
+  execute before that error is reported; later emissions are discarded. Action
+  failures likewise stop the remaining batch without rolling back earlier
+  changes.
+- Native validation passed in both showcase windows, confirmed by the user on
+  2026-10-13. The plan is moved to `completed` after the final repository check.
+
+### Verification results
+
+`./n check` passes all seven tasks, including workspace nextest and doctests.
+Coverage includes shared proxy emission, macro signature failures, named
+argument ordering and diagnostics, nested/inherited slice scopes, parameter
+shadowing, non-Clone/non-Sync custom payload inspection, captured loop fields,
+ordered action and request-building failures, typed Rust bindings, stale
+revisions, matching pointer gestures, shared hover despite input consumption,
+controlled editing and both example applications. Native showcase verification
+was requested and is still pending.

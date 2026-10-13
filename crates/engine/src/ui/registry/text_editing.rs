@@ -150,7 +150,7 @@ impl UiRegistry {
                     .get(&target.path)
                     .unwrap_or(&target.state);
                 native.session = Some(session.id);
-                native.editable = target.change.is_some();
+                native.editable = target.editable;
                 let x = (target.bounds.x
                     + target.geometry.inset
                     + target.geometry.x(edit.selection.head)
@@ -250,7 +250,7 @@ impl UiRegistry {
             .iter()
             .find(|target| target.path == path)
             .expect("session target");
-        let editable = target.change.is_some();
+        let editable = target.editable;
         let initial_state = target.state.clone();
         let time = timestamp(app, instance.settings.timestamp_us);
         let edit = self
@@ -327,14 +327,14 @@ impl UiRegistry {
                 let action = if let Some(proposal) = proposal {
                     let content = proposal.content.clone();
                     edit.pending = Some(proposal);
-                    let change = self.instances[&id]
-                        .layout
-                        .text_inputs
-                        .iter()
-                        .find(|target| target.path == path)
-                        .and_then(|target| target.change.as_ref())
-                        .expect("editable target");
-                    match change(app, content) {
+                    let index = self.instances[&id].layout.component_indices[&path];
+                    let payload = pixui_reflect::DynamicObject::from_reflect(
+                        crate::events::standard::TextInputEventsChangePayload { content },
+                    );
+                    match self.instances[&id].layout.events[index]
+                        .call("change", app, &payload)
+                        .and_then(|call| call.ok_or_else(|| pixui_error!("input became read-only")))
+                    {
                         Ok(action) => Some(action),
                         Err(error) => {
                             self.definitions
@@ -616,11 +616,12 @@ impl UiRegistry {
             .iter()
             .find(|target| &target.path == pending.target.path())
             .expect("session input");
-        let action =
-            target
-                .change
-                .as_ref()
-                .ok_or_else(|| pixui_error!("input became read-only"))?(app, content);
+        let payload = pixui_reflect::DynamicObject::from_reflect(
+            crate::events::standard::TextInputEventsChangePayload { content },
+        );
+        let action = instance.layout.events[target.component_index]
+            .call("change", app, &payload)
+            .and_then(|call| call.ok_or_else(|| pixui_error!("input became read-only")));
         if action.is_err() {
             state.pending = None;
         }

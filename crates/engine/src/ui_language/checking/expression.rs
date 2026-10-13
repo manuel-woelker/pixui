@@ -36,6 +36,7 @@ impl Checker<'_> {
             resolved::ExpressionKind::Path { root, fields } => {
                 let mut descriptor = match root {
                     Root::Data(data) => data.descriptor,
+                    Root::Event(payload) => payload,
                     Root::Local(depth) => self.locals[self.locals.len() - 1 - depth],
                     Root::Layout(_) | Root::Styles(_) => {
                         return Err(self.error(
@@ -43,6 +44,11 @@ impl Checker<'_> {
                             "layout/styles exports only allowed on their reserved attributes",
                         ));
                     }
+                };
+                let capture_type = if self.callback && !matches!(root, Root::Event(_)) {
+                    Some(value_type(self.environment, descriptor.type_id(), span)?)
+                } else {
+                    None
                 };
                 let mut indices = vec![];
                 for name in fields {
@@ -65,6 +71,12 @@ impl Checker<'_> {
                 (
                     ExpressionKind::Path {
                         root: root.clone(),
+                        capture_result: if capture_type.is_some() {
+                            Some(value_type(self.environment, descriptor.type_id(), span)?)
+                        } else {
+                            None
+                        },
+                        capture_type,
                         fields: indices,
                     },
                     descriptor,
@@ -84,9 +96,7 @@ impl Checker<'_> {
                         }
                         Segment::Value(value) => {
                             let typed = self.expression(value, None)?;
-                            if !crate::ui_language::lowering::runtime::is_scalar(
-                                typed.descriptor.type_id(),
-                            ) {
+                            if !crate::expression::program::is_scalar(typed.descriptor.type_id()) {
                                 return Err(
                                     self.error(value.span, "template arguments must be scalars")
                                 );
@@ -148,7 +158,7 @@ impl Checker<'_> {
                     let right = self.expression(right, Some(left.descriptor.type_id()))?;
                     (left, right)
                 };
-                if !crate::ui_language::lowering::runtime::is_scalar(left.descriptor.type_id()) {
+                if !crate::expression::program::is_scalar(left.descriptor.type_id()) {
                     return Err(self.error(span, "comparison requires scalar values"));
                 }
                 (
@@ -165,7 +175,7 @@ impl Checker<'_> {
             }
         };
         if expected.is_some()
-            && matches!(&kind,ExpressionKind::Path {root:Root::Data(data),fields} if fields.is_empty() && matches!(data.expression.kind(),RuntimeKind::Collection(_)))
+            && matches!(&kind,ExpressionKind::Path {root:Root::Data(data),fields,..} if fields.is_empty() && matches!(data.expression.kind(),RuntimeKind::Collection(_)))
         {
             return Err(self.error(
                 span,
@@ -173,10 +183,20 @@ impl Checker<'_> {
             ));
         }
         if expected.is_some_and(|expected| expected != descriptor.type_id()) {
-            return Err(self.error(
+            let mut error = self.error(
                 span,
                 format!("incompatible expression type `{}`", descriptor.type_name()),
-            ));
+            );
+            if matches!(
+                &kind,
+                ExpressionKind::Path {
+                    root: Root::Event(_),
+                    ..
+                }
+            ) {
+                error.notes.push("Event parameters shadow enclosing loop locals inside callbacks; rename the loop variable if you need both values.".into());
+            }
+            return Err(error);
         }
         Ok(Expression {
             kind,
@@ -189,14 +209,36 @@ impl Checker<'_> {
             return Err(self.error(expression.span, "event requires an exported action call"));
         };
         let fields = handle.descriptor().arguments().fields();
-        if arguments.len() != fields.len() {
-            return Err(self.error(
-                expression.span,
-                format!("action expects {} request arguments", fields.len()),
-            ));
+        let mut named = HashMap::new();
+        for (name, value) in arguments {
+            if !fields.iter().any(|field| field.name == name.value) {
+                return Err(self.error(
+                    name.span,
+                    format!(
+                        "unknown action argument `{}`; available: {}",
+                        name.value,
+                        fields
+                            .iter()
+                            .map(|field| field.name)
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ),
+                ));
+            }
+            if let Some((previous, _)) = named.insert(name.value.as_str(), (name.span, value)) {
+                return Err(self
+                    .error(name.span, "duplicate action argument")
+                    .secondary(previous, "first argument"));
+            }
         }
         let mut checked = vec![];
-        for (argument, field) in arguments.iter().zip(fields) {
+        for field in fields {
+            let (_, argument) = named.remove(field.name).ok_or_else(|| {
+                self.error(
+                    expression.span,
+                    format!("missing action argument `{}`", field.name),
+                )
+            })?;
             let id = field
                 .type_id()
                 .ok_or_else(|| self.error(argument.span, "action field lacks type metadata"))?;

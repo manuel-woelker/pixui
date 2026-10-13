@@ -84,6 +84,7 @@ impl Default for RowState {
     }
 }
 impl Component for Row {
+    type Events = dyn pixui_engine::events::standard::ActivationEvents;
     type Props = RowProps;
     type State = RowState;
 }
@@ -211,6 +212,16 @@ fn click(app: &ApplicationHandle, output: &RenderOutput) -> PixuiResult<()> {
         revision: output.revision,
         input: UiInput::MouseButton {
             button: MouseButton::Left,
+            state: ButtonState::Pressed,
+            position: point,
+            modifiers: Default::default(),
+        },
+    })?;
+    app.ui_command(UiCommand::Input {
+        instance: id,
+        revision: output.revision,
+        input: UiInput::MouseButton {
+            button: MouseButton::Left,
             state: ButtonState::Released,
             position: point,
             modifiers: Default::default(),
@@ -306,6 +317,8 @@ fn current_click_invokes_action_but_stale_deleted_and_closed_targets_fail() {
     );
     app.ui_command(UiCommand::Close { instance: id }).unwrap();
     assert!(app.ui_command(UiCommand::Close { instance: id }).is_err());
+    // Closing disconnects the mailbox after any final focus-reconciliation frame.
+    while receiver.try_recv().is_ok() {}
     assert_eq!(receiver.try_recv(), Err(TryRecvError::Disconnected));
 }
 

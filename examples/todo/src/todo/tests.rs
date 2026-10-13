@@ -166,11 +166,7 @@ fn invalid_requests_and_titles_do_not_mutate_the_collection() {
         .unwrap();
     assert!(
         application
-            .dispatch(ActionCall {
-                slice,
-                action,
-                request: Box::new(String::new())
-            })
+            .dispatch(ActionCall::new(slice, action, Box::new(String::new())))
             .is_err()
     );
     static REQUEST: std::sync::OnceLock<add_todo_action::request::Request> =
@@ -180,11 +176,7 @@ fn invalid_requests_and_titles_do_not_mutate_the_collection() {
     });
     assert!(
         application
-            .dispatch(ActionCall {
-                slice,
-                action,
-                request: Box::new(request)
-            })
+            .dispatch(ActionCall::new(slice, action, Box::new(request)))
             .is_err()
     );
     let call = application

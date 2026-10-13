@@ -143,6 +143,7 @@ impl Application {
         (|| {
             self.components
                 .validate(&definition.template, &self.painters)?;
+            self.components.resolve_events(&mut definition.template)?;
             self.painters
                 .validate_template_styles(&definition.template, &self.styles)?;
             let mut translations = self.translations.clone();
@@ -428,10 +429,22 @@ impl Application {
     /// Dispatches to a registered action, resolving borrows only for the call's duration.
     /// A call targeting a removed slice or an invalid action returns an error.
     pub fn dispatch(&mut self, call: ActionCall) -> ActionResult {
-        let action = self.slice(call.slice)?.action(call.action)?;
-        let result = action.invoke(self, call.slice, call.request);
-        self.uis.invalidate_all();
-        result
+        let result = (|| {
+            let action = self.slice(call.slice)?.action(call.action)?;
+            let result = action.invoke(self, call.slice, call.request);
+            self.uis.invalidate_all();
+            result
+        })();
+        result.map_err(|error| {
+            let error = match call.event_name {
+                Some(name) => pixui_error!("event `{name}`: {error}"),
+                None => error,
+            };
+            match call.callback_origin {
+                Some(origin) => origin.error(error),
+                None => error,
+            }
+        })
     }
 
     /// UI definitions and worker-local instance state, available for inspection.
@@ -457,11 +470,11 @@ impl Application {
         let mut uis = std::mem::take(&mut self.uis);
         let result = uis.command(command, self);
         self.uis = uis;
-        let result = match result {
-            Ok(Some(call)) => self.dispatch(call).map(|_| ()),
-            Ok(None) => Ok(()),
-            Err(error) => Err(error),
-        };
+        let result = result.and_then(|calls| {
+            calls
+                .into_iter()
+                .try_for_each(|call| self.dispatch(call?).map(|_| ()))
+        });
         if editing {
             self.render_dirty();
         }

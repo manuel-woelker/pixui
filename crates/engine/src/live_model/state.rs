@@ -105,3 +105,46 @@ impl GenericComponentState {
         self.state.downcast_mut()
     }
 }
+
+impl LiveState {
+    /// Resolves a published structural path without reevaluating loop/match
+    /// expressions. Callers must first validate the source instance's revision.
+    pub(crate) fn component_mut(
+        &mut self,
+        path: &super::identity::ComponentPath,
+    ) -> pixui_base::PixuiResult<&mut GenericComponentState> {
+        use super::identity::PathSegment;
+        let mut part = &mut self.root_state;
+        for segment in path.segments() {
+            part = match (part, segment) {
+                (
+                    PartState::Composite(state) | PartState::Container(state),
+                    PathSegment::Child(index),
+                ) => state.parts.get_mut(*index),
+                (PartState::ForLoop(state), PathSegment::LoopItem(index)) => {
+                    state.items.get_mut(*index)
+                }
+                (PartState::ForLoop(state), PathSegment::LoopKey(key)) => {
+                    let index = state
+                        .keys
+                        .as_ref()
+                        .and_then(|keys| keys.iter().position(|candidate| candidate == key));
+                    index.and_then(|index| state.items.get_mut(index))
+                }
+                (PartState::Match(state), PathSegment::MatchArm(index))
+                    if state.selected == Some(*index) =>
+                {
+                    Some(state.part.as_mut())
+                }
+                _ => None,
+            }
+            .ok_or_else(|| pixui_base::pixui_error!("input target no longer exists"))?;
+        }
+        match part {
+            PartState::Component(state) => Ok(&mut state.state),
+            _ => Err(pixui_base::pixui_error!(
+                "input path does not identify a component"
+            )),
+        }
+    }
+}

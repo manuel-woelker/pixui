@@ -21,6 +21,7 @@ use std::{
     time::Instant,
 };
 
+mod component_events;
 mod text_editing;
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
@@ -41,6 +42,14 @@ pub struct UiRegistry {
     pending_clipboards: HashMap<u64, text_editing::PendingClipboard>,
     text_capture: Option<text_editing::PointerCapture>,
     focus_sources: HashMap<UiDefinitionId, UiInstanceId>,
+    pointer_presses: HashMap<
+        UiInstanceId,
+        (
+            crate::live_model::identity::ComponentPath,
+            super::input::MouseButton,
+        ),
+    >,
+    pending_actions: crate::events::binding::InputActions,
 }
 
 impl UiRegistry {
@@ -141,6 +150,7 @@ impl UiRegistry {
     /// preparation reconciles eligibility; input still rejects stale geometry.
     pub fn invalidate_all(&mut self) {
         self.text_capture = None;
+        self.pointer_presses.clear();
         for instance in self.instances.values_mut() {
             instance.dirty = true;
             instance.window_properties_dirty = true;
@@ -154,6 +164,19 @@ impl UiRegistry {
     /// presented revisions while geometry and targets match. Stale pointer motion is
     /// superseded and discarded. Stale activations return errors, never retarget.
     pub fn command(
+        &mut self,
+        command: UiCommand,
+        application: &Application,
+    ) -> PixuiResult<crate::events::binding::InputActions> {
+        let result = self.command_one(command, application);
+        let mut actions = std::mem::take(&mut self.pending_actions);
+        result.map(|action| {
+            actions.extend(action.map(Ok));
+            actions
+        })
+    }
+
+    fn command_one(
         &mut self,
         command: UiCommand,
         application: &Application,
@@ -196,6 +219,7 @@ impl UiRegistry {
             _ => {}
         }
         if let UiCommand::Close { instance } = command {
+            self.pointer_presses.remove(&instance);
             self.close(instance)?;
             self.sync_text_sessions(None, application)?;
             return Ok(None);
@@ -246,6 +270,9 @@ impl UiRegistry {
                     .presented(paint_revision, timings, timestamp);
             }
             UiCommand::Visibility { visible, .. } => {
+                if !visible {
+                    self.pointer_presses.remove(&command.instance());
+                }
                 if instance.visible != visible {
                     instance.visible = visible;
                     // Preserve accumulated dirty state while hidden. Showing also
@@ -314,6 +341,7 @@ impl UiRegistry {
                 .ok_or_else(|| pixui_error!("unknown UI instance"))?
                 .native_focused = *focused;
             if !focused {
+                self.pointer_presses.remove(&id);
                 self.text_capture = None;
             }
             let definition = self.instance(id)?.definition;
@@ -340,6 +368,10 @@ impl UiRegistry {
             }
             return Ok(None);
         }
+        if !self.instance(id)?.visible {
+            self.pointer_presses.remove(&id);
+            return Ok(None);
+        }
         if let Some(action) = self.text_keyboard(id, revision, None, false, &input, application)? {
             return Ok(action);
         }
@@ -348,6 +380,19 @@ impl UiRegistry {
         }
         let pointer_input = input.clone();
         let intent = interpret(input)?;
+        let component_consumed =
+            self.route_component_input(id, revision, &pointer_input, application)?;
+        if component_consumed
+            && !matches!(
+                intent,
+                InputIntent::Hover(_)
+                    | InputIntent::ClearHover
+                    | InputIntent::Focus(_)
+                    | InputIntent::Activate(_)
+            )
+        {
+            return Ok(None);
+        }
         let instance = self
             .instances
             .get_mut(&id)
@@ -380,7 +425,7 @@ impl UiRegistry {
             .state;
         let before = (state.focus.clone(), state.hover.clone(), state.scroll);
         let mut geometry_changed = false;
-        let mut action = None;
+        let mut activation_target = None;
         match intent {
             InputIntent::ClearHover => {
                 instance.pointer_position = None;
@@ -417,18 +462,14 @@ impl UiRegistry {
                 state.focus =
                     focus_region.map(|region| component_id(instance, region.component_index));
                 self.focus_sources.insert(definition, id);
-                if matches!(intent, InputIntent::Activate(_)) {
-                    action = instance
+                if matches!(intent, InputIntent::Activate(_)) && !component_consumed {
+                    activation_target = instance
                         .layout
                         .hit_regions
                         .iter()
                         .rev()
                         .find(|region| region.bounds.contains(point))
-                        .and_then(|region| {
-                            instance.layout.activations[region.component_index].as_ref()
-                        })
-                        .map(|activate| activate(application))
-                        .transpose()?;
+                        .map(|region| region.component_index);
                 }
             }
             InputIntent::ActivateFocused => {
@@ -442,7 +483,7 @@ impl UiRegistry {
                 }) {
                     state.focus = None;
                 }
-                action = state
+                activation_target = state
                     .focus
                     .as_ref()
                     .filter(|focus| {
@@ -453,9 +494,7 @@ impl UiRegistry {
                             .any(|target| &target.path == focus.path())
                     })
                     .and_then(|focus| instance.layout.component_indices.get(focus.path()))
-                    .and_then(|index| instance.layout.activations[*index].as_ref())
-                    .map(|activate| activate(application))
-                    .transpose()?;
+                    .copied();
             }
             InputIntent::FocusNext { backwards } => {
                 let targets: Vec<_> = instance
@@ -525,7 +564,16 @@ impl UiRegistry {
             session.origin = Some(revision);
         }
         self.text_pointer(id, &pointer_input, application)?;
-        Ok(action)
+        if let Some(index) = activation_target {
+            let (_, actions) = self.component_event(
+                id,
+                index,
+                &crate::events::interface::ComponentInput::Activate,
+                application,
+            )?;
+            self.pending_actions.extend(actions);
+        }
+        Ok(None)
     }
 
     /// Earliest diagnostic refresh across visible windows. The worker can sleep
@@ -662,13 +710,13 @@ impl UiRegistry {
                         // Explicitly keep the published target snapshot for a
                         // compatible visual redraw. Content invalidation and
                         // presentation changes always install fresh bindings.
-                        layout.activations = std::mem::take(&mut instance.layout.activations);
+                        layout.events = std::mem::take(&mut instance.layout.events);
                         for (target, previous) in layout
                             .text_inputs
                             .iter_mut()
                             .zip(&mut instance.layout.text_inputs)
                         {
-                            target.change = previous.change.take();
+                            target.editable = previous.editable;
                         }
                     } else {
                         instance.compatible_revision = RenderRevision(revision);

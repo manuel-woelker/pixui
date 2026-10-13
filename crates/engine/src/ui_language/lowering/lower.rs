@@ -1,5 +1,6 @@
 //! Converts only checked nodes into the existing live-part runtime.
-use super::runtime::{ActionProgram, PathRoot, Program, ProgramKind, RequestArgument};
+use crate::events::program::{ActionProgram, RequestArgument};
+use crate::expression::program::{PathRoot, Program, ProgramKind};
 use crate::{
     expression::expression::{Expression, ExpressionKind},
     live_model::{
@@ -55,11 +56,14 @@ fn part(part: TypedPart, source: &Source) -> PixuiResult<LivePart> {
             export,
             props,
             types,
-            activation,
+            callbacks,
             layout,
             styles,
+            focus,
         } => {
-            let mut component = ComponentPart::default().with_layout(layout);
+            let mut component = ComponentPart::default()
+                .with_layout(layout)
+                .with_focus(focus);
             component.styles = styles;
             component.expressions = props
                 .into_iter()
@@ -69,31 +73,41 @@ fn part(part: TypedPart, source: &Source) -> PixuiResult<LivePart> {
                 inner: (export.build)(types),
                 origin: origin.clone(),
             }));
-            if let Some(action) = activation {
+            for (name, action) in callbacks {
                 let mut arguments = vec![];
                 for argument in action.arguments {
                     arguments.push(match argument {
-                        typed::ActionArgument::Value(value, ty) => {
-                            let index = component.expressions.len();
-                            component.expressions.push(expression(value, source)?);
-                            RequestArgument::Value {
-                                expression: index,
-                                ty,
-                            }
-                        }
+                        typed::ActionArgument::Value(value, ty) => RequestArgument::Value {
+                            expression: expression(value, source)?,
+                            ty,
+                        },
                         typed::ActionArgument::Reference(root, export) => {
                             RequestArgument::Reference { root, export }
                         }
                     });
                 }
-                component.compiled_activation = Some(Arc::new(ActionProgram {
-                    handle: action.handle,
-                    arguments,
-                    origin: Origin {
-                        source: source.clone(),
-                        span: action.span,
-                    },
-                }));
+                component
+                    .events
+                    .push(crate::events::binding::EventCallback {
+                        index: Some(
+                            export
+                                .events
+                                .iter()
+                                .position(|event| event.name == name)
+                                .expect("checked event"),
+                        ),
+                        name,
+                        callback: crate::events::binding::Callback::Program(Arc::new(
+                            ActionProgram {
+                                handle: action.handle,
+                                arguments,
+                                origin: Origin {
+                                    source: source.clone(),
+                                    span: action.span,
+                                },
+                            },
+                        )),
+                    });
             }
             LivePart::Component(component)
         }
@@ -128,6 +142,8 @@ pub fn expression(value: typed::Expression, source: &Source) -> PixuiResult<Expr
         typed::ExpressionKind::Path {
             root: Root::Data(data),
             fields,
+            capture_type: None,
+            capture_result: None,
         } if fields.is_empty() => data.expression,
         typed::ExpressionKind::Template {
             translated: true,
@@ -146,29 +162,48 @@ pub fn expression(value: typed::Expression, source: &Source) -> PixuiResult<Expr
             expression
         }
         kind => {
+            let mut captured = None;
             let (kind, children) = match kind {
                 typed::ExpressionKind::Constant { value, ty } => {
                     (ProgramKind::Constant { value, ty }, vec![])
                 }
-                typed::ExpressionKind::Path { root, fields } => match root {
-                    Root::Local(depth) => (
-                        ProgramKind::Path {
-                            root: PathRoot::Local(depth),
-                            fields,
-                        },
-                        vec![],
-                    ),
-                    Root::Data(data) => (
-                        ProgramKind::Path {
-                            root: PathRoot::Data,
-                            fields,
-                        },
-                        vec![data.expression],
-                    ),
-                    Root::Layout(_) | Root::Styles(_) => {
-                        unreachable!("type checker excludes layout/styles expressions")
+                typed::ExpressionKind::Path {
+                    root,
+                    fields,
+                    capture_type,
+                    capture_result,
+                } => {
+                    captured = capture_type;
+                    match root {
+                        Root::Local(depth) => (
+                            ProgramKind::Path {
+                                root: PathRoot::Local(depth),
+                                fields,
+                                owned_result: capture_result.clone(),
+                            },
+                            vec![],
+                        ),
+                        Root::Data(data) => (
+                            ProgramKind::Path {
+                                root: PathRoot::Data,
+                                fields,
+                                owned_result: capture_result.clone(),
+                            },
+                            vec![data.expression],
+                        ),
+                        Root::Event(_) => (
+                            ProgramKind::Path {
+                                root: PathRoot::Event,
+                                fields,
+                                owned_result: capture_result.clone(),
+                            },
+                            vec![],
+                        ),
+                        Root::Layout(_) | Root::Styles(_) => {
+                            unreachable!("type checker excludes layout/styles expressions")
+                        }
                     }
-                },
+                }
                 typed::ExpressionKind::Not(value) => {
                     (ProgramKind::Not, vec![expression(*value, source)?])
                 }
@@ -198,6 +233,7 @@ pub fn expression(value: typed::Expression, source: &Source) -> PixuiResult<Expr
                 kind,
                 children,
                 origin: origin.clone(),
+                capture_type: captured,
             })))
         }
     };
@@ -208,7 +244,7 @@ fn match_pattern(value: typed::Expression, source: &Source) -> PixuiResult<Match
     let id = value.descriptor.type_id();
     let owned = match value.kind {
         typed::ExpressionKind::Constant { value, .. } => {
-            super::runtime::owned_scalar(value.as_ref(), id)?
+            crate::expression::program::owned_scalar(value.as_ref(), id)?
         }
         typed::ExpressionKind::Template { source, .. } => {
             let template = crate::i18n::template::CompiledTemplate::parse(&source)?;

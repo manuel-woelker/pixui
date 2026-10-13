@@ -20,7 +20,7 @@ pub enum ExpressionKind {
     Path(Vec<Name>),
     Call {
         path: Vec<Name>,
-        arguments: Vec<Expression>,
+        arguments: Vec<Argument>,
     },
     Not(Box<Expression>),
     Binary {
@@ -45,4 +45,11 @@ pub enum Operator {
     NotEqual,
     And,
     Or,
+}
+
+#[derive(Clone, Debug)]
+pub struct Argument {
+    pub span: Span,
+    pub name: Name,
+    pub value: Expression,
 }

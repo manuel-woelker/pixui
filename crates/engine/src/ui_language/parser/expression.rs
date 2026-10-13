@@ -54,8 +54,17 @@ impl Parser<'_> {
                     let mut arguments = vec![];
                     if !self.is(&TokenKind::RightParen) {
                         loop {
-                            arguments.push(self.expression(0)?);
-                            if self.consume(&TokenKind::Comma).is_none() {
+                            let name = self.name()?;
+                            self.expect(TokenKind::Colon)?;
+                            let value = self.expression(0)?;
+                            arguments.push(crate::ui_language::ast::expression::Argument {
+                                span: name.span.join(value.span),
+                                name,
+                                value,
+                            });
+                            if self.consume(&TokenKind::Comma).is_none()
+                                || self.is(&TokenKind::RightParen)
+                            {
                                 break;
                             }
                         }

@@ -27,6 +27,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 struct Block;
 impl Component for Block {
+    type Events = dyn pixui_engine::events::standard::ActivationEvents;
     type Props = Size;
     type State = usize;
 }

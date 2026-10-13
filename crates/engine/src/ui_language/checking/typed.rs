@@ -8,7 +8,7 @@ use crate::ui_language::{
     source::span::Span,
 };
 use crate::{
-    application::{action_handle::ActionHandle, erased_object_ref::ErasedObjectRef},
+    application::action_handle::ActionHandle,
     layout::{container::ContainerPart, style::LayoutStyle},
     styles::slots::SlotAssignment,
 };
@@ -27,6 +27,8 @@ pub enum ExpressionKind {
     },
     Path {
         root: Root,
+        capture_type: Option<ValueType>,
+        capture_result: Option<ValueType>,
         fields: Vec<(FieldIndex, &'static TypeDescriptor)>,
     },
     Template {
@@ -54,9 +56,10 @@ pub enum PartKind {
         export: ComponentExport,
         props: Vec<Expression>,
         types: Vec<ValueType>,
-        activation: Option<Action>,
+        callbacks: Vec<(String, Action)>,
         layout: LayoutStyle,
         styles: Vec<SlotAssignment>,
+        focus: crate::ui::focus::FocusBehavior,
     },
     Composite(Vec<TypedPart>),
     Container {
@@ -78,11 +81,7 @@ pub struct Action {
     pub arguments: Vec<ActionArgument>,
     pub span: Span,
 }
-#[derive(Clone)]
-pub enum ReferenceRoot {
-    Local(usize),
-    Entity(ErasedObjectRef),
-}
+pub use crate::events::program::ReferenceRoot;
 #[derive(Clone)]
 pub enum ActionArgument {
     Value(Expression, ValueType),

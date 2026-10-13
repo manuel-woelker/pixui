@@ -7,6 +7,8 @@ See the [architecture overview](docs/Architecture.md) for the application
 runtime diagram, state ownership, and workspace responsibilities.
 See the [`.pixui` UI language](crates/engine/src/ui_language/README.md) for
 declarative templates, expressions, and source diagnostics.
+See [component events](crates/engine/src/events/README.md) for typed event
+interfaces, generated proxies and callback expressions.
 See [painter styles](crates/engine/src/styles/README.md) for themes, reflected
 slots and occurrence overrides.
 

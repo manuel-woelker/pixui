@@ -116,6 +116,7 @@ pub(crate) fn lex_range(
                     ',' => TokenKind::Comma,
                     ';' => TokenKind::Semicolon,
                     ':' => TokenKind::Colon,
+                    '@' => TokenKind::At,
                     '{' => TokenKind::LeftBrace,
                     '}' => TokenKind::RightBrace,
                     '(' => TokenKind::LeftParen,

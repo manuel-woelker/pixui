@@ -19,6 +19,21 @@ pub(crate) fn register(
         }
         match part {
             LivePart::Component(component) => {
+                for callback in &mut component.events {
+                    if let crate::events::binding::Callback::Program(program) =
+                        &mut callback.callback
+                    {
+                        for argument in &mut std::sync::Arc::make_mut(program).arguments {
+                            if let crate::events::program::RequestArgument::Value {
+                                expression,
+                                ..
+                            } = argument
+                            {
+                                registry.resolve(domain, expression, 0)?;
+                            }
+                        }
+                    }
+                }
                 for expression in &mut component.expressions {
                     registry.resolve(domain, expression, 0)?;
                 }

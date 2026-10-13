@@ -5,3 +5,4 @@ pub mod evaluator;
     reason = "the expression module contains the expression data model"
 )]
 pub mod expression;
+pub mod program;

@@ -40,10 +40,7 @@ pub struct ComponentPart {
     pub layout: crate::layout::style::LayoutStyle,
     pub(crate) expressions: Vec<Expression>,
     pub(crate) binding: Option<Arc<dyn ErasedBinding>>,
-    pub(crate) change: Option<crate::ui::text_input::binding::ChangeFactory>,
-    pub(crate) activation: Option<ActivationFactory>,
-    pub(crate) compiled_activation:
-        Option<Arc<crate::ui_language::lowering::runtime::ActionProgram>>,
+    pub(crate) events: Vec<crate::events::binding::EventCallback>,
 }
 
 impl ComponentPart {
@@ -57,9 +54,7 @@ impl ComponentPart {
             layout: Default::default(),
             expressions: Vec::new(),
             binding: None,
-            activation: None,
-            compiled_activation: None,
-            change: None,
+            events: vec![],
         }
     }
 
@@ -100,9 +95,7 @@ impl ComponentPart {
                     resolve,
                 },
             )),
-            activation: None,
-            compiled_activation: None,
-            change: None,
+            events: vec![],
         }
     }
 
@@ -128,9 +121,7 @@ impl ComponentPart {
                 update,
                 marker: PhantomData,
             })),
-            activation: None,
-            compiled_activation: None,
-            change: None,
+            events: vec![],
         }
     }
 
@@ -153,15 +144,36 @@ impl ComponentPart {
     /// Resolves an owned activation binding separately from the painter. Bounds
     /// and hit testing remain the renderer's responsibility.
     pub fn with_activation(mut self, activation: ActivationFactory) -> Self {
-        self.compiled_activation = None;
-        self.activation = Some(activation);
+        self.events.retain(|event| event.name != "activate");
+        self.events.push(crate::events::binding::EventCallback {
+            name: "activate".into(),
+            index: None,
+            callback: crate::events::binding::Callback::Activation(activation),
+        });
         self
     }
 
     /// Proposes complete owned content through an application action. Without a
     /// binding a TextInputComponent remains selectable but read-only.
     pub fn with_change(mut self, change: crate::ui::text_input::binding::ChangeFactory) -> Self {
-        self.change = Some(change);
+        self.events.retain(|event| event.name != "change");
+        self.events.push(crate::events::binding::EventCallback {
+            name: "change".into(),
+            index: None,
+            callback: crate::events::binding::Callback::Change(change),
+        });
+        self
+    }
+
+    /// Adds a worker callback by event name. Registration/preparation validates
+    /// the name; generated interface metadata provides payload type information.
+    pub fn with_event<P: pixui_reflect::Reflect + Send>(
+        mut self,
+        key: crate::events::binding::EventKey<P>,
+        factory: crate::events::binding::TypedFactory<P>,
+    ) -> Self {
+        self.events
+            .push(crate::events::binding::typed_callback(key, factory));
         self
     }
 

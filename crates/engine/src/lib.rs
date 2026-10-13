@@ -13,3 +13,5 @@ pub mod styles;
 pub mod ui;
 
 pub mod ui_language;
+
+pub mod events;

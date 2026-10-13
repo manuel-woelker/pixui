@@ -19,6 +19,7 @@ use pixui_engine::{
 
 struct ClockComponent;
 impl Component for ClockComponent {
+    type Events = dyn pixui_engine::events::standard::ActivationEvents;
     type Props = ();
     type State = ();
 }

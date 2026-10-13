@@ -6,6 +6,7 @@ use crate::application::app::Application;
 /// Read-only inputs for expressions: application storage and an optional current value.
 /// Results borrow these inputs rather than owning or copying application data.
 pub struct ExpressionContext<'a> {
+    event: Option<&'a DynamicObject<'a>>,
     language: crate::i18n::indices::LanguageIndex,
     application: Option<&'a Application>,
     locals: Vec<(
@@ -19,6 +20,7 @@ impl<'a> ExpressionContext<'a> {
     /// Application expressions are available; no current field context is set.
     pub fn new(application: &'a Application) -> Self {
         Self {
+            event: None,
             language: Default::default(),
             application: Some(application),
             locals: vec![],
@@ -29,6 +31,7 @@ impl<'a> ExpressionContext<'a> {
     /// Field expressions are available without application storage.
     pub fn from_value(value: &'a DynamicObject<'a>) -> Self {
         Self {
+            event: None,
             language: Default::default(),
             application: None,
             locals: vec![],
@@ -40,6 +43,15 @@ impl<'a> ExpressionContext<'a> {
     pub fn with_language(mut self, language: crate::i18n::indices::LanguageIndex) -> Self {
         self.language = language;
         self
+    }
+
+    pub(crate) fn with_event(mut self, event: &'a DynamicObject<'a>) -> Self {
+        self.event = Some(event);
+        self
+    }
+    pub(crate) fn event(&self) -> PixuiResult<&'a DynamicObject<'a>> {
+        self.event
+            .ok_or_else(|| pixui_error!("event parameters require callback evaluation"))
     }
 
     pub fn language(&self) -> crate::i18n::indices::LanguageIndex {
@@ -96,6 +108,7 @@ impl<'a> ExpressionContext<'a> {
         let mut locals = self.locals.clone();
         locals.push((value, address));
         ExpressionContext {
+            event: self.event,
             language: self.language,
             application: self.application,
             value: Some(value),

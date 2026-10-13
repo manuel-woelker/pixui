@@ -337,6 +337,23 @@ fn mark_action(
 
 #[cfg(test)]
 mod tests {
+    fn click_command(
+        app: &pixui_engine::application::application_handle::ApplicationHandle,
+        command: UiCommand,
+    ) -> pixui_base::PixuiResult<()> {
+        let mut press = command.clone();
+        if let UiCommand::Input {
+            input: UiInput::MouseButton { state, .. },
+            ..
+        } = &mut press
+        {
+            *state = pixui_engine::ui::input::ButtonState::Pressed;
+        }
+        app.ui_command(press)?;
+        app.ui_command(command)?;
+        app.inspect(|_| Ok(()))
+    }
+
     use super::*;
     use crate::todo::{actions::TodoActions, create_slice};
     use pixui_engine::ui::resource::Resource;
@@ -458,28 +475,34 @@ mod tests {
             })
             .unwrap();
         assert!(
-            app.ui_command(UiCommand::Input {
+            click_command(
+                &app,
+                UiCommand::Input {
+                    instance: one,
+                    revision: initial.revision,
+                    input: UiInput::MouseButton {
+                        button: pixui_engine::ui::input::MouseButton::Left,
+                        state: pixui_engine::ui::input::ButtonState::Released,
+                        position: point,
+                        modifiers: Default::default()
+                    }
+                }
+            )
+            .is_err()
+        );
+        click_command(
+            &app,
+            UiCommand::Input {
                 instance: one,
-                revision: initial.revision,
+                revision: filtered.revision,
                 input: UiInput::MouseButton {
                     button: pixui_engine::ui::input::MouseButton::Left,
                     state: pixui_engine::ui::input::ButtonState::Released,
                     position: point,
-                    modifiers: Default::default()
-                }
-            })
-            .is_err()
-        );
-        app.ui_command(UiCommand::Input {
-            instance: one,
-            revision: filtered.revision,
-            input: UiInput::MouseButton {
-                button: pixui_engine::ui::input::MouseButton::Left,
-                state: pixui_engine::ui::input::ButtonState::Released,
-                position: point,
-                modifiers: Default::default(),
+                    modifiers: Default::default(),
+                },
             },
-        })
+        )
         .unwrap();
         outputs.recv_timeout(Duration::from_secs(2)).unwrap();
         other.recv_timeout(Duration::from_secs(2)).unwrap();
@@ -571,31 +594,37 @@ mod tests {
                 })
             })
             .unwrap();
-        app.ui_command(UiCommand::Input {
-            instance,
-            revision: initial.revision,
-            input: UiInput::MouseButton {
-                button: pixui_engine::ui::input::MouseButton::Left,
-                state: pixui_engine::ui::input::ButtonState::Released,
-                position: point,
-                modifiers: Default::default(),
-            },
-        })
-        .unwrap();
-        let added = outputs.recv_timeout(Duration::from_secs(2)).unwrap();
-        assert_eq!(added.animation_request, Some(3));
-        assert!(added.display_list.commands.iter().any(|command| matches!(command, DrawCommand::DrawText { text, .. } | DrawCommand::StyledText { text, .. } if text.contains("New todo"))));
-        assert!(
-            app.ui_command(UiCommand::Input {
+        click_command(
+            &app,
+            UiCommand::Input {
                 instance,
                 revision: initial.revision,
                 input: UiInput::MouseButton {
                     button: pixui_engine::ui::input::MouseButton::Left,
                     state: pixui_engine::ui::input::ButtonState::Released,
                     position: point,
-                    modifiers: Default::default()
+                    modifiers: Default::default(),
+                },
+            },
+        )
+        .unwrap();
+        let added = outputs.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert_eq!(added.animation_request, Some(3));
+        assert!(added.display_list.commands.iter().any(|command| matches!(command, DrawCommand::DrawText { text, .. } | DrawCommand::StyledText { text, .. } if text.contains("New todo"))));
+        assert!(
+            click_command(
+                &app,
+                UiCommand::Input {
+                    instance,
+                    revision: initial.revision,
+                    input: UiInput::MouseButton {
+                        button: pixui_engine::ui::input::MouseButton::Left,
+                        state: pixui_engine::ui::input::ButtonState::Released,
+                        position: point,
+                        modifiers: Default::default()
+                    }
                 }
-            })
+            )
             .is_err()
         );
     }
@@ -688,16 +717,19 @@ mod tests {
                 command,
                 DrawCommand::StrokeRect { .. } | DrawCommand::StyledStrokeRect { .. }
             )));
-            app.ui_command(UiCommand::Input {
-                instance,
-                revision: focused.revision,
-                input: UiInput::MouseButton {
-                    button: pixui_engine::ui::input::MouseButton::Left,
-                    state: pixui_engine::ui::input::ButtonState::Released,
-                    position: point,
-                    modifiers: Default::default(),
+            click_command(
+                &app,
+                UiCommand::Input {
+                    instance,
+                    revision: focused.revision,
+                    input: UiInput::MouseButton {
+                        button: pixui_engine::ui::input::MouseButton::Left,
+                        state: pixui_engine::ui::input::ButtonState::Released,
+                        position: point,
+                        modifiers: Default::default(),
+                    },
                 },
-            })
+            )
             .unwrap();
             let updated = outputs.recv_timeout(Duration::from_secs(2)).unwrap();
             assert!(updated.display_list.commands.iter().any(|command| matches!(command, DrawCommand::DrawText { text, .. } | DrawCommand::StyledText { text, .. } if text.contains("New todo"))));
@@ -761,8 +793,9 @@ mod tests {
                 })
             })
             .unwrap();
-        application
-            .ui_command(UiCommand::Input {
+        click_command(
+            &application,
+            UiCommand::Input {
                 instance: light,
                 revision: light_output.revision,
                 input: UiInput::MouseButton {
@@ -771,8 +804,9 @@ mod tests {
                     position: point,
                     modifiers: Default::default(),
                 },
-            })
-            .unwrap();
+            },
+        )
+        .unwrap();
         let light_output = light_outputs.recv_timeout(Duration::from_secs(2)).unwrap();
         dark_outputs.recv_timeout(Duration::from_secs(2)).unwrap();
         let (count, row) = application
@@ -789,8 +823,9 @@ mod tests {
             })
             .unwrap();
         assert_eq!(count, 5);
-        application
-            .ui_command(UiCommand::Input {
+        click_command(
+            &application,
+            UiCommand::Input {
                 instance: light,
                 revision: light_output.revision,
                 input: UiInput::MouseButton {
@@ -799,8 +834,9 @@ mod tests {
                     position: row,
                     modifiers: Default::default(),
                 },
-            })
-            .unwrap();
+            },
+        )
+        .unwrap();
         light_outputs.recv_timeout(Duration::from_secs(2)).unwrap();
         dark_outputs.recv_timeout(Duration::from_secs(2)).unwrap();
         assert!(
@@ -947,16 +983,19 @@ mod tests {
             })
             .unwrap();
         let click = |revision| {
-            app.ui_command(UiCommand::Input {
-                instance: one,
-                revision,
-                input: UiInput::MouseButton {
-                    button: pixui_engine::ui::input::MouseButton::Left,
-                    state: pixui_engine::ui::input::ButtonState::Released,
-                    position: point,
-                    modifiers: Default::default(),
+            click_command(
+                &app,
+                UiCommand::Input {
+                    instance: one,
+                    revision,
+                    input: UiInput::MouseButton {
+                        button: pixui_engine::ui::input::MouseButton::Left,
+                        state: pixui_engine::ui::input::ButtonState::Released,
+                        position: point,
+                        modifiers: Default::default(),
+                    },
                 },
-            })
+            )
             .unwrap()
         };
         click(initial.revision);

@@ -4,8 +4,22 @@
 /// physical node and retained across renders. Both remain on the worker, so
 /// `Sync`, `Clone`, and reflection are unnecessary.
 pub trait Component: 'static {
+    const INPUT_INTEREST: crate::events::interface::InputInterest =
+        crate::events::interface::InputInterest::NONE;
+    type Events: crate::events::interface::EventInterface + ?Sized;
     type Props: Send + 'static;
     type State: Default + Send + 'static;
+
+    /// Targeted worker input. Return true to consume the input. Events are queued
+    /// until this hook releases its state borrow; painters never call this hook.
+    fn handle_input(
+        _props: &Self::Props,
+        _state: &mut Self::State,
+        _input: &crate::events::interface::ComponentInput,
+        _events: &Self::Events,
+    ) -> pixui_base::PixuiResult<bool> {
+        Ok(false)
+    }
 
     /// Resolves component-owned state after props resolution and before the
     /// binding update or any painter runs. Called once per node per render.

@@ -32,6 +32,7 @@ pub fn check(
         locals: vec![],
         collection_locals: vec![],
         errors: vec![],
+        callback: false,
     };
     match checker.part(definition.root) {
         Ok(root) if checker.errors.is_empty() => Ok(TypedDefinition {
@@ -51,6 +52,7 @@ pub(super) struct Checker<'a> {
     pub(super) environment: &'a Environment,
     pub(super) locals: Vec<&'static TypeDescriptor>,
     pub(super) collection_locals: Vec<bool>,
+    pub(super) callback: bool,
     pub(super) errors: Vec<Diagnostic>,
 }
 impl Checker<'_> {
@@ -87,10 +89,19 @@ impl Checker<'_> {
                     .into_iter()
                     .map(|(name, expression)| (name.value, expression))
                     .collect();
-                let activation = values
-                    .remove("on_activate")
-                    .map(|expression| self.action(&expression))
-                    .transpose()?;
+                let event_names = values
+                    .keys()
+                    .filter(|name| name.starts_with('@'))
+                    .cloned()
+                    .collect::<Vec<_>>();
+                let mut callbacks = vec![];
+                for name in event_names {
+                    let expression = values.remove(&name).expect("present callback");
+                    self.callback = true;
+                    let action = self.action(&expression);
+                    self.callback = false;
+                    callbacks.push((name[1..].to_owned(), action?));
+                }
                 let layout = values
                     .remove("layout")
                     .map(|expression| self.layout_export(&expression))
@@ -99,6 +110,23 @@ impl Checker<'_> {
                 let styles = values
                     .remove("styles")
                     .map(|expression| self.style_export(&expression))
+                    .transpose()?
+                    .unwrap_or_default();
+                let focus = values
+                    .remove("focus")
+                    .map(|expression| {
+                        use crate::ui::focus::FocusBehavior;
+                        match self.literal_text(&expression)?.as_str() {
+                            "automatic" => Ok(FocusBehavior::Automatic),
+                            "sequential" => Ok(FocusBehavior::Sequential),
+                            "direct" => Ok(FocusBehavior::Direct),
+                            "none" => Ok(FocusBehavior::None),
+                            _ => Err(self.error(
+                                expression.span,
+                                "focus must be automatic, sequential, direct or none",
+                            )),
+                        }
+                    })
                     .transpose()?
                     .unwrap_or_default();
                 let mut props = vec![];
@@ -117,9 +145,10 @@ impl Checker<'_> {
                     export,
                     props,
                     types,
-                    activation,
+                    callbacks,
                     layout,
                     styles,
+                    focus,
                 }
             }
             resolved::PartKind::Element {
@@ -217,7 +246,7 @@ impl Checker<'_> {
                 let element = sequence.descriptor.element_type().ok_or_else(|| {
                     self.error(sequence.span, "for expression must be a sequence")
                 })?;
-                let collection_backed = matches!(&sequence.kind,ExpressionKind::Path {root:Root::Data(data),fields} if fields.is_empty() && matches!(data.expression.kind(),RuntimeKind::Collection(_)));
+                let collection_backed = matches!(&sequence.kind,ExpressionKind::Path {root:Root::Data(data),fields,..} if fields.is_empty() && matches!(data.expression.kind(),RuntimeKind::Collection(_)));
                 self.collection_locals.push(collection_backed);
                 self.locals.push(element);
                 let body = self.part(*body);
@@ -251,11 +280,8 @@ impl Checker<'_> {
                             }
                             ExpressionKind::Constant { value, .. } => format!(
                                 "{:?}",
-                                crate::ui_language::lowering::runtime::scalar_snapshot(
-                                    value.as_ref(),
-                                    id
-                                )
-                                .map_err(|error| self.error(pattern.span, error.to_string()))?
+                                crate::expression::program::scalar_snapshot(value.as_ref(), id)
+                                    .map_err(|error| self.error(pattern.span, error.to_string()))?
                             ),
                             ExpressionKind::Template {
                                 translated: false,

@@ -1,11 +1,8 @@
 //! Checked expression programs reuse existing application and i18n evaluation.
+use crate::events::value::{Snapshot, ValueType};
 use crate::{
     expression::{context::ExpressionContext, evaluator::evaluate, expression::Expression},
-    ui_language::{
-        ast::expression::Operator,
-        resolution::environment::{Snapshot, ValueType},
-        source::origin::Origin,
-    },
+    ui_language::{ast::expression::Operator, source::origin::Origin},
 };
 use pixui_base::{PixuiResult, pixui_error};
 use pixui_reflect::{DynamicObject, FieldIndex};
@@ -14,6 +11,7 @@ use std::any::{Any, TypeId};
 pub enum PathRoot {
     Local(usize),
     Data,
+    Event,
 }
 #[derive(Clone)]
 pub enum ProgramKind {
@@ -24,6 +22,7 @@ pub enum ProgramKind {
     Path {
         root: PathRoot,
         fields: Vec<(FieldIndex, &'static pixui_reflect::TypeDescriptor)>,
+        owned_result: Option<ValueType>,
     },
     Not,
     Binary(Operator),
@@ -34,6 +33,7 @@ pub struct Program {
     pub kind: ProgramKind,
     pub children: Vec<Expression>,
     pub origin: Origin,
+    pub capture_type: Option<ValueType>,
 }
 impl Program {
     pub fn evaluate<'a>(&self, context: &ExpressionContext<'a>) -> PixuiResult<DynamicObject<'a>> {
@@ -46,13 +46,29 @@ impl Program {
     ) -> PixuiResult<DynamicObject<'a>> {
         match &self.kind {
             ProgramKind::Constant { value, ty } => {
-                owned_scalar(value.as_ref(), ty.descriptor.type_id())
+                DynamicObject::from_send((ty.send)(value.as_ref())?, ty.descriptor)
             }
-            ProgramKind::Path { root, fields } => {
+            ProgramKind::Path {
+                root,
+                fields,
+                owned_result,
+            } => {
                 let mut value = match root {
                     PathRoot::Local(depth) => context.local(*depth)?.shared_view()?,
                     PathRoot::Data => evaluate(context, &self.children[0])?,
+                    PathRoot::Event => context.event()?.shared_view()?,
                 };
+                if value.is_owned() && !fields.is_empty() {
+                    let mut borrowed = value.shared_view()?;
+                    for field in fields {
+                        borrowed = borrowed.into_read_with_descriptor(field.0, field.1)?;
+                    }
+                    let ty = owned_result.as_ref().ok_or_else(|| {
+                        pixui_error!("owned field root requires a result adapter")
+                    })?;
+                    let snapshot = (ty.snapshot)(&borrowed)?;
+                    return DynamicObject::from_send((ty.send)(snapshot.as_ref())?, ty.descriptor);
+                }
                 for field in fields {
                     value = value.into_read_with_descriptor(field.0, field.1)?;
                 }
@@ -130,65 +146,4 @@ pub(crate) fn owned_scalar(value: &dyn Any, id: TypeId) -> PixuiResult<DynamicOb
 }
 pub(crate) fn scalar_snapshot(value: &dyn Any, id: TypeId) -> PixuiResult<String> {
     crate::expression::evaluator::scalar_text(&owned_scalar(value, id)?)
-}
-
-#[derive(Clone)]
-pub struct ActionProgram {
-    pub handle: crate::application::action_handle::ActionHandle,
-    pub arguments: Vec<RequestArgument>,
-    pub origin: Origin,
-}
-#[derive(Clone)]
-pub enum RequestArgument {
-    Value {
-        expression: usize,
-        ty: ValueType,
-    },
-    Reference {
-        root: crate::ui_language::checking::typed::ReferenceRoot,
-        export: crate::ui_language::resolution::environment::ReferenceExport,
-    },
-}
-impl ActionProgram {
-    pub fn prepare(
-        &self,
-        context: &ExpressionContext<'_>,
-        values: &[DynamicObject<'_>],
-    ) -> PixuiResult<crate::ui::activation::ActionBinding> {
-        let result = (|| {
-            let mut snapshots = vec![];
-            for argument in &self.arguments {
-                let (snapshot, ty) = match argument {
-                    RequestArgument::Value { expression, ty } => {
-                        ((ty.snapshot)(&values[*expression])?, ty.clone())
-                    }
-                    RequestArgument::Reference { root, export } => {
-                        let snapshot = match root {
-                            crate::ui_language::checking::typed::ReferenceRoot::Local(depth) => {
-                                let (collection, position) = context.local_address(*depth)?;
-                                (export.make)(context.application()?, collection, position)?
-                            }
-                            crate::ui_language::checking::typed::ReferenceRoot::Entity(
-                                reference,
-                            ) => (export.entity)(reference)?,
-                        };
-                        (snapshot, export.value.clone())
-                    }
-                };
-                snapshots.push((snapshot, ty));
-            }
-            let handle = self.handle;
-            let origin = self.origin.clone();
-            Ok(
-                Box::new(move |_application: &crate::application::app::Application| {
-                    let fields = snapshots
-                        .iter()
-                        .map(|(value, ty)| (ty.send)(value.as_ref()))
-                        .collect::<PixuiResult<Vec<_>>>()?;
-                    handle.call(fields).map_err(|error| origin.error(error))
-                }) as crate::ui::activation::ActionBinding,
-            )
-        })();
-        result.map_err(|error| self.origin.error(error))
-    }
 }
