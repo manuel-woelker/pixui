@@ -22,7 +22,10 @@ The engine's `ui_language` module compiles `.pixui` source through lexing,
 parsing, explicit name resolution, type checking, and lowering to existing live
 parts. It does not create native windows or mutate application state. Rust host
 code exports components, application bindings, actions, and constant
-layouts/styles. The worker installs successfully compiled definitions through
+layouts/styles. Containers also accept checked static box constraints, Flex
+alignment/wrapping and Grid placement directly in source. Exported base styles
+are applied before explicit overrides, independently of attribute order. The
+worker installs successfully compiled definitions through
 existing registration.
 
 Immutable source snapshots and byte spans accompany syntax, resolved and typed

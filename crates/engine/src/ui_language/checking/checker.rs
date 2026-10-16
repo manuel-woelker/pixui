@@ -5,11 +5,7 @@ use super::{
 };
 use crate::{
     expression::expression::ExpressionKind as RuntimeKind,
-    layout::{
-        container::ContainerPart,
-        grid::Track,
-        style::{Insets, Length},
-    },
+    layout::container::ContainerPart,
     ui_language::{
         ast::part::PartKind as AstPart,
         diagnostic::report::{Diagnostic, Stage},
@@ -174,63 +170,22 @@ impl Checker<'_> {
                     "Grid" => ContainerPart::grid(),
                     _ => unreachable!(),
                 };
+                // Apply the exported base first; explicit attributes always override it.
+                if let Some((_, expression)) =
+                    attributes.iter().find(|(name, _)| name.value == "layout")
+                {
+                    container.style = self.layout_export(expression)?;
+                }
+                // Uniform insets provide the base for edge-specific overrides.
+                for (name, expression) in attributes
+                    .iter()
+                    .filter(|(name, _)| matches!(name.value.as_str(), "padding" | "margin"))
+                {
+                    self.container_attribute(&mut container, name, expression)?;
+                }
                 for (name, expression) in attributes {
-                    match name.value.as_str() {
-                        "layout" => container.style = self.layout_export(&expression)?,
-                        "columns" | "rows" => {
-                            if !matches!(
-                                container.layout,
-                                crate::layout::container::ContainerLayout::Grid(_)
-                            ) {
-                                return Err(self.error(name.span, "tracks require Grid"));
-                            }
-                            let text = self.literal_text(&expression)?;
-                            let tracks = text
-                                .split_whitespace()
-                                .map(|track| {
-                                    if track == "auto" {
-                                        Ok(Track::auto())
-                                    } else if let Some(value) = track.strip_suffix("fr") {
-                                        value.parse().map(Track::fraction).map_err(|_| {
-                                            self.error(expression.span, "invalid fraction track")
-                                        })
-                                    } else if let Some(value) = track.strip_suffix("px") {
-                                        value.parse().map(Track::length).map_err(|_| {
-                                            self.error(expression.span, "invalid pixel track")
-                                        })
-                                    } else {
-                                        Err(self.error(
-                                            expression.span,
-                                            "tracks must be auto, Npx, or Nfr",
-                                        ))
-                                    }
-                                })
-                                .collect::<CheckResult<Vec<_>>>()?;
-                            container = if name.value == "columns" {
-                                container.with_columns(tracks)
-                            } else {
-                                container.with_rows(tracks)
-                            };
-                        }
-                        "gap" | "padding" | "width" | "height" | "grow" => {
-                            let typed = self.expression(&expression, Some(TypeId::of::<f32>()))?;
-                            let ExpressionKind::Constant { value, .. } = typed.kind else {
-                                return Err(self.error(
-                                    expression.span,
-                                    "layout values must be numeric constants",
-                                ));
-                            };
-                            let value = *value.downcast_ref::<f32>().unwrap();
-                            match name.value.as_str() {
-                                "gap" => container.gap = value,
-                                "padding" => container.style.padding = Insets::all(value),
-                                "width" => container.style.width = Length::Pixels(value),
-                                "height" => container.style.height = Length::Pixels(value),
-                                "grow" => container.style.grow = value,
-                                _ => unreachable!(),
-                            }
-                        }
-                        _ => return Err(self.error(name.span, "unknown container attribute")),
+                    if !matches!(name.value.as_str(), "padding" | "margin") {
+                        self.container_attribute(&mut container, &name, &expression)?;
                     }
                 }
                 container
@@ -320,7 +275,7 @@ impl Checker<'_> {
         };
         Ok(TypedPart { span, kind })
     }
-    fn literal_text(&self, expression: &resolved::Expression) -> CheckResult<String> {
+    pub(super) fn literal_text(&self, expression: &resolved::Expression) -> CheckResult<String> {
         if let resolved::ExpressionKind::Template {
             translated: false,
             segments,

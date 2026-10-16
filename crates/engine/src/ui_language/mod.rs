@@ -15,4 +15,6 @@ mod tests;
 mod event_tests;
 
 #[cfg(test)]
+mod container_tests;
+#[cfg(test)]
 mod image_tests;

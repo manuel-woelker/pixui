@@ -1,0 +1,59 @@
+ui LayoutDemo domain 'showcase' {
+    <Column width='100%' min_width=0 gap=12 slice='showcase'>
+        <Label text="Layout" />
+        <Label text="Nested Grid and Flex" />
+        <Grid columns='1fr 1fr 1fr' gap=12>
+            <Row column_span=3 gap=8 align='center' wrap=true justify='space_between'>
+                <Label text="Workspace" />
+                <Button label="Increment counter" @activate=increment() />
+                <Button label="Reset counter" @activate=reset() />
+            </Row>
+            <Column column_span=2 min_width=0 gap=12>
+                <Label text="Overview" />
+                <Grid columns='1fr 1fr 1fr' rows='72px 72px' gap=8>
+                    <Column padding=8 gap=4><Label text="Projects" /><Label text="12" /></Column>
+                    <Column padding=8 gap=4><Label text="Tasks" /><Label text="48" /></Column>
+                    <Column padding=8 gap=4><Label text="Teams" /><Label text="4" /></Column>
+                    <Column padding=8 gap=4><Label text="Releases" /><Label text="7" /></Column>
+                    <Column padding=8 gap=4><Label text="Reviews" /><Label text="16" /></Column>
+                    <Column padding=8 gap=4><Label text="Milestones" /><Label text="3" /></Column>
+                </Grid>
+                <Label text="Counter: {entities.count}" />
+            </Column>
+            <Column gap=8 padding=8>
+                <Label text="Activity" />
+                <Label text="Design ready" />
+                <Label text="Tests passed" />
+                <Label text="Review queued" />
+                <Label text="Build shipped" />
+            </Column>
+            <Row column_span=3 min_width=0 gap=8 wrap=true>
+                <Column basis=140 grow=1 min_width=140><Button label="Plan sprint" @activate=increment() /></Column>
+                <Column basis=140 grow=1 min_width=140><Button label="Create task" @activate=increment() /></Column>
+                <Column basis=140 grow=1 min_width=140><Button label="Review work" @activate=increment() /></Column>
+                <Column basis=140 grow=1 min_width=140><Button label="Ship release" @activate=increment() /></Column>
+                <Column basis=140 grow=1 min_width=140><Button label="Invite team" @activate=increment() /></Column>
+                <Column basis=140 grow=1 min_width=140><Button label="Archive project" @activate=increment() /></Column>
+            </Row>
+        </Grid>
+        <Label text="Project board · 36 projects / 216 tasks" />
+        <Grid columns='1fr 1fr' gap=12>
+            {for project in entities.projects =>
+                <Column min_width=0 padding=12 gap=8>
+                    <Label text='{project.name}' />
+                    <Label text="Tasks" />
+                    {for task in project.tasks =>
+                        <Row gap=8>
+                            <Column grow=1 min_width=0><Label text='{task.name}' /></Column>
+                            <Label text='{task.status}' />
+                        </Row>
+                    }
+                    <Row gap=8 wrap=true>
+                        <Button label="Create task" @activate=increment() />
+                        <Button label="Review work" @activate=increment() />
+                    </Row>
+                </Column>
+            }
+        </Grid>
+    </Column>
+}

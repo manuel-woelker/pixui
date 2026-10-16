@@ -218,7 +218,7 @@ pub fn definition(
     let styles_page = page(examples);
     let projects =
         app.entity_ref::<Vec<crate::model::data::LayoutProject>>(slice, "layout_projects")?;
-    let layout_page = crate::layout_demo::page(components, count, projects)?;
+    let layout_page = crate::layout_demo::page(app, components, count, projects)?;
     let language_page = crate::language_demo::page(app, components)?;
     let navigation = ContainerPart::column()
         .with_layout(LayoutStyle {

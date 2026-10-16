@@ -255,3 +255,44 @@ Dynamic validation and loading errors retain source locations and prevent frame
 publication, preserving the last successful output. Correcting the value permits
 recovery. Images retain normal snapshot caching and optional resource hot
 reload.
+
+## Container layout settings
+
+`Row`, `Column` and `Grid` accept static settings directly:
+
+```text
+<Row width='100%' min_width=0 gap=8 row_gap=12
+     wrap=true align='center' justify='space_between'>
+    <Column basis=140 grow=1 min_width=0 padding=8>
+        <Label text="Flexible content" />
+    </Column>
+</Row>
+<Grid columns='160px 1fr' rows='auto auto' gap=8 align='stretch'>
+    <Column column_span=2><Label text="Heading" /></Column>
+</Grid>
+```
+
+- `width`, `height`, `min_width`, `min_height`, `max_width`, `max_height` and
+  `basis` accept numeric logical pixels or untranslated `'Npx'`, `'N%'`,
+  `'auto'` literals. Here `'100%'` is a full parent dimension; Rust uses
+  `Percent(1.0)`.
+- `grow`, `shrink`, `gap`, `row_gap`, `padding`, `margin` and `aspect_ratio`
+  accept numeric constants. Sizes/insets/flex factors must be nonnegative and
+  finite; aspect ratios must be positive. Padding and margin also accept
+  `_left`, `_right`, `_top`, `_bottom` attributes for individual edges.
+- `align`, `align_self`, `justify_self` accept `'start'`, `'center'`, `'end'`,
+  `'stretch'`. `align` controls children; the self settings control placement
+  in the parent. Grid uses `align` for both item axes, matching the Rust API.
+- Flex containers accept `wrap=true`/`false` and `justify='start'`, `'center'`,
+  `'end'`, `'space_between'`, `'space_around'`, `'space_evenly'`.
+- Grid accepts `columns`/`rows` track strings (`auto`, `Npx`, `Nfr`). Item
+  placement uses positive integer `grid_column`, `grid_row` (one-based starts),
+  `column_span`, `row_span`; a nested container can span its parent's cells.
+
+`layout=layouts.name` supplies a base item style; explicit attributes override
+that base regardless of attribute order. Edge-specific padding/margin overrides
+the uniform inset, also independently of attribute order. Defaults and clipping
+follow Rust containers. Settings are checked during compilation, never
+translated, and do not depend on entities or callback payloads. Dynamic layouts
+and inline leaf layout attributes remain separate work; leaves use exported
+`layout` values.
