@@ -36,6 +36,7 @@ pub enum ExpressionKind {
         source: String,
         arguments: Vec<(String, Expression)>,
     },
+    ResourcePath(Box<Expression>),
     Not(Box<Expression>),
     Binary {
         op: Operator,

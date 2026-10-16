@@ -13,3 +13,6 @@ mod tests;
 
 #[cfg(test)]
 mod event_tests;
+
+#[cfg(test)]
+mod image_tests;

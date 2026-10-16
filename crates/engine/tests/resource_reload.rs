@@ -2,7 +2,7 @@
 use pixui_base::{PixuiResult, pixui_error};
 use pixui_engine::{
     application::{app::Application, application_handle::ApplicationHandle},
-    components::{image::ImageProps, label::LabelProps},
+    components::label::LabelProps,
     expression::{context::ExpressionContext, expression::Expression},
     i18n::{
         catalog::{MessageDeclaration, TranslationCatalog},
@@ -119,9 +119,6 @@ fn label(
             .clone(),
     })
 }
-fn props(_: &ExpressionContext<'_>, _: &PresentationSettings) -> PixuiResult<ImageProps> {
-    ImageProps::new("logo.png")
-}
 fn window(
     _: &ExpressionContext<'_>,
     _: &PresentationSettings,
@@ -145,7 +142,19 @@ fn definition(app: &ApplicationHandle) -> pixui_engine::ui::definition::UiDefini
                         vec![Expression::text("Save").unwrap()],
                         label,
                     )),
-                    LivePart::Component(ComponentPart::typed(components.image, props)),
+                    app.inspect(move |_app| {
+                        let mut env =
+                            pixui_engine::ui_language::resolution::environment::Environment::new();
+                        env.component("Image", components.image)?;
+                        Ok(pixui_engine::ui_language::compiler::compile(
+                            "reload-image.pixui",
+                            "ui Image {<Image path='logo.png' />}",
+                            &env,
+                        )
+                        .unwrap()
+                        .into_template())
+                    })
+                    .unwrap(),
                 ],
             }),
         )

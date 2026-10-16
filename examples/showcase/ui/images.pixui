@@ -1,0 +1,6 @@
+ui ImagesDemo domain 'showcase' {
+    <Column gap=12 layout=layouts.full>
+        <Label text="Images" />
+        <Image path='images/pixui-logo.png' layout=layouts.logo />
+    </Column>
+}

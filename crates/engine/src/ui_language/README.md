@@ -100,11 +100,12 @@ names.
 
 `component(alias, id)` is opt-in: props must implement `Reflect` with a sendable
 field-ordered constructor. `#[pixui_reflect::reflect(send)]` on an inline module
-provides this for custom props. Label, Button, Checkbox and TextInput props
-already support it. Ordinary Rust component registration and unreflected
+provides this for custom props. Label, Button, Checkbox, TextInput and Image
+props already support it. Ordinary Rust component registration and unreflected
 component state remain supported. Every props field is required; there are no
-implicit defaults/coercions. Attribute order is independent of constructor
-order.
+implicit defaults. Types must match, except contextual numeric literals and
+validated string-to-`ResourcePath` conversion. Attribute order is independent of
+constructor order.
 
 Primitive/string ownership adapters are provided. Export custom metadata through
 `reflected_type::<T>()` for nested field/sequence access. If a field must become
@@ -224,3 +225,33 @@ are deferred. The resource/image/catalog hot-reload mechanism remains separate.
 
 See the [showcase source](../../../../examples/showcase/ui/language.pixui) and
 [host bindings](../../../../examples/showcase/src/language_demo.rs).
+
+## Image resource paths
+
+Register the core image component with
+`env.component("Image", components.image)` and configure the application's image
+loader in Rust. Layouts remain separate:
+
+```text
+<Image path='images/pixui-logo.png' layout=layouts.logo />
+<Image path=entities.filename layout=layouts.logo />
+<Image path='images/{item.filename}.png' layout=layouts.logo />
+```
+
+Whenever a prop or action argument expects `ResourcePath`, strings are validated
+with `ResourcePath::new`. Static literals are validated during checking; dynamic
+strings and templates are validated on the worker. Already typed paths pass
+through unchanged. Compilation never checks file existence or decodes pixels.
+The standard environment supplies the path ownership adapter, including for
+custom reflected props and action requests.
+
+Use single quotes: translated templates, including nested translated
+expressions, are rejected for paths. Paths do not enter translation catalogs.
+Application string values must contain structural filenames, regardless of
+presentation language. There is no reverse conversion or arbitrary
+constructor-call syntax.
+
+Dynamic validation and loading errors retain source locations and prevent frame
+publication, preserving the last successful output. Correcting the value permits
+recovery. Images retain normal snapshot caching and optional resource hot
+reload.

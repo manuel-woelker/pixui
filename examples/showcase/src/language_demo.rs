@@ -89,3 +89,34 @@ pub fn text_page(
         .map_err(|errors| pixui_error!("{errors}"))
     })
 }
+
+/// The core image component retains validated resource-path props in source definitions.
+pub fn images_page(
+    application: &ApplicationHandle,
+    components: StandardComponents,
+) -> PixuiResult<LivePart> {
+    application.inspect(move |_app| {
+        let mut environment = Environment::new();
+        environment.component("Label", components.label)?;
+        environment.component("Image", components.image)?;
+        environment.layout(
+            "logo",
+            pixui_engine::layout::style::LayoutStyle::fixed(160.0, 160.0),
+        )?;
+        environment.layout(
+            "full",
+            pixui_engine::layout::style::LayoutStyle {
+                width: pixui_engine::layout::style::Length::Percent(1.0),
+                min_width: pixui_engine::layout::style::Length::Pixels(0.0),
+                ..Default::default()
+            },
+        )?;
+        compile(
+            "examples/showcase/ui/images.pixui",
+            include_str!("../ui/images.pixui"),
+            &environment,
+        )
+        .map(|compiled| compiled.into_template())
+        .map_err(|errors| pixui_error!("{errors}"))
+    })
+}

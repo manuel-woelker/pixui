@@ -34,6 +34,13 @@ capture owned request snapshots and generational references rather than
 borrowing application data. Payload-dependent work runs when a component emits
 an event; ordinary application reads retain their published snapshot.
 
+When props or action fields require `ResourcePath`, checking converts
+untranslated string expressions into validated paths. Literals are checked
+immediately; dynamic conversions run on the worker with source origins. This is
+a narrow semantic conversion, independent of image loading. Image preparation
+uses the existing resource cache and hot-reload pipeline; failures retain the
+last published frame.
+
 See [the language reference](../crates/engine/src/ui_language/README.md) and
 [the showcase template](../examples/showcase/ui/language.pixui). Rust-built and
 compiled templates share traversal, state identity, layout, painters and

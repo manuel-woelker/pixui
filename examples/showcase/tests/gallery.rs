@@ -187,6 +187,12 @@ fn widgets_update_shared_windows_conditional_content_collection_and_title() {
     current = receive(&outputs);
     let german_images = receive(&other);
     assert_eq!(current.display_list.images.len(), 1);
+    for output in [&current, &german_images] {
+        assert!(output.display_list.commands.iter().any(|command| matches!(
+            command, DrawCommand::DrawImage { destination, .. }
+                if destination.width == 160.0 && destination.height == 160.0
+        )));
+    }
     assert_eq!(
         current.display_list.images[0],
         german_images.display_list.images[0]
@@ -309,6 +315,8 @@ fn translation_export_runs_without_a_display_and_is_reproducible() {
     let first = run(&[]);
     assert_eq!(first, run(&["--no-hot-reload"]));
     assert_eq!(first, run(&["--hot-reload"]));
+    assert!(first.contains("msgid \"Images\""));
+    assert!(!first.contains("pixui-logo.png"));
     assert!(first.contains("Counter: {count}"));
     assert!(first.contains("Show details"));
     assert!(first.contains("PixUI Showcase — {count}"));

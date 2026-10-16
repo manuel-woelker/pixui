@@ -24,3 +24,16 @@ impl ResourcePath {
         &self.0
     }
 }
+
+/// Reflection preserves the validated value without exposing its representation
+/// or a constructor that could bypass `ResourcePath::new`.
+impl pixui_reflect::Reflect for ResourcePath {
+    fn type_descriptor() -> &'static pixui_reflect::TypeDescriptor {
+        static DESCRIPTOR: std::sync::OnceLock<pixui_reflect::TypeDescriptor> =
+            std::sync::OnceLock::new();
+        DESCRIPTOR.get_or_init(|| {
+            pixui_reflect::TypeDescriptor::new::<Self>(vec![], vec![])
+                .expect("opaque resource path has no members")
+        })
+    }
+}

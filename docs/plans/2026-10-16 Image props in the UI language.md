@@ -1,6 +1,6 @@
 # Image props in the UI language
 
-Status: proposed.
+Status: implemented; native showcase verification pending.
 
 ## Goal
 
@@ -19,15 +19,16 @@ Rust continues to register the image component, export application data/layouts
 and configure its image loader. Loading, caching and hot reload retain their
 existing resource-system behavior.
 
-## Current implementation
+## Starting point
 
 `ImageProps` contains `path: ResourcePath`. `ResourcePath::new` validates
 portable relative filenames and keeps the underlying string private. Neither
-type currently implements the reflection needed for language props construction.
+type previously implemented the reflection needed for language props
+construction.
 
 The language constructs props in descriptor field order and requires exact
-types, except contextual numeric literals. String expressions currently produce
-`String`; there is no conversion to `ResourcePath`. Double-quoted templates
+types, except contextual numeric literals. String expressions produced
+`String`; there was no conversion to `ResourcePath`. Double-quoted templates
 translate by default, making their use for resource filenames inappropriate.
 
 ## Design
@@ -121,18 +122,18 @@ resource pipeline and does not require recompiling the `.pixui` definition.
 
 ## Implementation checklist
 
-- [ ] Add and document opaque reflection for `ResourcePath` and reflected
+- [x] Add and document opaque reflection for `ResourcePath` and reflected
   sendable construction for `ImageProps`.
-- [ ] Register the resource-path value adapter in the language environment.
-- [ ] Add contextual string conversion, compile-time literal validation and
+- [x] Register the resource-path value adapter in the language environment.
+- [x] Add contextual string conversion, compile-time literal validation and
   diagnostics for translated/non-string expressions.
-- [ ] Lower and evaluate dynamic conversions with source origins and normal
+- [x] Lower and evaluate dynamic conversions with source origins and normal
   callback/i18n traversal.
-- [ ] Add reflection, compiler and worker integration tests described below.
-- [ ] Convert the showcase Images pane into its own `.pixui` template.
-- [ ] Update the language reference, resource/component documentation and
+- [x] Add reflection, compiler and worker integration tests described below.
+- [x] Convert the showcase Images pane into its own `.pixui` template.
+- [x] Update the language reference, resource/component documentation and
   architecture overview to explain the conversion and its limits.
-- [ ] Run `./n check` after each unit of work and resolve introduced failures.
+- [x] Run `./n check` after each unit of work and resolve introduced failures.
 - [ ] Manually verify the Images pane in both showcase windows.
 - [ ] Mark this plan complete and move it to `completed` after verification.
 
@@ -176,3 +177,18 @@ resource pipeline and does not require recompiling the `.pixui` definition.
   a pluggable conversion registry when another concrete semantic value type
   needs one. Container layout, dynamic styles and native metadata syntax remain
   separate showcase migration work.
+
+## Implementation notes
+
+- Plan committed before implementation as `0f7fb51`.
+- Added an opaque cached path descriptor and standard image props construction.
+  Conversion is type-directed, including custom props and callback request
+  fields.
+- Worker tests cover layered lookup, snapshot reuse, invalid/missing/undecodable
+  resources, retained output and recovery. Existing watcher tests now compile
+  the image declaration. Compiler tests cover loop fields and catalog exclusion.
+- The showcase Images pane now comes from `ui/images.pixui`; host code retains
+  loader configuration and the fixed 160 × 160 layout.
+- Automated checks have passed for the reflection/compiler and worker/callback
+  units. Final checks also passed with documentation and catalog/loop coverage.
+- Native verification remains required before moving this plan to completed.

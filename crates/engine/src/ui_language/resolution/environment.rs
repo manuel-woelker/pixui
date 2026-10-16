@@ -67,6 +67,7 @@ impl Environment {
         types!(
             String, bool, i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128, usize, f32, f64
         );
+        env.value_type::<crate::resources::path::ResourcePath>();
         env
     }
     /// Adds clone/ownership adapters; nested field types must be exported too.

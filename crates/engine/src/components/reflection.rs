@@ -33,3 +33,7 @@ props!(super::checkbox::CheckboxProps {
 });
 
 props!(super::text_input::TextInputProps { content: String });
+
+props!(super::image::ImageProps {
+    path: crate::resources::path::ResourcePath
+});

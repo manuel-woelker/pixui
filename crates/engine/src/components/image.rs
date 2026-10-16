@@ -9,6 +9,8 @@ use pixui_base::{PixuiResult, PixuiString};
 /// configure an image loader before the component is prepared.
 pub struct ImageComponent;
 /// The filename is resolved through the application's layered resource source.
+/// Reflected construction requires a validated `ResourcePath`. UI-language
+/// strings convert contextually; use untranslated single quotes for filenames.
 pub struct ImageProps {
     pub path: ResourcePath,
 }

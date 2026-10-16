@@ -24,6 +24,7 @@ pub enum ProgramKind {
         fields: Vec<(FieldIndex, &'static pixui_reflect::TypeDescriptor)>,
         owned_result: Option<ValueType>,
     },
+    ResourcePath,
     Not,
     Binary(Operator),
     Template(crate::i18n::template::CompiledTemplate, Vec<String>),
@@ -73,6 +74,15 @@ impl Program {
                     value = value.into_read_with_descriptor(field.0, field.1)?;
                 }
                 Ok(value)
+            }
+            ProgramKind::ResourcePath => {
+                let value = evaluate(context, &self.children[0])?;
+                let text = value
+                    .downcast_ref::<String>()
+                    .ok_or_else(|| pixui_error!("resource path conversion requires a string"))?;
+                Ok(DynamicObject::from_reflect(
+                    crate::resources::path::ResourcePath::new(text.clone())?,
+                ))
             }
             ProgramKind::Not => Ok(DynamicObject::from_reflect(!boolean(&evaluate(
                 context,

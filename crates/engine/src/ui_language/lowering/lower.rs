@@ -204,6 +204,9 @@ pub fn expression(value: typed::Expression, source: &Source) -> PixuiResult<Expr
                         }
                     }
                 }
+                typed::ExpressionKind::ResourcePath(value) => {
+                    (ProgramKind::ResourcePath, vec![expression(*value, source)?])
+                }
                 typed::ExpressionKind::Not(value) => {
                     (ProgramKind::Not, vec![expression(*value, source)?])
                 }

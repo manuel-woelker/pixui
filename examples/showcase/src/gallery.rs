@@ -3,9 +3,7 @@ use crate::model::data::Sample;
 use pixui_base::{PixuiResult, pixui_error};
 use pixui_engine::{
     application::application_handle::ApplicationHandle,
-    components::{
-        button::ButtonProps, checkbox::CheckboxProps, image::ImageProps, label::LabelProps,
-    },
+    components::{button::ButtonProps, checkbox::CheckboxProps, label::LabelProps},
     expression::{context::ExpressionContext, expression::Expression},
     layout::{
         container::ContainerPart,
@@ -139,14 +137,7 @@ pub fn definition(
             }],
         )?),
     ]);
-    let images = page(vec![
-        label(components, Expression::text("Images")?),
-        ComponentPart::typed(components.image, |_, _| {
-            ImageProps::new("images/pixui-logo.png")
-        })
-        .with_layout(LayoutStyle::fixed(160.0, 160.0))
-        .into(),
-    ]);
+    let images = crate::language_demo::images_page(app, components)?;
     let collections = page(vec![
         label(components, Expression::text("Collections")?),
         button(components, "Add collection row", add_sample)?,

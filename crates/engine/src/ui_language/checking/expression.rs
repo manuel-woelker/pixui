@@ -24,6 +24,10 @@ impl Checker<'_> {
         expected: Option<TypeId>,
     ) -> CheckResult<Expression> {
         let span = expression.span;
+        let resource_path = expected == Some(TypeId::of::<crate::resources::path::ResourcePath>());
+        if resource_path {
+            self.untranslated_path(expression)?;
+        }
         let (kind, descriptor) = match &expression.kind {
             resolved::ExpressionKind::Bool(value) => (
                 ExpressionKind::Constant {
@@ -181,6 +185,13 @@ impl Checker<'_> {
                 span,
                 "collections are borrowed sequences, not owned props or action values",
             ));
+        }
+        if resource_path && descriptor.type_id() == TypeId::of::<String>() {
+            return self.resource_path(Expression {
+                kind,
+                descriptor,
+                span,
+            });
         }
         if expected.is_some_and(|expected| expected != descriptor.type_id()) {
             let mut error = self.error(

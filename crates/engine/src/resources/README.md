@@ -69,6 +69,15 @@ relative `ResourcePath`, constructed conveniently with
 `ImageProps::new(filename)`. `Component::prepare` resolves it into `ImageState`
 before any painting begins.
 
+In `.pixui`, register the component in the host environment and write
+`<Image path='images/logo.png' />`. String expressions are contextually
+validated as `ResourcePath`: literals during compilation, dynamic filenames on
+the worker. Use untranslated single-quoted templates; translated paths are
+rejected. Typed paths also work directly. Reflection exposes `ResourcePath` as
+an opaque value without a constructor or writable internals; reflected
+`ImageProps` construction requires an already validated path. Compilation
+performs no resource I/O.
+
 `Application::load_image` shares live snapshots through a worker-local weak
 cache. The direct `ImageLoader::load` API still creates fresh snapshots. The
 application cache releases pixel ownership to component states and render
