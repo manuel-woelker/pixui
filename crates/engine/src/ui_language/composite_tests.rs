@@ -27,6 +27,7 @@ fn fixture() -> (Application, Environment) {
     env.component("Button", components.button).unwrap();
     env.component("Checkbox", components.checkbox).unwrap();
     env.component("Image", components.image).unwrap();
+    env.component("TextInput", components.text_input).unwrap();
     (app, env)
 }
 struct Values(Vec<String>);
@@ -60,7 +61,7 @@ fn local_forward_components_and_nested_slots_keep_caller_props() {
     let (mut app, env) = fixture();
     let source = r#"
         component Metric(title: String, value: String) {
-            <Card><Label text=props.title /><Label text=props.value /></Card>
+            <Card><Label text=title /><Label text=value /></Card>
         }
         component Card(children: Children) { <Column padding=8 gap=4><Children /></Column> }
         ui X {<>
@@ -81,7 +82,7 @@ fn scalar_props_and_loop_slots_resolve_in_the_correct_frames() {
     let source = r#"
         component Card(children: Children) { <Column><Children /></Column> }
         component Badge(title: String, count: u64, checked: bool) {
-            <Card><Label text='{props.title}:{props.count}' /><Checkbox label=props.title checked=props.checked /></Card>
+            <Card><Label text='{title}:{count}' /><Checkbox label=title checked=checked /></Card>
         }
         ui X {<>
             <Badge checked=true title='badge' count=7 />
@@ -346,16 +347,22 @@ fn projected_actions_keep_caller_slice_and_deferred_callbacks_capture_props() {
     }
     let rows = app.create_entity(vec!["old".to_owned()]).unwrap();
     env.entity("rows", &app, rows).unwrap();
-    let mut definition = compile("slot-events.pixui", r#"
+    let mut definition = compile(
+        "slot-events.pixui",
+        r#"
         component Wrapper(children: Children) {<Column slice='callee'><Children /></Column>}
-        component Echo(text: String) {<Button label=props.text @activate=caller.record(text: props.text) />}
+        component Echo(text: String) {<Button label=text @activate=caller.record(text: text) />}
         ui X {<Column slice='caller'>
             {for row in entities.rows => <Wrapper>
                 <Echo text=row />
                 <Button label=row @activate=record(text: row) />
             </Wrapper>}
         </Column>}
-    "#, &env).unwrap().definition;
+    "#,
+        &env,
+    )
+    .unwrap()
+    .definition;
     struct Bindings(Vec<EventBinding>);
     impl Visitor for Bindings {
         fn visit(&mut self, entry: &mut WalkEntry) -> PixuiResult<()> {
@@ -473,7 +480,7 @@ fn repeated_slot_occurrences_keep_outer_props_and_distinct_identity() {
     env.entity("rows", &app, rows).unwrap();
     let source = r#"
         component Repeat(children: Children) {{for inner in entities.rows => <Children />}}
-        component Outer(title: String) {<Repeat><Label text=props.title /></Repeat>}
+        component Outer(title: String) {<Repeat><Label text=title /></Repeat>}
         ui X {{for outer in entities.rows => <Outer title=outer />}}
     "#;
     assert_eq!(texts(&mut app, &env, source), ["one", "one", "two", "two"]);
@@ -513,7 +520,7 @@ fn explicit_host_type_aliases_and_semantic_props_share_existing_conversions() {
         texts(
             &mut app,
             &env,
-            "component Title(value: Detail, localized: String) {<><Label text=props.value.title /><Label text=props.localized /></>} ui X {<Title localized=entities.title value=entities.detail />}"
+            "component Title(value: Detail, localized: String) {<><Label text=value.title /><Label text=localized /></>} ui X {<Title localized=entities.title value=entities.detail />}"
         ),
         ["Nested", "Host title"]
     );
@@ -611,4 +618,76 @@ fn declaration_limits_apply_across_library_and_entry_modules() {
     .unwrap();
     assert!(error.to_string().contains("declaration limit"));
     assert_eq!(app.template_count(), 0);
+}
+
+#[test]
+fn bare_props_follow_lexical_shadowing_and_preserve_explicit_namespaces() {
+    let (mut app, mut env) = fixture();
+    let rows = app.create_entity(vec!["row".to_owned()]).unwrap();
+    env.entity("rows", &app, rows).unwrap();
+    let source = r#"
+        component Values(title: String, entities: String, enabled: bool) {<>
+            <Label text=title />
+            {for title in entities.rows => <Label text='{title}:{props.title}' />}
+            {match enabled; true => <Label text=props.entities />, false => <Label text='wrong' />,}
+        </>}
+        ui X {<Values title='prop' entities='namespace prop' enabled=true />}
+    "#;
+    assert_eq!(
+        texts(&mut app, &env, source),
+        ["prop", "row:prop", "namespace prop"]
+    );
+    assert!(
+        compile(
+            "scope.pixui",
+            "component Values(title: String) {<Label text=title />} ui X {<Label text=title />}",
+            &env
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn event_parameters_shadow_bare_props_but_explicit_props_remain_accessible() {
+    use super::{
+        parser::parse::parse,
+        resolution::{
+            resolved::{ExpressionKind, PartKind, Root},
+            resolver::resolve,
+        },
+        source::snapshot::Source,
+    };
+    let (_, mut env) = fixture();
+    let module = compile_module(
+        "editor.pixui",
+        "export component Editor(content: String) {<TextInput content=content />}",
+        &env,
+    )
+    .unwrap();
+    env.props = module.exports["Editor"].definition.props.clone();
+    let source = Source::new(
+        "event.pixui",
+        "ui X {<TextInput content=content @change=content />}",
+    );
+    let resolved = resolve(parse(&source).unwrap(), &env).unwrap();
+    let PartKind::Element { attributes, .. } = resolved.root.kind else {
+        panic!("element")
+    };
+    assert!(
+        matches!(&attributes[0].1.kind, ExpressionKind::Path { root: Root::Prop { index: 0, .. }, fields } if fields.is_empty())
+    );
+    assert!(
+        matches!(&attributes[1].1.kind, ExpressionKind::Path { root: Root::Event(_), fields } if fields[0].value == "content")
+    );
+    let source = Source::new(
+        "explicit.pixui",
+        "ui X {<TextInput content=content @change=props.content />}",
+    );
+    let resolved = resolve(parse(&source).unwrap(), &env).unwrap();
+    let PartKind::Element { attributes, .. } = resolved.root.kind else {
+        panic!("element")
+    };
+    assert!(
+        matches!(&attributes[1].1.kind, ExpressionKind::Path { root: Root::Prop { index: 0, .. }, fields } if fields.is_empty())
+    );
 }

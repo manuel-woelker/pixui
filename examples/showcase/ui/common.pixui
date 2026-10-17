@@ -7,8 +7,8 @@ export component Card(children: Children) {
 
 export component MetricCard(title: String, value: String) {
     <Card>
-        <Label text=props.title />
-        <Label text=props.value />
+        <Label text=title />
+        <Label text=value />
     </Card>
 }
 

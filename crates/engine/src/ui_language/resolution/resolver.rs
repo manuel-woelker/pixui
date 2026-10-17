@@ -490,6 +490,19 @@ impl Resolver<'_> {
                     .position(|name| name == &first.value)
                 {
                     (Root::Local(depth), 1)
+                } else if let Some((index, prop)) =
+                    self.environment.props.iter().enumerate().find(|(_, prop)| {
+                        prop.name == first.value
+                            && !matches!(first.value.as_str(), "entities" | "collections" | "event")
+                    })
+                {
+                    (
+                        Root::Prop {
+                            index,
+                            ty: prop.ty.clone(),
+                        },
+                        1,
+                    )
                 } else {
                     let map = match first.value.as_str() {
                         "entities" => &self.environment.entities,

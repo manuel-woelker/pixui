@@ -357,20 +357,26 @@ export component Card(children: Children) {
 
 component Metric(title: String, value: u64) {
     <Card>
-        <Label text=props.title />
-        <Label text='{props.value}' />
+        <Label text=title />
+        <Label text='{value}' />
     </Card>
 }
 ```
 
 Components can call local declarations appearing later in the file. All bodies
 are checked, even unused private ones; declaration cycles are rejected. Props
-are required, typed and read through indexed `props.name` expressions. Built-in
-types include primitives, String, ResourcePath, LocalizedText and ComponentRef.
-Custom names need `Environment::prop_type::<T>(alias)` with the existing
-Reflect/Clone/Send/Sync ownership bounds; arbitrary Rust type names are not
-exposed. Missing, duplicate, unknown or incompatible props report the call site
-and the prop declaration, including across source files.
+are required and typed. Refer to them by name (`title`, `value`, `value.field`)
+or explicitly as `props.name`; both resolve to the same indexed prop access.
+Event parameters shadow loop variables, which shadow bare prop names. Explicit
+namespaces (`props`, `event`, `entities`, `collections`, `layouts`, `styles`)
+retain their meaning; use `props.name` for a shadowed or namespace-named prop.
+Bare props work in templates, conditions, loops and callback arguments, with the
+same declaration-site scope and owned callback captures as explicit access.
+Built-in types include primitives, String, ResourcePath, LocalizedText and
+ComponentRef. Custom names need `Environment::prop_type::<T>(alias)` with the
+existing Reflect/Clone/Send/Sync ownership bounds; arbitrary Rust type names are
+not exposed. Missing, duplicate, unknown or incompatible props report the call
+site and the prop declaration, including across source files.
 
 Each supplied prop evaluates once per reached occurrence per walk, in
 declaration order. Values refresh without resetting mounted state. Contextual
