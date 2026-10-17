@@ -12,5 +12,6 @@ pub mod erased_object_ref;
 mod named_entities;
 pub mod object_ref;
 
+mod composition;
 pub mod i18n;
 mod resource_reload;

@@ -296,6 +296,8 @@ impl PainterRegistry {
         let mut pending = vec![template];
         while let Some(part) = pending.pop() {
             match part {
+                LivePart::Dynamic(_) => {}
+
                 LivePart::Composite(part) => pending.extend(&part.parts),
                 LivePart::Container(part) => pending.extend(&part.children),
                 LivePart::ForLoop(part) => pending.push(&part.body),

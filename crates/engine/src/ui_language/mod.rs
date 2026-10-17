@@ -14,6 +14,9 @@ mod tests;
 #[cfg(test)]
 mod event_tests;
 
+pub mod bundle;
+#[cfg(test)]
+mod composition_tests;
 #[cfg(test)]
 mod container_tests;
 #[cfg(test)]

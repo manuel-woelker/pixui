@@ -1,0 +1,11 @@
+ui CheckboxesDemo domain 'showcase' {
+    <Column width='100%' min_width=0 gap=12 slice='showcase'>
+        <Label text="Checkboxes" />
+        <Checkbox label="An independent checkbox" checked=entities.checked @activate=toggle_checked() />
+        <Checkbox label="Show details" checked=entities.details @activate=toggle_details() />
+        {match entities.details;
+            true => <Label text="Shared data, hover and focus · independent theme and locale" />,
+            false => <></>,
+        }
+    </Column>
+}

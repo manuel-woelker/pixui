@@ -163,6 +163,7 @@ pub fn render_measured(
         None,
         None,
         &mut crate::layout::cache::LayoutCache::default(),
+        None,
     )
 }
 
@@ -178,6 +179,7 @@ pub(crate) fn render_with_pointer(
     pointer: Option<Point>,
     editing: Option<&super::text_input::target::RenderEditing<'_>>,
     layout_cache: &mut crate::layout::cache::LayoutCache,
+    domain: Option<&str>,
 ) -> PixuiResult<RenderedUi> {
     let started = std::time::Instant::now();
     settings.validate()?;
@@ -198,7 +200,9 @@ pub(crate) fn render_with_pointer(
     walk(
         &mut template,
         state.root_state_mut(),
-        &ExpressionContext::new(application).with_language(settings.language),
+        &ExpressionContext::new(application)
+            .with_language(settings.language)
+            .with_domain(domain),
         &mut visitor,
     )?;
     // Reborrow physical state in the same depth-first order without evaluating
@@ -214,6 +218,7 @@ pub(crate) fn render_with_pointer(
                 pending.extend(state.parts.iter().rev())
             }
             PartState::ForLoop(state) => pending.extend(state.items.iter().rev()),
+            PartState::Dynamic(state) => pending.push(&state.state),
             PartState::Match(state) if state.selected.is_some() => pending.push(&state.part),
             _ => {}
         }

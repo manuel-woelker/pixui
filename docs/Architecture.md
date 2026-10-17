@@ -49,6 +49,23 @@ See [the language reference](../crates/engine/src/ui_language/README.md) and
 compiled templates share traversal, state identity, layout, painters and
 renderers.
 
+Reusable subtrees are installed in an append-only application registry.
+`ComponentRef` is an opaque application-local identity; it owns no tree and is
+separate from registered leaf `ComponentId<T>` values. Source imports are
+checked as a bounded graph through host-controlled source resolvers and
+installed transactionally with their translation declarations. Static aliases
+and `<Dynamic component=... />` lower to the same live node. Every mounted
+occurrence retains its own subtree state/template copy; changing references
+unmounts it and changes the component identity path. Dynamic contexts keep
+application/language access but start a fresh lexical local scope. Recursive
+references and expanded node limits prevent unbounded traversal.
+
+Code-defined titles use opaque `LocalizedText` handles in the existing i18n
+registry. They resolve per presentation and are exportable before first render.
+The showcase's reflected navigation state stores stable IDs, localized titles
+and component references, allowing source-defined navigation without positional
+Rust tree assembly. Native metadata and dynamic-style adapters remain in Rust.
+
 ### Component events
 
 Components declare an associated event trait beside their props and state.

@@ -6,9 +6,6 @@ msgstr ""
 msgid "PixUI · Widget showcase"
 msgstr "PixUI · Komponenten"
 
-msgid "Counter: {count}"
-msgstr "Zähler: {count}"
-
 msgid "Increment counter"
 msgstr "Zähler erhöhen"
 

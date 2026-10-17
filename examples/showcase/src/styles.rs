@@ -3,7 +3,7 @@ use pixui_base::PixuiResult;
 use pixui_engine::{
     application::application_handle::ApplicationHandle,
     styles::{
-        family::{StyleAssignment, StyleFamily},
+        family::StyleFamily,
         style::{Border, PaintStyle, StylePatch},
         theme::{ThemeFont, ThemeTokens},
     },
@@ -60,10 +60,6 @@ pub fn register(application: &ApplicationHandle) -> PixuiResult<()> {
     let mut dark = ThemeTokens::for_theme(Theme::Dark);
     dark.font = ThemeFont::Mono;
     application.set_theme_tokens(Theme::Dark, dark)
-}
-pub fn assignment(application: &ApplicationHandle, name: &str) -> PixuiResult<StyleAssignment> {
-    let name = name.to_owned();
-    application.inspect(move |app| Ok(StyleAssignment::new(app.styles().family(&name)?)))
 }
 /// A declaration-local patch demonstrates that its neighboring occurrences
 /// continue using the registered family unchanged.

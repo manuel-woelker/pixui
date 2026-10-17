@@ -13,6 +13,7 @@ pub enum ItemKey {
 /// A typed descent step prevents child, arm and item indices from colliding.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum PathSegment {
+    Dynamic(crate::composition::component_ref::ComponentRef),
     Child(usize),
     LoopItem(usize),
     LoopKey(ItemKey),

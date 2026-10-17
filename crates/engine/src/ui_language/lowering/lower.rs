@@ -36,6 +36,13 @@ fn part(part: TypedPart, source: &Source) -> PixuiResult<LivePart> {
         span: part.span,
     };
     let result = match part.kind {
+        typed::PartKind::Dynamic(value) => {
+            LivePart::Dynamic(crate::live_model::part::DynamicPart {
+                component: expression(value, source)?,
+                domain: None,
+                origin: Some(origin.clone()),
+            })
+        }
         typed::PartKind::Composite(children) => LivePart::Composite(CompositePart {
             parts: children
                 .into_iter()
@@ -204,6 +211,10 @@ pub fn expression(value: typed::Expression, source: &Source) -> PixuiResult<Expr
                         }
                     }
                 }
+                typed::ExpressionKind::LocalizedText(value) => (
+                    ProgramKind::LocalizedText,
+                    vec![expression(*value, source)?],
+                ),
                 typed::ExpressionKind::ResourcePath(value) => {
                     (ProgramKind::ResourcePath, vec![expression(*value, source)?])
                 }

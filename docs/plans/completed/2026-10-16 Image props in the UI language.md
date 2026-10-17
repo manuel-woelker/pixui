@@ -1,6 +1,6 @@
 # Image props in the UI language
 
-Status: implemented; native showcase verification pending.
+Status: complete. Automated checks and native showcase validation passed.
 
 ## Goal
 
@@ -134,8 +134,8 @@ resource pipeline and does not require recompiling the `.pixui` definition.
 - [x] Update the language reference, resource/component documentation and
   architecture overview to explain the conversion and its limits.
 - [x] Run `./n check` after each unit of work and resolve introduced failures.
-- [ ] Manually verify the Images pane in both showcase windows.
-- [ ] Mark this plan complete and move it to `completed` after verification.
+- [x] Manually verify the Images pane in both showcase windows.
+- [x] Mark this plan complete and move it to `completed` after verification.
 
 ## Verification
 
@@ -191,4 +191,5 @@ resource pipeline and does not require recompiling the `.pixui` definition.
   loader configuration and the fixed 160 × 160 layout.
 - Automated checks have passed for the reflection/compiler and worker/callback
   units. Final checks also passed with documentation and catalog/loop coverage.
-- Native verification remains required before moving this plan to completed.
+- Native image verification passed in both showcase windows, confirmed by the
+  user on 2026-10-17.

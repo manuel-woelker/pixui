@@ -42,8 +42,30 @@ pub fn compile(
     environment: &Environment,
 ) -> Result<CompiledDefinition, CompileErrors> {
     let source = Source::new(filename, text);
+    let syntax = parse(&source).map_err(|diagnostics| CompileErrors {
+        source: source.clone(),
+        diagnostics,
+    })?;
+    if let Some(import) = syntax.imports.first() {
+        return Err(CompileErrors {
+            source: source.clone(),
+            diagnostics: vec![Diagnostic::new(
+                Stage::Resolution,
+                "R014",
+                import.span,
+                "imports require a source resolver/bundle",
+            )],
+        });
+    }
+    compile_syntax(source, syntax, environment)
+}
+
+pub(crate) fn compile_syntax(
+    source: Source,
+    syntax: super::ast::definition::Definition,
+    environment: &Environment,
+) -> Result<CompiledDefinition, CompileErrors> {
     let result = (|| {
-        let syntax = parse(&source)?;
         let resolved = resolve(syntax, environment)?;
         let typed = check(resolved, environment)?;
         let span = typed.syntax.span;

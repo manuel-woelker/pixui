@@ -1,292 +1,38 @@
-//! A live component gallery: props read shared data, activations dispatch actions.
-use crate::model::data::Sample;
+//! Compile the gallery and bridge the remaining host-only definition features.
 use pixui_base::{PixuiResult, pixui_error};
 use pixui_engine::{
     application::application_handle::ApplicationHandle,
-    components::{button::ButtonProps, checkbox::CheckboxProps, label::LabelProps},
+    components::button::ButtonProps,
     expression::{context::ExpressionContext, expression::Expression},
-    layout::{
-        container::ContainerPart,
-        grid::Track,
-        style::{LayoutStyle, Length},
-    },
-    live_model::{
-        match_part::{MatchCandidate, MatchPart, MatchPattern},
-        part::{ComponentPart, ForLoopPart, LivePart},
-    },
+    live_model::part::{ComponentPart, LivePart},
     painters::standard::StandardComponents,
     resources::path::ResourcePath,
     ui::{
         activation::ActionBinding, definition::UiDefinition, presentation::PresentationSettings,
         window_properties::WindowProperties,
     },
+    ui_language::compiler::compile,
 };
 
-const SIDEBAR_WIDTH: f32 = 200.0;
-
-/// Read a declared value with a useful error instead of an unchecked downcast.
-fn text(values: &[pixui_reflect::DynamicObject<'_>], index: usize) -> PixuiResult<String> {
-    values
-        .get(index)
-        .and_then(|value| value.downcast_ref::<String>())
-        .cloned()
-        .ok_or_else(|| pixui_error!("showcase requires a string expression"))
-}
-pub(crate) fn label(components: StandardComponents, expression: Expression) -> LivePart {
-    LivePart::Component(ComponentPart::typed_with_expressions(
-        components.label,
-        vec![expression],
-        |_, _, values| {
-            Ok(LabelProps {
-                text: text(values, 0)?,
-            })
-        },
-    ))
-}
-pub(crate) fn button(
-    components: StandardComponents,
-    source: &str,
-    activate: pixui_engine::ui::activation::ActivationFactory,
-) -> PixuiResult<LivePart> {
-    Ok(LivePart::Component(
-        ComponentPart::typed_with_expressions(
-            components.button,
-            vec![Expression::text(source)?],
-            |_, _, values| {
-                Ok(ButtonProps {
-                    label: text(values, 0)?,
-                })
-            },
-        )
-        .with_activation(activate),
-    ))
-}
-fn checkbox(
-    components: StandardComponents,
-    source: &str,
-    checked: Expression,
-    activate: pixui_engine::ui::activation::ActivationFactory,
-) -> PixuiResult<LivePart> {
-    Ok(LivePart::Component(
-        ComponentPart::typed_with_expressions(
-            components.checkbox,
-            vec![Expression::text(source)?, checked],
-            |_, _, values| {
-                Ok(CheckboxProps {
-                    label: text(values, 0)?,
-                    checked: *values
-                        .get(1)
-                        .and_then(|value| value.downcast_ref::<bool>())
-                        .ok_or_else(|| pixui_error!("showcase requires a boolean expression"))?,
-                })
-            },
-        )
-        .with_activation(activate),
-    ))
-}
-
-/// One definition with explicitly declared messages, shared by every presentation.
+/// UI declarations live in source templates; Rust supplies exports, composition,
+/// dynamic styles and native metadata until those have language support.
 pub fn definition(
     app: &ApplicationHandle,
     components: StandardComponents,
 ) -> PixuiResult<UiDefinition> {
-    let slice = app.inspect(|app| Ok(app.slice_named("showcase")?.id()))?;
-    let details = app.entity_ref::<bool>(slice, "details")?;
-    let checked = app.entity_ref::<bool>(slice, "checked")?;
-    let count = app.entity_ref::<u64>(slice, "count")?;
-    let samples = app.collection_key("showcase", "samples")?;
-    let selected = app.entity_ref::<u64>(slice, "selected")?;
-    let buttons = page(vec![
-        label(components, Expression::text("Buttons")?),
-        label(
-            components,
-            Expression::i18n("Counter: {count}", [("count", Expression::entity(count))])?,
-        ),
-        ContainerPart::row()
-            .with_gap(8.0)
-            .with_children(vec![
-                button(components, "Increment counter", increment)?,
-                button(components, "Reset counter", reset)?,
-            ])
-            .into(),
-    ]);
-    let checkboxes = page(vec![
-        label(components, Expression::text("Checkboxes")?),
-        checkbox(
-            components,
-            "An independent checkbox",
-            Expression::entity(checked),
-            toggle_checked,
-        )?,
-        checkbox(
-            components,
-            "Show details",
-            Expression::entity(details),
-            toggle_details,
-        )?,
-        LivePart::Match(MatchPart::new(
-            Expression::entity(details),
-            vec![MatchCandidate {
-                pattern: MatchPattern::value(true),
-                part: label(
-                    components,
-                    Expression::text(
-                        "Shared data, hover and focus · independent theme and locale",
-                    )?,
-                ),
-            }],
-        )?),
-    ]);
-    let images = crate::language_demo::images_page(app, components)?;
-    let collections = page(vec![
-        label(components, Expression::text("Collections")?),
-        button(components, "Add collection row", add_sample)?,
-        LivePart::ForLoop(ForLoopPart {
-            key: None,
-            expression: Expression::from_collection(samples),
-            body: Box::new(
-                ComponentPart::typed(components.label, |context, _| {
-                    let sample = context
-                        .value()?
-                        .downcast_ref::<Sample>()
-                        .ok_or_else(|| pixui_error!("sample row requires Sample context"))?;
-                    Ok(LabelProps {
-                        text: sample.label.clone(),
-                    })
-                })
-                .into(),
-            ),
-        }),
-    ]);
-    let text_page = crate::language_demo::text_page(app, components)?;
-    let primary = crate::styles::assignment(app, "showcase.primary")?;
-    let quiet = crate::styles::assignment(app, "showcase.quiet")?;
-    let danger = crate::styles::assignment(app, "showcase.danger")?;
-    let mut examples = vec![
-        label(components, Expression::text("Styles")?),
-        label(
-            components,
-            Expression::text("Theme colors and fonts · reflected painter slots")?,
-        ),
-    ];
-    for (title, assignment) in [
-        ("Primary", primary.clone()),
-        ("Quiet", quiet),
-        ("Danger", danger),
-        ("Compact", primary.clone().variant("compact")),
-        ("Monospace", primary.clone().variant("mono")),
-        (
-            "Local purple override",
-            primary.patch(crate::styles::local_color()),
-        ),
-    ] {
-        examples.push(
-            ComponentPart::typed_with_expressions(
-                components.button,
-                vec![Expression::text(title)?],
-                |_, _, values| {
-                    Ok(ButtonProps {
-                        label: text(values, 0)?,
-                    })
-                },
-            )
-            .with_style("body", assignment)
-            .with_activation(increment)
-            .into(),
-        );
-    }
-    examples.push(checkbox(
-        components,
-        "Use compact style",
-        Expression::entity(checked),
-        toggle_checked,
-    )?);
-    examples.push(
-        ComponentPart::typed_with_expressions(
-            components.button,
-            vec![Expression::text("Dynamic style variant")?],
-            |_, _, values| {
-                Ok(ButtonProps {
-                    label: text(values, 0)?,
-                })
-            },
+    register_pages(app, components)?;
+    let root = app.inspect(move |app| {
+        let env = crate::environment::create(app, components)?;
+        Ok(compile(
+            "examples/showcase/ui/showcase.pixui",
+            include_str!("../ui/showcase.pixui"),
+            &env,
         )
-        .with_style_resolver(dynamic_style)
-        .with_activation(increment)
-        .into(),
-    );
-    let styles_page = page(examples);
-    let projects =
-        app.entity_ref::<Vec<crate::model::data::LayoutProject>>(slice, "layout_projects")?;
-    let layout_page = crate::layout_demo::page(app, components, count, projects)?;
-    let language_page = crate::language_demo::page(app, components)?;
-    let navigation = ContainerPart::column()
-        .with_layout(LayoutStyle {
-            width: Length::Pixels(SIDEBAR_WIDTH),
-            min_width: Length::Pixels(SIDEBAR_WIDTH),
-            max_width: Length::Pixels(SIDEBAR_WIDTH),
-            shrink: 0.0,
-            ..Default::default()
-        })
-        .with_gap(8.0)
-        .with_children(vec![
-            label(components, Expression::text("Components")?),
-            navigation_item::<0>(components, "Buttons")?,
-            navigation_item::<1>(components, "Checkboxes")?,
-            navigation_item::<2>(components, "Images")?,
-            navigation_item::<3>(components, "Collections")?,
-            navigation_item::<4>(components, "Text and translations")?,
-            navigation_item::<5>(components, "Styles")?,
-            navigation_item::<6>(components, "Layout")?,
-            navigation_item::<7>(components, "UI language")?,
-        ])
-        .into();
-    let selected_page = LivePart::Match(MatchPart::new(
-        Expression::entity(selected),
-        [
-            buttons,
-            checkboxes,
-            images,
-            collections,
-            text_page,
-            styles_page,
-            layout_page,
-            language_page,
-        ]
-        .into_iter()
-        .enumerate()
-        .map(|(index, part)| MatchCandidate {
-            pattern: MatchPattern::value(index as u64),
-            part,
-        })
-        .collect(),
-    )?);
-    let mut panes = ContainerPart::grid()
-        .with_layout(LayoutStyle {
-            grow: 1.0,
-            shrink: 0.0,
-            ..Default::default()
-        })
-        .with_columns(vec![Track::length(SIDEBAR_WIDTH), Track::fraction(1.0)])
-        .with_gap(20.0)
-        .with_children(vec![navigation, selected_page]);
-    panes.align = pixui_engine::layout::style::Alignment::Start;
-    let root = ContainerPart::column()
-        .with_layout(LayoutStyle {
-            grow: 1.0,
-            shrink: 0.0,
-            ..Default::default()
-        })
-        .with_gap(20.0)
-        .with_children(vec![
-            label(components, Expression::text("PixUI · Widget showcase")?),
-            panes.into(),
-            label(
-                components,
-                Expression::text("Tab: focus · Enter/Space: activate · F11: performance")?,
-            ),
-        ])
-        .into();
+        .map_err(|errors| pixui_error!("{errors}"))?
+        .into_template())
+    })?;
+    let slice = app.inspect(|app| Ok(app.slice_named("showcase")?.id()))?;
+    let count = app.entity_ref::<u64>(slice, "count")?;
     Ok(UiDefinition::new("showcase", root)
         .with_translation_domain("showcase")
         .with_window_property_expressions(
@@ -298,88 +44,127 @@ pub fn definition(
         ))
 }
 
-fn page(parts: Vec<LivePart>) -> LivePart {
-    ContainerPart::column()
-        .with_gap(12.0)
-        .with_layout(LayoutStyle {
-            width: Length::Percent(1.0),
-            min_width: Length::Pixels(0.0),
-            ..Default::default()
-        })
-        .with_children(parts)
-        .into()
+/// Compile all views once, including inactive ones. The UI has no duplicated
+/// page names or page-count assumptions; this is the single navigation list.
+fn register_pages(app: &ApplicationHandle, components: StandardComponents) -> PixuiResult<()> {
+    use crate::model::{actions::ShowcaseActions, data::NavigationEntry};
+    use pixui_engine::ui_language::{bundle::BundleLimits, source::bundle::SourceBundle};
+    let env = app.inspect(move |app| crate::environment::create(app, components))?;
+    let pages = [
+        (
+            0,
+            "Buttons",
+            "examples/showcase/ui/buttons.pixui",
+            include_str!("../ui/buttons.pixui"),
+        ),
+        (
+            1,
+            "Checkboxes",
+            "examples/showcase/ui/checkboxes.pixui",
+            include_str!("../ui/checkboxes.pixui"),
+        ),
+        (
+            2,
+            "Images",
+            "examples/showcase/ui/images.pixui",
+            include_str!("../ui/images.pixui"),
+        ),
+        (
+            3,
+            "Collections",
+            "examples/showcase/ui/collections.pixui",
+            include_str!("../ui/collections.pixui"),
+        ),
+        (
+            4,
+            "Text and translations",
+            "examples/showcase/ui/text.pixui",
+            include_str!("../ui/text.pixui"),
+        ),
+        (
+            5,
+            "Styles",
+            "examples/showcase/ui/styles.pixui",
+            include_str!("../ui/styles.pixui"),
+        ),
+        (
+            6,
+            "Layout",
+            "examples/showcase/ui/layout.pixui",
+            include_str!("../ui/layout.pixui"),
+        ),
+        (
+            7,
+            "UI language",
+            "examples/showcase/ui/language.pixui",
+            include_str!("../ui/language.pixui"),
+        ),
+    ];
+    let mut sources = SourceBundle::new();
+    for (_, _, id, text) in pages {
+        sources.add(id, text)?;
+    }
+    let installed = app.install_bundle(
+        sources,
+        pages.iter().map(|(_, _, id, _)| (*id).to_owned()).collect(),
+        env,
+        "showcase",
+        BundleLimits::default(),
+    )?;
+    let mut entries = Vec::new();
+    for (id, title, module, _) in pages {
+        let mut component = installed.component(module)?;
+        if id == 5 {
+            let mut styles = app.inspect(move |app| app.clone_template(component))?;
+            let LivePart::Container(container) = &mut styles else {
+                return Err(pixui_error!("styles template must have a container root"));
+            };
+            container.children.push(dynamic_button(components)?);
+            component = app.register_template("styles-with-dynamic-example", "showcase", styles)?;
+        }
+        entries.push(NavigationEntry {
+            id,
+            title: app.localized_text("showcase", title)?,
+            component,
+        });
+    }
+    ShowcaseActions::bind(app)?.install_navigation(entries)?;
+    Ok(())
 }
 
-/// Navigation uses ordinary buttons to change the shared selected page.
-fn navigation_item<const PAGE: u64>(
-    components: StandardComponents,
-    title: &str,
-) -> PixuiResult<LivePart> {
+fn dynamic_button(components: StandardComponents) -> PixuiResult<LivePart> {
     Ok(ComponentPart::typed_with_expressions(
         components.button,
-        vec![Expression::text(title)?],
+        vec![Expression::text("Dynamic style variant")?],
         |_, _, values| {
             Ok(ButtonProps {
                 label: text(values, 0)?,
             })
         },
     )
-    .with_layout(LayoutStyle {
-        width: Length::Percent(1.0),
-        min_width: Length::Pixels(0.0),
-        ..Default::default()
-    })
-    .with_activation(select_page::<PAGE>)
+    .with_style_resolver(dynamic_style)
+    .with_activation(increment)
     .into())
 }
-fn select_page<const PAGE: u64>(
+fn increment(
     context: &ExpressionContext<'_>,
     _: &PresentationSettings,
 ) -> PixuiResult<ActionBinding> {
     let action = context
         .application()?
         .slice_named("showcase")?
-        .action_handle_named("select")?;
-    Ok(Box::new(move |_| action.call(vec![Box::new(PAGE)])))
-}
-
-fn binding(context: &ExpressionContext<'_>, name: &'static str) -> PixuiResult<ActionBinding> {
-    let app = context.application()?;
-    let action = app.slice_named("showcase")?.action_handle_named(name)?;
+        .action_handle_named("increment")?;
     Ok(Box::new(move |_| action.call(vec![])))
 }
 
-pub(crate) fn increment(
-    context: &ExpressionContext<'_>,
-    _: &PresentationSettings,
-) -> PixuiResult<ActionBinding> {
-    binding(context, "increment")
+/// Read a declared value with a useful error instead of an unchecked downcast.
+fn text(values: &[pixui_reflect::DynamicObject<'_>], index: usize) -> PixuiResult<String> {
+    values
+        .get(index)
+        .and_then(|value| value.downcast_ref::<String>())
+        .cloned()
+        .ok_or_else(|| pixui_error!("showcase requires a string expression"))
 }
-pub(crate) fn reset(
-    context: &ExpressionContext<'_>,
-    _: &PresentationSettings,
-) -> PixuiResult<ActionBinding> {
-    binding(context, "reset")
-}
-fn toggle_checked(
-    context: &ExpressionContext<'_>,
-    _: &PresentationSettings,
-) -> PixuiResult<ActionBinding> {
-    binding(context, "toggle_checked")
-}
-fn toggle_details(
-    context: &ExpressionContext<'_>,
-    _: &PresentationSettings,
-) -> PixuiResult<ActionBinding> {
-    binding(context, "toggle_details")
-}
-fn add_sample(
-    context: &ExpressionContext<'_>,
-    _: &PresentationSettings,
-) -> PixuiResult<ActionBinding> {
-    binding(context, "add_sample")
-}
-
 fn window_properties(
     _: &ExpressionContext<'_>,
     _: &PresentationSettings,

@@ -129,6 +129,8 @@ impl ComponentRegistry {
         let mut pending = vec![template];
         while let Some(part) = pending.pop() {
             match part {
+                LivePart::Dynamic(_) => {}
+
                 LivePart::Composite(composite) => pending.extend(&composite.parts),
                 LivePart::Container(container) => {
                     container.to_taffy()?;
@@ -178,6 +180,8 @@ impl ComponentRegistry {
         let mut pending = vec![template];
         while let Some(part) = pending.pop() {
             match part {
+                LivePart::Dynamic(_) => {}
+
                 LivePart::Composite(part) => pending.extend(&mut part.parts),
                 LivePart::Container(part) => pending.extend(&mut part.children),
                 LivePart::ForLoop(part) => pending.push(&mut part.body),

@@ -29,6 +29,13 @@ impl Checker<'_> {
             self.untranslated_path(expression)?;
         }
         let (kind, descriptor) = match &expression.kind {
+            resolved::ExpressionKind::ComponentRef(reference) => (
+                ExpressionKind::Constant {
+                    value: Arc::new(*reference),
+                    ty: ValueType::of::<crate::composition::component_ref::ComponentRef>(),
+                },
+                crate::composition::component_ref::ComponentRef::type_descriptor(),
+            ),
             resolved::ExpressionKind::Bool(value) => (
                 ExpressionKind::Constant {
                     value: Arc::new(*value),
@@ -100,6 +107,17 @@ impl Checker<'_> {
                         }
                         Segment::Value(value) => {
                             let typed = self.expression(value, None)?;
+                            let typed = if typed.descriptor.type_id()
+                                == TypeId::of::<crate::composition::localized_text::LocalizedText>()
+                            {
+                                Expression {
+                                    span: typed.span,
+                                    descriptor: String::type_descriptor(),
+                                    kind: ExpressionKind::LocalizedText(Box::new(typed)),
+                                }
+                            } else {
+                                typed
+                            };
                             if !crate::expression::program::is_scalar(typed.descriptor.type_id()) {
                                 return Err(
                                     self.error(value.span, "template arguments must be scalars")
@@ -190,6 +208,20 @@ impl Checker<'_> {
             return self.resource_path(Expression {
                 kind,
                 descriptor,
+                span,
+            });
+        }
+        if expected == Some(TypeId::of::<String>())
+            && descriptor.type_id()
+                == TypeId::of::<crate::composition::localized_text::LocalizedText>()
+        {
+            return Ok(Expression {
+                kind: ExpressionKind::LocalizedText(Box::new(Expression {
+                    kind,
+                    descriptor,
+                    span,
+                })),
+                descriptor: String::type_descriptor(),
                 span,
             });
         }

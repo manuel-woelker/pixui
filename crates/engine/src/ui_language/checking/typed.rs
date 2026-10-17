@@ -37,6 +37,7 @@ pub enum ExpressionKind {
         arguments: Vec<(String, Expression)>,
     },
     ResourcePath(Box<Expression>),
+    LocalizedText(Box<Expression>),
     Not(Box<Expression>),
     Binary {
         op: Operator,
@@ -53,6 +54,7 @@ pub struct TypedPart {
     pub kind: PartKind,
 }
 pub enum PartKind {
+    Dynamic(Expression),
     Component {
         export: ComponentExport,
         props: Vec<Expression>,

@@ -6,6 +6,8 @@ use crate::application::app::Application;
 /// Read-only inputs for expressions: application storage and an optional current value.
 /// Results borrow these inputs rather than owning or copying application data.
 pub struct ExpressionContext<'a> {
+    pub(crate) domain: Option<&'a str>,
+    pub(crate) components: Vec<crate::composition::component_ref::ComponentRef>,
     event: Option<&'a DynamicObject<'a>>,
     language: crate::i18n::indices::LanguageIndex,
     application: Option<&'a Application>,
@@ -20,6 +22,8 @@ impl<'a> ExpressionContext<'a> {
     /// Application expressions are available; no current field context is set.
     pub fn new(application: &'a Application) -> Self {
         Self {
+            domain: None,
+            components: vec![],
             event: None,
             language: Default::default(),
             application: Some(application),
@@ -31,6 +35,8 @@ impl<'a> ExpressionContext<'a> {
     /// Field expressions are available without application storage.
     pub fn from_value(value: &'a DynamicObject<'a>) -> Self {
         Self {
+            domain: None,
+            components: vec![],
             event: None,
             language: Default::default(),
             application: None,
@@ -54,6 +60,33 @@ impl<'a> ExpressionContext<'a> {
             .ok_or_else(|| pixui_error!("event parameters require callback evaluation"))
     }
 
+    pub(crate) fn with_component(
+        &self,
+        reference: crate::composition::component_ref::ComponentRef,
+    ) -> PixuiResult<ExpressionContext<'a>> {
+        if self.components.len() >= 64 || self.components.contains(&reference) {
+            return Err(pixui_error!(
+                "recursive or excessively nested dynamic component"
+            ));
+        }
+        let entry = self.application()?.templates.get(reference)?;
+        if self.domain.is_some_and(|domain| domain != entry.domain) {
+            return Err(pixui_error!(
+                "component `{}` has an incompatible translation domain",
+                entry.name
+            ));
+        }
+        let mut next = Self::new(self.application()?).with_language(self.language);
+        next.domain = Some(&entry.domain);
+        next.components = self.components.clone();
+        next.components.push(reference);
+        Ok(next)
+    }
+
+    pub(crate) fn with_domain(mut self, domain: Option<&'a str>) -> Self {
+        self.domain = domain;
+        self
+    }
     pub fn language(&self) -> crate::i18n::indices::LanguageIndex {
         self.language
     }
@@ -108,6 +141,8 @@ impl<'a> ExpressionContext<'a> {
         let mut locals = self.locals.clone();
         locals.push((value, address));
         ExpressionContext {
+            domain: self.domain,
+            components: self.components.clone(),
             event: self.event,
             language: self.language,
             application: self.application,

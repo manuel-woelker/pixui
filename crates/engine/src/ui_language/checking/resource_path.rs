@@ -15,6 +15,9 @@ use std::sync::Arc;
 impl Checker<'_> {
     pub(super) fn resource_path(&self, value: Expression) -> CheckResult<Expression> {
         let span = value.span;
+        if contains_localized(&value) {
+            return Err(self.error(span, "resource paths cannot contain localized text"));
+        }
         let kind = if let ExpressionKind::Template {
             translated: false,
             source,
@@ -70,5 +73,22 @@ impl Checker<'_> {
             _ => {}
         }
         Ok(())
+    }
+}
+
+/// Known localized handles cannot be smuggled into structural path templates.
+fn contains_localized(expression: &Expression) -> bool {
+    match &expression.kind {
+        ExpressionKind::LocalizedText(_) => true,
+        ExpressionKind::Template { arguments, .. } => {
+            arguments.iter().any(|(_, value)| contains_localized(value))
+        }
+        ExpressionKind::ResourcePath(value) | ExpressionKind::Not(value) => {
+            contains_localized(value)
+        }
+        ExpressionKind::Binary { left, right, .. } => {
+            contains_localized(left) || contains_localized(right)
+        }
+        _ => false,
     }
 }

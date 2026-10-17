@@ -73,6 +73,10 @@ impl Checker<'_> {
     fn part(&mut self, part: ResolvedPart) -> CheckResult<TypedPart> {
         let span = part.syntax.span;
         let kind = match part.kind {
+            resolved::PartKind::Dynamic(expression) => PartKind::Dynamic(self.expression(
+                &expression,
+                Some(TypeId::of::<crate::composition::component_ref::ComponentRef>()),
+            )?),
             resolved::PartKind::Element {
                 component: Some(export),
                 attributes,

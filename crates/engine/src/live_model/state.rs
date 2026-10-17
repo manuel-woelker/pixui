@@ -22,13 +22,16 @@ impl LiveState {
 }
 
 /// State mirrors the template, with one independent body state per loop item.
-/// Children are matched by position. Reset an entry to Unknown to reinitialize it.
+/// Children are matched by position. Dynamic nodes additionally retain a private
+/// mounted template and distinguish references in occurrence identity paths.
+/// Reset an entry to Unknown to reinitialize it.
 /// Changing registered component identity reinitializes its default state.
 /// Legacy same-kind factory replacement does not reset payloads automatically.
 #[derive(Default)]
 pub enum PartState {
     #[default]
     Unknown,
+    Dynamic(DynamicState),
     Component(ComponentState),
     Composite(CompositeState),
     Container(CompositeState),
@@ -131,6 +134,13 @@ impl LiveState {
                         .and_then(|keys| keys.iter().position(|candidate| candidate == key));
                     index.and_then(|index| state.items.get_mut(index))
                 }
+                (PartState::Dynamic(state), PathSegment::Dynamic(reference)) => {
+                    if state.reference == Some(*reference) {
+                        Some(state.state.as_mut())
+                    } else {
+                        None
+                    }
+                }
                 (PartState::Match(state), PathSegment::MatchArm(index))
                     if state.selected == Some(*index) =>
                 {
@@ -147,4 +157,13 @@ impl LiveState {
             )),
         }
     }
+}
+
+/// One independently mounted copy of a reusable definition. Switching the
+/// reference drops both its local state and its private mutable template copy.
+#[derive(Default)]
+pub struct DynamicState {
+    pub reference: Option<crate::composition::component_ref::ComponentRef>,
+    pub template: Option<Box<super::part::LivePart>>,
+    pub state: Box<PartState>,
 }

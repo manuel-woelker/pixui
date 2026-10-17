@@ -63,6 +63,50 @@ impl Resolver<'_> {
                 attributes,
                 children,
             } => {
+                if let Some(name) = name
+                    && (name.value == "Dynamic"
+                        || self.environment.templates.contains_key(&name.value))
+                {
+                    if !children.is_empty() {
+                        return Err(Diagnostic::new(
+                            Stage::Resolution,
+                            "R013",
+                            part.span,
+                            "composed components do not accept children",
+                        ));
+                    }
+                    let expression = if name.value == "Dynamic" {
+                        if attributes.len() != 1 || attributes[0].name.value != "component" {
+                            return Err(Diagnostic::new(
+                                Stage::Resolution,
+                                "R013",
+                                part.span,
+                                "Dynamic requires exactly one component attribute",
+                            ));
+                        }
+                        self.expression(&attributes[0].value)?
+                    } else {
+                        if !attributes.is_empty() {
+                            return Err(Diagnostic::new(
+                                Stage::Resolution,
+                                "R013",
+                                part.span,
+                                "composed components do not accept attributes yet",
+                            ));
+                        }
+                        Expression {
+                            spelling: None,
+                            span: name.span,
+                            kind: ExpressionKind::ComponentRef(
+                                self.environment.templates[&name.value],
+                            ),
+                        }
+                    };
+                    return Ok(ResolvedPart {
+                        syntax: part.clone(),
+                        kind: PartKind::Dynamic(expression),
+                    });
+                }
                 let component = match name {
                     Some(name) if !matches!(name.value.as_str(), "Row" | "Column" | "Grid") => {
                         Some(

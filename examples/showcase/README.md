@@ -57,12 +57,16 @@ Runtime window icons on Wayland require compositor support for
 
 - [model.rs](src/model.rs): named entities, collection, typed actions, generated
   action facade.
-- [gallery.rs](src/gallery.rs): live parts, props, activation bindings,
-  conditional rendering, and native window properties.
-- [layout_demo.rs](src/layout_demo.rs): nested Grid and Flex dashboard.
-- [language.pixui](ui/language.pixui) and
-  [language_demo.rs](src/language_demo.rs): compiled template and explicit Rust
-  bindings.
+- [ui/showcase.pixui](ui/showcase.pixui): header, navigation, page selection and
+  footer. The other `.pixui` files define the individual panes, including static
+  style examples and the nested Grid/Flex dashboard.
+- [environment.rs](src/environment.rs): explicit component, entity, collection,
+  action, layout and style exports shared by those templates.
+- [gallery.rs](src/gallery.rs): source-bundle installation, one navigation list
+  of localized titles and component references, the remaining dynamic-style
+  button, and native title/icon bindings. The shell loops over that list and
+  renders the selected component with `Dynamic`; it has no positional page
+  slots.
 - [setup.rs](src/setup.rs): component/painter and filesystem registration.
 - [main.rs](src/main.rs): native windows and renderer selection.
 - [gallery tests](tests/gallery.rs): real worker rendering and input dispatch

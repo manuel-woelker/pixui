@@ -1,0 +1,7 @@
+ui CollectionsDemo domain 'showcase' {
+    <Column width='100%' min_width=0 gap=12 slice='showcase'>
+        <Label text="Collections" />
+        <Button label="Add collection row" @activate=add_sample() />
+        {for sample in collections.samples => <Label text=sample.label />}
+    </Column>
+}

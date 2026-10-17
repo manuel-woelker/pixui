@@ -25,6 +25,7 @@ pub struct Expression {
 }
 #[derive(Clone)]
 pub enum ExpressionKind {
+    ComponentRef(crate::composition::component_ref::ComponentRef),
     Bool(bool),
     Number(String),
     Template {
@@ -60,6 +61,7 @@ pub struct ResolvedPart {
     pub kind: PartKind,
 }
 pub enum PartKind {
+    Dynamic(Expression),
     Element {
         component: Option<ComponentExport>,
         attributes: Vec<(Name, Expression)>,

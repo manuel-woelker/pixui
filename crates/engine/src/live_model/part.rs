@@ -16,8 +16,10 @@ use crate::{
 /// their associated State::default instead, checked against the application.
 pub type StateFactory = for<'a> fn(&DynamicObject<'a>) -> PixuiResult<GenericComponentState>;
 
+/// Dynamic subtrees are resolved on the worker and have per-occurrence state.
 #[derive(Clone)]
 pub enum LivePart {
+    Dynamic(DynamicPart),
     Composite(CompositePart),
     Container(crate::layout::container::ContainerPart),
     Component(ComponentPart),
@@ -248,3 +250,21 @@ pub type StyleResolver = for<'a> fn(
     &crate::expression::context::ExpressionContext<'a>,
     &crate::ui::presentation::PresentationSettings,
 ) -> PixuiResult<Vec<crate::styles::slots::SlotAssignment>>;
+
+/// Reference expression and its source location; no props or children yet.
+#[derive(Clone)]
+pub struct DynamicPart {
+    pub component: Expression,
+    pub(crate) domain: Option<String>,
+    pub origin: Option<crate::ui_language::source::origin::Origin>,
+}
+
+impl DynamicPart {
+    pub fn new(component: Expression) -> Self {
+        Self {
+            component,
+            domain: None,
+            origin: None,
+        }
+    }
+}

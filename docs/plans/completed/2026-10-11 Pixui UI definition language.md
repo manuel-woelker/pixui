@@ -1,7 +1,6 @@
 # Pixui UI definition language
 
-Status: implemented; automated repository checks passed and manual showcase
-validation pending. The plan remains active until manual verification passes.
+Status: complete. Automated checks and native showcase validation passed.
 
 ## Goal
 
@@ -286,7 +285,7 @@ All module roots contain only declarations.
 - [x] Document embedding/loading APIs, supported syntax, ownership, diagnostics,
   and limits. Update architecture documentation for the compiler boundary.
 - [x] Run `./n check` after each completed unit and resolve introduced failures.
-- [ ] Complete manual showcase validation and move this plan to `completed/`.
+- [x] Complete manual showcase validation and move this plan to `completed/`.
 
 ## Verification
 
@@ -374,7 +373,6 @@ All module roots contain only declarations.
   independent type diagnostics, general-sequence reference rejection, and atomic
   installation failure. Reflection tests cover borrowed field chains, owned-view
   rejection, descriptor mismatches and sequence storage limits.
-- Manual validation is pending: select the UI language showcase pane, activate
-  its buttons/checkbox, and compare collection rows and translated/source-only
-  templates in the English and German windows. The plan stays active until this
-  verification succeeds.
+- Native showcase validation passed, confirmed by the user on 2026-10-17:
+  navigation, translations, page switching, text editing, images, Layout and
+  dynamic Styles in both windows.

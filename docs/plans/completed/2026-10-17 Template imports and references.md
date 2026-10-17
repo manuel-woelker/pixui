@@ -1,6 +1,6 @@
 # Template imports and references
 
-Status: implementation in progress.
+Status: complete.
 
 Accepted naming: `ComponentRef` and `<Dynamic component=... />`. Host-defined
 titles use the proposed `LocalizedText` handle.
@@ -17,7 +17,7 @@ component/painter or a mounted instance. Use `ComponentRef` to keep those
 concepts separate. Existing component registration and props construction retain
 their current meaning.
 
-## Proposed usage
+## Usage
 
 Static source composition:
 
@@ -40,46 +40,52 @@ Data-driven composition:
 ```rust
 // Illustrative API; errors and setup omitted here.
 #[pixui_reflect::reflect]
-struct NavigationEntry {
-    pub id: u64,
-    pub title: LocalizedText,
-    pub component: ComponentRef,
+mod data {
+    #[derive(Clone)]
+    pub struct NavigationEntry {
+        pub id: u64,
+        pub title: pixui_engine::composition::localized_text::LocalizedText,
+        pub component: pixui_engine::composition::component_ref::ComponentRef,
+    }
 }
 
 let entries = vec![
-    NavigationEntry {
+    data::NavigationEntry {
         id: 0,
         title: app.localized_text("showcase", "Buttons")?,
-        component: compiled.template("buttons.pixui")?,
+        component: installed.component("buttons.pixui")?,
     },
     // Other source templates and a Rust-composed Styles template.
 ];
 ```
 
-The real reflection attribute currently applies to inline modules; the sketch
-above describes the record shape rather than proposing new derive syntax.
-`compiled.template` denotes a source-bundle lookup, not a filesystem read during
-rendering. Exact public API names should be settled in the first implementation
-step.
+`installed.component` is a source-bundle lookup, not a filesystem read during
+rendering. The sketch omits source-bundle and host-environment setup.
 
 ```text
 ui showcase domain 'showcase' {
     <Column slice='showcase'>
         <Column width=200 gap=8>
-            {for entry in entities.entries =>
+            {for entry in entities.navigation.entries =>
                 <Button label=entry.title layout=layouts.full
                         @activate=select(id: entry.id) />
             }
         </Column>
-        <Dynamic component=entities.selected.component />
+        {for entry in entities.navigation.entries =>
+            {match entry.id == entities.navigation.selected;
+                true => <Dynamic component=entry.component />,
+                false => <></>,
+            }
+        }
     </Column>
 }
 ```
 
-`select` validates the entry ID and updates a selected-entry entity on the
-worker. Keep stable IDs separate from list position. This requires no new
-indexing operator, optional-value syntax or runtime source compilation. Select
-the first valid entry at startup; reject unknown IDs without changing selection.
+`select` validates the entry ID and updates the selected ID in one
+`NavigationState` entity on the worker. Keep stable IDs separate from list
+position. This requires no new indexing operator, optional-value syntax or
+runtime source compilation. Select the first valid entry at startup; reject
+unknown IDs without changing selection.
 
 ## Design
 
@@ -205,12 +211,13 @@ their registered name when no source span exists.
 - Register the remaining Rust-composed Styles page through `ComponentRef` as
   well; leave its dynamic-style button and native title/icon adapters in Rust.
 - Create a reflected navigation-entry vector with stable IDs, localized title
-  handles and template references. Bind it and an initialized selected entry in
-  the showcase slice. Update `select` and the generated action facade to take
-  IDs.
-- Replace repeated sidebar declarations with a loop and the empty-arm match with
-  `<Dynamic component=entities.selected.component />`. Preserve the fixed
-  sidebar, header/footer, full-width buttons and page ordering.
+  handles and template references. Bind entries and the initial selected ID in
+  one navigation state in the showcase slice. Update `select` and the generated
+  action facade to take IDs.
+- Replace repeated sidebar declarations with a loop. A second loop with an
+  exhaustive boolean match selects `<Dynamic component=entry.component />` by
+  stable ID. Preserve the fixed sidebar, header/footer, full-width buttons and
+  page ordering.
 - Remove positional `assemble_pages` logic and duplicate page-count assumptions.
   Retain source files for each pane; static-import fixtures should separately
   demonstrate direct `<Alias />` composition as the showcase uses dynamic refs.
@@ -220,26 +227,26 @@ their registered name when no source span exists.
 
 ## Implementation checklist
 
-- [ ] Settle API names and the title-localization decision below; document the
+- [x] Settle API names and the title-localization decision below; document the
   boundary between registered leaf components, templates and mounted instances.
-- [ ] Add source-bundle/resolver APIs, import AST/spans, graph loading,
+- [x] Add source-bundle/resolver APIs, import AST/spans, graph loading,
       canonical module identity, duplicate/cycle diagnostics and resource
       limits.
-- [ ] Add the template registry, opaque reflected references, Rust registration
+- [x] Add the template registry, opaque reflected references, Rust registration
   and atomic compiled-bundle installation.
-- [ ] Resolve template aliases and type-check/lower static and dynamic
+- [x] Resolve template aliases and type-check/lower static and dynamic
       rendering.
-- [ ] Add template-boundary state/identity handling and update all runtime and
+- [x] Add template-boundary state/identity handling and update all runtime and
       declaration traversals, including recursion/budget checks and failure
       recovery.
-- [ ] Add host-declared localized titles and presentation-time string resolution
+- [x] Add host-declared localized titles and presentation-time string resolution
   through the existing i18n registry.
-- [ ] Migrate showcase navigation/selection and remove positional Rust
+- [x] Migrate showcase navigation/selection and remove positional Rust
       composition.
-- [ ] Add tests listed below; run `./n check` after each unit of work.
-- [ ] Update the language reference, example README, architecture documentation
+- [x] Add tests listed below; run `./n check` after each unit of work.
+- [x] Update the language reference, example README, architecture documentation
   and any affected state/identity documentation.
-- [ ] Manually validate both showcase windows, navigation, translations, focus,
+- [x] Manually validate both showcase windows, navigation, translations, focus,
   page switching, styles, images and text input before completing the plan.
 
 ## Verification
@@ -269,13 +276,13 @@ their registered name when no source span exists.
   keyboard, verify German titles, controlled editing and dynamic Styles
   behavior.
 
-## Open questions and assumptions
+## Resolved choices and limits
 
-1. **Names:** recommend `ComponentRef`, `LocalizedText` and
+1. **Names:** chosen `ComponentRef`, `LocalizedText` and
    `<Dynamic component=... />`. Calling both leaf components and whole templates
    “components” is convenient conversationally, but their Rust types and
    language diagnostics should differ.
-2. **Title localization:** recommend the small host-declared message-handle API
+2. **Title localization:** chosen the small host-declared message-handle API
    above. Alternative: move navigation metadata into source so titles use
    ordinary i18n expressions. That avoids a new value type but does not satisfy
    a fully Rust-defined list of titles/references without another
@@ -295,3 +302,39 @@ their registered name when no source span exists.
    definition domain. Reuse across incompatible domains/environments requires
    explicit recompilation/registration, not mutation of existing registered
    templates.
+
+## Progress
+
+- Updated names to `ComponentRef` and `<Dynamic component=... />` as requested.
+- Committed this plan before implementation (`b7e1385`).
+- Runtime implementation uses registry-owned immutable definitions and a private
+  mutable template copy per mounted occurrence. References do not own trees.
+- Translation titles use the accepted `LocalizedText` handle design.
+- Implementation refinement: navigation uses one reflected `NavigationState`
+  containing entries and selected ID, rather than duplicating the selected
+  entry. Existing generated actions accept only one mutable injection. A second
+  small loop with an exhaustive boolean match selects the dynamic subtree using
+  existing expression syntax; no indexing operator or unrelated derived-value
+  API is added.
+- The foundation checks passed before import-graph work. Component references,
+  localized host text, source aliases and dynamic mounted-state traversal are in
+  place; import installation is checked transactionally against cloned
+  registries.
+- Source bundles, import aliases, atomic installation and rollback are
+  implemented. Registry checkpoints share immutable template trees through
+  `Arc`; mounted occurrences clone their mutable template only when the
+  reference changes.
+- Showcase entries and selected ID live in one `NavigationState`. A host-only
+  initialization action validates nonempty/unique entries before replacement;
+  selection validates IDs against the list, with no hard-coded page count.
+- Static references are checked at registration; data-dependent references and
+  localized title domains are checked against the owning definition at runtime.
+  Runtime style replacement also validates inactive registered templates.
+- Automated checks passed, including the data-driven navigation fixture, mounted
+  state/identity tests, imports and rollback, and last-frame recovery for
+  foreign and recursive references. Final checks also include collection refs,
+  expanded-loop limits and preservation of translation domains in callbacks.
+- Native validation passed: navigation, German titles, mouse/keyboard page
+  switching, text editing, images, Layout and dynamic Styles in both windows.
+- No remaining implementation questions. API names are now `ComponentRef`,
+  `LocalizedText`, `SourceBundle`, `InstalledBundle::component` and `Dynamic`.

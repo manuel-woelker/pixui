@@ -18,6 +18,11 @@ pub(crate) fn register(
             ));
         }
         match part {
+            LivePart::Dynamic(part) => {
+                part.domain = Some(domain.clone());
+                registry.resolve(domain, &mut part.component, 0)?;
+            }
+
             LivePart::Component(component) => {
                 for callback in &mut component.events {
                     if let crate::events::binding::Callback::Program(program) =

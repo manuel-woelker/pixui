@@ -26,6 +26,7 @@ use super::{
 /// `Default` creates bare state for adapters and tests that need direct access.
 #[derive(Default)]
 pub struct Application {
+    pub(crate) templates: crate::composition::registry::Registry,
     pub(crate) components: ComponentRegistry,
     pub(crate) painters: PainterRegistry,
     pub(crate) styles: crate::styles::registry::StyleRegistry,
@@ -110,6 +111,7 @@ impl Application {
         candidate.replace(id, family)?;
         self.painters.validate_styles(&candidate)?;
         self.uis.validate_styles(&self.painters, &candidate)?;
+        self.templates.validate_styles(&self.painters, &candidate)?;
         self.styles = candidate;
         self.uis.invalidate_all();
         Ok(())
@@ -123,6 +125,7 @@ impl Application {
         candidate.set_tokens(theme, tokens)?;
         self.painters.validate_styles(&candidate)?;
         self.uis.validate_styles(&self.painters, &candidate)?;
+        self.templates.validate_styles(&self.painters, &candidate)?;
         self.styles = candidate;
         self.uis.invalidate_all();
         Ok(())
@@ -141,6 +144,8 @@ impl Application {
     ) -> PixuiResult<crate::ui::definition::UiDefinitionId> {
         let origin = definition.source_origin.clone();
         (|| {
+            self.templates
+                .validate(&definition.template, &definition.translation_domain)?;
             self.components
                 .validate(&definition.template, &self.painters)?;
             self.components.resolve_events(&mut definition.template)?;

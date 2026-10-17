@@ -1,7 +1,7 @@
 //! Recursive-descent markup with Pratt expressions and bounded child recovery.
 use crate::ui_language::{
     ast::{
-        definition::Definition,
+        definition::{Definition, Import},
         expression::Name,
         part::{Arm, Attribute, Part, PartKind},
     },
@@ -96,7 +96,45 @@ impl Parser<'_> {
         }
     }
     fn definition(&mut self) -> ParseResult<Definition> {
-        let start = self.keyword("ui")?.span;
+        let mut imports = vec![];
+        while matches!(&self.token().kind, TokenKind::Name(name) if name == "import") {
+            let start = self.take().span;
+            let alias = self.name()?;
+            self.keyword("from")?;
+            let token = self.take();
+            let TokenKind::String {
+                translated: false,
+                value,
+            } = token.kind
+            else {
+                return Err(Diagnostic::new(
+                    Stage::Parser,
+                    "P004",
+                    token.span,
+                    "import path must be an untranslated single-quoted literal",
+                ));
+            };
+            if value.contains(['{', '}', '\\']) {
+                return Err(Diagnostic::new(
+                    Stage::Parser,
+                    "P004",
+                    token.span,
+                    "import path cannot contain interpolation or escapes",
+                ));
+            }
+            let path = Name {
+                value,
+                span: token.span,
+            };
+            let end = self.expect(TokenKind::Semicolon)?.span;
+            imports.push(Import {
+                alias,
+                path,
+                span: start.join(end),
+            });
+        }
+        let ui_start = self.keyword("ui")?.span;
+        let start = imports.first().map_or(ui_start, |import| import.span);
         let name = self.name()?;
         let domain = if matches!(&self.token().kind,TokenKind::Name(name) if name=="domain") {
             self.take();
@@ -126,6 +164,7 @@ impl Parser<'_> {
         let end = self.expect(TokenKind::RightBrace)?.span;
         self.expect(TokenKind::Eof)?;
         Ok(Definition {
+            imports,
             name,
             domain,
             root,

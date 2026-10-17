@@ -25,6 +25,7 @@ pub enum ProgramKind {
         owned_result: Option<ValueType>,
     },
     ResourcePath,
+    LocalizedText,
     Not,
     Binary(Operator),
     Template(crate::i18n::template::CompiledTemplate, Vec<String>),
@@ -74,6 +75,18 @@ impl Program {
                     value = value.into_read_with_descriptor(field.0, field.1)?;
                 }
                 Ok(value)
+            }
+            ProgramKind::LocalizedText => {
+                let value = evaluate(context, &self.children[0])?;
+                let text = value
+                    .downcast_ref::<crate::composition::localized_text::LocalizedText>()
+                    .ok_or_else(|| pixui_error!("expected LocalizedText"))?;
+                if context.domain.is_some_and(|domain| domain != text.domain) {
+                    return Err(pixui_error!(
+                        "localized text has incompatible translation domain"
+                    ));
+                }
+                evaluate(context, &text.expression)
             }
             ProgramKind::ResourcePath => {
                 let value = evaluate(context, &self.children[0])?;

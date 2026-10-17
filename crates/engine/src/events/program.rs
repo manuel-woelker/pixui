@@ -59,12 +59,14 @@ impl ActionProgram {
             let handle = self.handle;
             let origin = self.origin.clone();
             let language = context.language();
+            let domain = context.domain.map(str::to_owned);
             Ok(Box::new(
                 move |app: &crate::application::app::Application,
                       payload: &pixui_reflect::DynamicObject<'_>| {
                     let result = (|| {
                         let context = ExpressionContext::new(app)
                             .with_language(language)
+                            .with_domain(domain.as_deref())
                             .with_event(payload);
                         let fields = arguments
                             .iter()

@@ -48,7 +48,14 @@ pub fn walk<V: Visitor>(
     context: &ExpressionContext<'_>,
     visitor: &mut V,
 ) -> PixuiResult<()> {
-    walk_at(root, root_state, context, visitor, ComponentPath::default())
+    walk_at(
+        root,
+        root_state,
+        context,
+        visitor,
+        ComponentPath::default(),
+        &std::cell::Cell::new(0),
+    )
 }
 
 fn walk_at<V: Visitor>(
@@ -57,9 +64,14 @@ fn walk_at<V: Visitor>(
     context: &ExpressionContext<'_>,
     visitor: &mut V,
     root_path: ComponentPath,
+    visited: &std::cell::Cell<usize>,
 ) -> PixuiResult<()> {
     let mut stack = vec![(root, root_state, root_path)];
     while let Some((part, state, path)) = stack.pop() {
+        visited.set(visited.get() + 1);
+        if visited.get() > 100_000 {
+            return Err(pixui_error!("expanded component node limit exceeded"));
+        }
         reconcile(part, state, context)?;
         visitor.visit(&mut WalkEntry {
             part,
@@ -69,6 +81,50 @@ fn walk_at<V: Visitor>(
         })?;
         reconcile(part, state, context)?;
         match (part, state) {
+            (LivePart::Dynamic(part), PartState::Dynamic(state)) => {
+                let result = (|| {
+                    let value = evaluate(context, &part.component)?;
+                    let reference = *value
+                        .downcast_ref::<crate::composition::component_ref::ComponentRef>()
+                        .ok_or_else(|| pixui_error!("dynamic component requires ComponentRef"))?;
+                    let entry = context.application()?.templates.get(reference)?;
+                    if let Some(domain) = &part.domain
+                        && domain != &entry.domain
+                    {
+                        return Err(pixui_error!(
+                            "component `{}` has incompatible translation domain",
+                            entry.name
+                        ));
+                    }
+                    let next = context.with_component(reference)?;
+                    if state.reference != Some(reference) {
+                        let template = context
+                            .application()?
+                            .templates
+                            .get(reference)?
+                            .template
+                            .as_ref()
+                            .clone();
+                        *state = super::state::DynamicState {
+                            reference: Some(reference),
+                            template: Some(Box::new(template)),
+                            state: Box::new(PartState::Unknown),
+                        };
+                    }
+                    walk_at(
+                        state.template.as_mut().expect("mounted template"),
+                        &mut state.state,
+                        &next,
+                        visitor,
+                        path.child(PathSegment::Dynamic(reference)),
+                        visited,
+                    )
+                })();
+                result.map_err(|error| match &part.origin {
+                    Some(origin) => origin.error(error),
+                    None => error,
+                })?;
+            }
             (LivePart::Composite(composite), PartState::Composite(state)) => {
                 stack.extend(
                     composite
@@ -114,6 +170,9 @@ fn walk_at<V: Visitor>(
             (LivePart::ForLoop(for_loop), PartState::ForLoop(state)) => {
                 let sequence = evaluate(context, &for_loop.expression)?;
                 let items = sequence.iter()?.collect::<Vec<_>>();
+                if items.len() > 100_000 - visited.get() {
+                    return Err(pixui_error!("expanded component node limit exceeded"));
+                }
                 let keys = if let Some(key) = for_loop.key {
                     Some(
                         items
@@ -158,6 +217,7 @@ fn walk_at<V: Visitor>(
                         ),
                         visitor,
                         path.child(segment),
+                        visited,
                     )?;
                 }
             }
@@ -243,6 +303,11 @@ fn reconcile(
                 .parts
                 .resize_with(container.children.len(), || PartState::Unknown);
         }
+        LivePart::Dynamic(_) => {
+            if !matches!(state, PartState::Dynamic(_)) {
+                *state = PartState::Dynamic(Default::default());
+            }
+        }
         LivePart::Match(part) => {
             part.validate()?;
             if !matches!(state, PartState::Match(_)) {
@@ -286,6 +351,7 @@ mod tests {
                 LivePart::Container(_) => self.output.push_str("Container\n"),
                 LivePart::Component(_) => self.output.push_str("Component\n"),
                 LivePart::ForLoop(_) => self.output.push_str("ForLoop\n"),
+                LivePart::Dynamic(_) => self.output.push_str("Dynamic\n"),
                 LivePart::Match(_) => self.output.push_str("Match\n"),
             }
             Ok(())
@@ -401,6 +467,7 @@ mod tests {
                 LivePart::Container(_) => "Container",
                 LivePart::Component(_) => "Component",
                 LivePart::ForLoop(_) => "ForLoop",
+                LivePart::Dynamic(_) => "Dynamic",
                 LivePart::Match(_) => "Match",
             };
             writeln!(self.output, "{kind}: {context}").unwrap();

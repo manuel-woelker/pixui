@@ -1,0 +1,10 @@
+ui ButtonsDemo domain 'showcase' {
+    <Column width='100%' min_width=0 gap=12 slice='showcase'>
+        <Label text="Buttons" />
+        <Label text="Counter: {entities.count}" />
+        <Row gap=8>
+            <Button label="Increment counter" @activate=increment() />
+            <Button label="Reset counter" @activate=reset() />
+        </Row>
+    </Column>
+}

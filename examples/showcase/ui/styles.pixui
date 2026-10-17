@@ -1,0 +1,14 @@
+ui StylesDemo domain 'showcase' {
+    <Column width='100%' min_width=0 gap=12 slice='showcase'>
+        <Label text="Styles" />
+        <Label text="Theme colors and fonts · reflected painter slots" />
+        <Button label="Primary" styles=styles.primary @activate=increment() />
+        <Button label="Quiet" styles=styles.quiet @activate=increment() />
+        <Button label="Danger" styles=styles.danger @activate=increment() />
+        <Button label="Compact" styles=styles.compact @activate=increment() />
+        <Button label="Monospace" styles=styles.mono @activate=increment() />
+        <Button label="Local purple override" styles=styles.purple @activate=increment() />
+        <Checkbox label="Use compact style" checked=entities.checked @activate=toggle_checked() />
+        // The host appends the dynamic-style example until styles support expressions.
+    </Column>
+}

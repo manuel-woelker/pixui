@@ -7,6 +7,18 @@ use pixui_engine::application::{
 
 #[pixui_reflect::reflect]
 pub mod data {
+    /// Reusable views and titles are values, separate from mounted UI state.
+    #[derive(Clone)]
+    pub struct NavigationEntry {
+        pub id: u64,
+        pub title: pixui_engine::composition::localized_text::LocalizedText,
+        pub component: pixui_engine::composition::component_ref::ComponentRef,
+    }
+    pub struct NavigationState {
+        pub entries: Vec<NavigationEntry>,
+        pub selected: u64,
+    }
+
     /// A row created at runtime to demonstrate collection-backed rendering.
     pub struct Sample {
         pub label: String,
@@ -57,13 +69,33 @@ pub mod actions {
         *last_click = format!("{x:.0}, {y:.0}");
     }
 
-    /// Select a gallery page in every presentation, preserving demo data.
+    /// Select a registered entry; IDs are independent of list position.
     #[action]
-    pub fn select(mut selected: EntityMut<u64>, page: u64) -> PixuiResult<()> {
-        if page >= 8 {
+    pub fn select(mut navigation: EntityMut<data::NavigationState>, id: u64) -> PixuiResult<()> {
+        if !navigation.entries.iter().any(|entry| entry.id == id) {
             return Err(pixui_error!("unknown showcase page"));
         }
-        *selected = page;
+        navigation.selected = id;
+        Ok(())
+    }
+
+    /// Startup/fixture binding: validate the complete list before replacing it.
+    /// This host action is deliberately not exported to source event bindings.
+    #[action]
+    pub fn install_navigation(
+        mut navigation: EntityMut<data::NavigationState>,
+        entries: Vec<data::NavigationEntry>,
+    ) -> PixuiResult<()> {
+        let ids: std::collections::HashSet<_> = entries.iter().map(|entry| entry.id).collect();
+        if entries.is_empty() || ids.len() != entries.len() {
+            return Err(pixui_error!(
+                "navigation entries must be nonempty and have unique IDs"
+            ));
+        }
+        if !ids.contains(&navigation.selected) {
+            navigation.selected = entries[0].id;
+        }
+        navigation.entries = entries;
         Ok(())
     }
 
@@ -112,7 +144,13 @@ pub fn register(application: &ApplicationHandle) -> PixuiResult<()> {
     slice.bind("uppercase", String::new())?;
     slice.bind("limited", String::new())?;
     slice.bind("count", 0_u64)?;
-    slice.bind("selected", 0_u64)?;
+    slice.bind(
+        "navigation",
+        data::NavigationState {
+            entries: vec![],
+            selected: 0,
+        },
+    )?;
     slice.bind("checked", false)?;
     slice.bind("details", true)?;
     let projects: Vec<_> = (1..=36)

@@ -39,6 +39,7 @@ fn evaluate_depth<'a>(
         ));
     }
     match expression.kind() {
+        ExpressionKind::ComponentRef(reference) => Ok(DynamicObject::from_reflect(*reference)),
         ExpressionKind::Program(program) => program.evaluate(context),
         ExpressionKind::Computed(resolve) => resolve(context),
         ExpressionKind::I18n(message) => {

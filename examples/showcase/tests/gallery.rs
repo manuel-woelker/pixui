@@ -291,7 +291,14 @@ fn keyboard_navigation_activates_buttons_and_facade_updates_named_entities() {
     app.inspect(|app| {
         let slice = app.slice_named("showcase")?.id();
         assert!(!*app.entity::<bool>(slice, "checked")?);
-        assert_eq!(*app.entity::<u64>(slice, "selected")?, 0);
+        assert_eq!(
+            app.entity::<pixui_example_showcase::model::data::NavigationState>(
+                slice,
+                "navigation"
+            )?
+            .selected,
+            0
+        );
         Ok(())
     })
     .unwrap();
@@ -317,7 +324,8 @@ fn translation_export_runs_without_a_display_and_is_reproducible() {
     assert_eq!(first, run(&["--hot-reload"]));
     assert!(first.contains("msgid \"Images\""));
     assert!(!first.contains("pixui-logo.png"));
-    assert!(first.contains("Counter: {count}"));
+    assert!(first.contains("Counter: {entities_count}"));
+    assert!(!first.contains("Counter: {count}"));
     assert!(first.contains("Show details"));
     assert!(first.contains("PixUI Showcase — {count}"));
     std::fs::remove_file(path).unwrap();
@@ -556,4 +564,152 @@ fn pixui_pane_renders_translates_and_dispatches_compiled_actions() {
     click(&app, instance, &appended, 10);
     assert!(has_text(&receive(&outputs), "Details hidden"));
     assert!(has_text(&receive(&german), "Details ausgeblendet"));
+}
+
+#[test]
+fn navigation_list_accepts_new_component_refs_without_changing_the_shell() {
+    use pixui_engine::{
+        components::label::LabelComponent,
+        ui_language::{compiler::compile, resolution::environment::Environment},
+    };
+    use pixui_example_showcase::model::data::{NavigationEntry, NavigationState};
+    let (app, definition) = setup::create().unwrap();
+    let (one, outputs) = app
+        .create_ui(definition, PresentationSettings::default())
+        .unwrap();
+    let (_, german) = app
+        .create_ui(
+            definition,
+            PresentationSettings {
+                language: app
+                    .inspect(|app| app.translations().language("de"))
+                    .unwrap(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    receive(&outputs);
+    receive(&german);
+    let extra = app
+        .inspect(|app| {
+            let mut env = Environment::new();
+            env.component("Label", app.components().component::<LabelComponent>()?)?;
+            Ok(compile(
+                "fixture.pixui",
+                "ui Extra {<Label text=\"Extra view\" />}",
+                &env,
+            )
+            .unwrap()
+            .into_template())
+        })
+        .unwrap();
+    let component = app.register_template("fixture", "showcase", extra).unwrap();
+    let title = app.localized_text("showcase", "Collections").unwrap();
+    let mut entries = app
+        .inspect(|app| {
+            let slice = app.slice_named("showcase")?.id();
+            Ok(app
+                .entity::<NavigationState>(slice, "navigation")?
+                .entries
+                .clone())
+        })
+        .unwrap();
+    entries.push(NavigationEntry {
+        id: 99,
+        title,
+        component,
+    });
+    let actions = ShowcaseActions::bind(&app).unwrap();
+    actions.install_navigation(entries).unwrap();
+    let changed = receive(&outputs);
+    let translated = receive(&german);
+    assert!(has_text(&translated, "Sammlungen"));
+    // The ninth navigation button is generated from the appended data entry.
+    click(&app, one, &changed, 8);
+    assert!(has_text(&receive(&outputs), "Extra view"));
+    assert!(has_text(&receive(&german), "Extra view"));
+    assert!(actions.select(999).is_err());
+    app.inspect(|app| {
+        let slice = app.slice_named("showcase")?.id();
+        assert_eq!(
+            app.entity::<NavigationState>(slice, "navigation")?.selected,
+            99
+        );
+        Ok(())
+    })
+    .unwrap();
+}
+
+#[test]
+fn failed_dynamic_components_keep_published_frames_and_recover() {
+    use pixui_engine::{
+        application::app::Application,
+        expression::{context::ExpressionContext, expression::Expression},
+        live_model::part::{CompositePart, DynamicPart, LivePart},
+    };
+    use pixui_example_showcase::model::data::NavigationState;
+    fn selected(
+        context: &ExpressionContext<'_>,
+    ) -> pixui_base::PixuiResult<pixui_reflect::DynamicObject<'static>> {
+        let app = context.application()?;
+        let state =
+            app.entity::<NavigationState>(app.slice_named("showcase")?.id(), "navigation")?;
+        Ok(pixui_reflect::DynamicObject::from_reflect(
+            state
+                .entries
+                .iter()
+                .find(|entry| entry.id == state.selected)
+                .unwrap()
+                .component,
+        ))
+    }
+    let (app, definition) = setup::create().unwrap();
+    let (instance, outputs) = app
+        .create_ui(definition, PresentationSettings::default())
+        .unwrap();
+    let mut successful = receive(&outputs);
+    let actions = ShowcaseActions::bind(&app).unwrap();
+    let mut entries = app
+        .inspect(|app| {
+            Ok(app
+                .entity::<NavigationState>(app.slice_named("showcase")?.id(), "navigation")?
+                .entries
+                .clone())
+        })
+        .unwrap();
+    let original = entries[0].component;
+    let foreign = Application::default()
+        .register_template(
+            "foreign",
+            "showcase",
+            LivePart::Composite(CompositePart { parts: vec![] }),
+        )
+        .unwrap();
+    let recursive = app
+        .register_template(
+            "recursive",
+            "showcase",
+            LivePart::Dynamic(DynamicPart::new(Expression::computed(selected))),
+        )
+        .unwrap();
+    for (reference, message) in [(foreign, "foreign"), (recursive, "recursive")] {
+        entries[0].component = reference;
+        actions.install_navigation(entries.clone()).unwrap();
+        let revision = successful.revision;
+        app.inspect(move |app| {
+            let instance = app.uis().instance(instance)?;
+            assert_eq!(instance.revision(), revision);
+            let error = instance.last_error().unwrap();
+            assert!(error.contains(message), "{error}");
+            assert!(error.contains("showcase.pixui"), "{error}");
+            Ok(())
+        })
+        .unwrap();
+        assert!(outputs.try_recv().is_err());
+        entries[0].component = original;
+        actions.install_navigation(entries.clone()).unwrap();
+        successful = receive(&outputs);
+        assert!(successful.revision > revision);
+        assert!(has_text(&successful, "Counter: 0"));
+    }
 }

@@ -186,6 +186,11 @@ fn build(
     output: &mut Vec<usize>,
 ) -> PixuiResult<()> {
     match (part, state) {
+        (LivePart::Dynamic(_), PartState::Dynamic(state)) => {
+            if let Some(template) = &state.template {
+                build(nodes, template, &state.state, index, output)?;
+            }
+        }
         (LivePart::Component(part), PartState::Component(_))
             if part.component_address().is_some() =>
         {

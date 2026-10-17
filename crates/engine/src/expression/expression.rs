@@ -14,6 +14,11 @@ impl Expression {
         Self { kind, origin: None }
     }
 
+    /// A reusable subtree reference; registration/dispatch never evaluates source.
+    pub fn component(reference: crate::composition::component_ref::ComponentRef) -> Self {
+        Self::new(ExpressionKind::ComponentRef(reference))
+    }
+
     /// Read a derived value. The callback must not hide translatable declarations;
     /// declare i18n in the surrounding expression tree so extraction can find it.
     pub fn computed(
@@ -92,6 +97,7 @@ impl Expression {
 /// Operations supported by the expression evaluator.
 #[derive(Clone)]
 pub enum ExpressionKind {
+    ComponentRef(crate::composition::component_ref::ComponentRef),
     Program(std::sync::Arc<crate::expression::program::Program>),
     Computed(
         for<'a> fn(

@@ -672,6 +672,7 @@ impl UiRegistry {
                         && instance.native_focused,
                 }),
                 &mut instance.layout_cache,
+                Some(&definition.translation_domain),
             );
             match result {
                 Ok(renderer::RenderedUi {

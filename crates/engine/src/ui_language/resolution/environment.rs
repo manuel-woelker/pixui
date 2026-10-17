@@ -1,4 +1,5 @@
 //! Explicit host exports. No source name implies a slice, Rust type, or callback.
+use crate::composition::component_ref::ComponentRef;
 pub use crate::events::value::{ReferenceExport, Snapshot, ValueType};
 use crate::ui_language::lowering::binding::LanguageBinding;
 use crate::{
@@ -33,6 +34,7 @@ pub struct DataExport {
 /// Environments are application-local. Duplicate exports are rejected atomically.
 #[derive(Clone)]
 pub struct Environment {
+    pub(crate) templates: HashMap<String, ComponentRef>,
     pub(crate) components: HashMap<String, ComponentExport>,
     pub(crate) collections: HashMap<String, DataExport>,
     pub(crate) entities: HashMap<String, DataExport>,
@@ -52,6 +54,7 @@ impl Default for Environment {
 impl Environment {
     pub fn new() -> Self {
         let mut env = Self {
+            templates: HashMap::new(),
             components: HashMap::new(),
             collections: HashMap::new(),
             entities: HashMap::new(),
@@ -68,7 +71,20 @@ impl Environment {
             String, bool, i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128, usize, f32, f64
         );
         env.value_type::<crate::resources::path::ResourcePath>();
+        env.value_type::<ComponentRef>();
+        env.value_type::<crate::composition::localized_text::LocalizedText>();
         env
+    }
+    /// Export an already registered reusable subtree under a static tag alias.
+    pub fn template(&mut self, name: &str, reference: ComponentRef) -> PixuiResult<()> {
+        if matches!(name, "Row" | "Column" | "Grid" | "Dynamic")
+            || self.components.contains_key(name)
+        {
+            return Err(pixui_error!(
+                "reserved or conflicting template alias `{name}`"
+            ));
+        }
+        insert(&mut self.templates, name, reference)
     }
     /// Adds clone/ownership adapters; nested field types must be exported too.
     pub fn value_type<T: Reflect + Clone + Send + Sync>(&mut self) {
@@ -86,10 +102,13 @@ impl Environment {
     where
         C::Props: Reflect,
     {
-        if matches!(name, "Row" | "Column" | "Grid") {
+        if matches!(name, "Row" | "Column" | "Grid" | "Dynamic") {
             return Err(pixui_error!(
                 "component alias is reserved for a layout container"
             ));
+        }
+        if self.templates.contains_key(name) {
+            return Err(pixui_error!("component alias collides with template alias"));
         }
         let props = C::Props::type_descriptor();
         if props

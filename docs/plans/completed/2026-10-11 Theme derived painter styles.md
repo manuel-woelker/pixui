@@ -1,6 +1,6 @@
 # Theme derived painter styles
 
-Status: implemented; native showcase validation pending.
+Status: complete. Automated checks and native showcase validation passed.
 
 ## Goal
 
@@ -288,9 +288,8 @@ See
   coverage. New tests cover reflected construction, invalid assignments,
   precedence, recipe reuse, font/inset/caret agreement at multiple DPI,
   occurrence ownership, runtime replacement and hidden-window restoration.
-- Manual check pending: run the showcase, select Styles in both windows, switch
-  the compact checkbox, resize, exercise focus and input selection, and inspect
-  contrast and fonts. Keep this plan active until that result is recorded.
+- Native showcase validation passed in both windows, confirmed by the user on
+  2026-10-17, including dynamic Styles, navigation and text editing.
 
 ## Implementation checklist
 
@@ -314,7 +313,7 @@ See
 - [x] Update architecture, painter/text/input documentation and record the
       significant ownership/precedence decisions in a decision record.
 - [x] Run `./n check` after each unit.
-- [ ] Record native manual verification before moving the plan to completed.
+- [x] Record native manual verification before moving the plan to completed.
 
 ## Verification checklist
 
@@ -338,7 +337,7 @@ See
 - [x] Hidden-window updates, keyed loops and conditional removal retain the
       existing state/resource lifecycle contracts.
 - [x] Software/femtovg agree for styled rectangles, text and clipping.
-- [ ] Manually inspect contrast, focus visibility, selection and resized example
+- [x] Manually inspect contrast, focus visibility, selection and resized example
       windows.
 
 ## Original questions and selected defaults

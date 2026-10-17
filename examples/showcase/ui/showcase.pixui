@@ -1,0 +1,20 @@
+ui showcase domain 'showcase' {
+    <Column grow=1 shrink=0 gap=20 slice='showcase'>
+        <Label text="PixUI · Widget showcase" />
+        <Grid grow=1 shrink=0 columns='200px 1fr' gap=20 align='start'>
+            <Column width=200 min_width=200 max_width=200 shrink=0 gap=8>
+                <Label text="Components" />
+                {for entry in entities.navigation.entries =>
+                    <Button label=entry.title layout=layouts.full @activate=select(id: entry.id) />
+                }
+            </Column>
+            {for entry in entities.navigation.entries =>
+                {match entry.id == entities.navigation.selected;
+                    true => <Dynamic component=entry.component />,
+                    false => <></>,
+                }
+            }
+        </Grid>
+        <Label text="Tab: focus · Enter/Space: activate · F11: performance" />
+    </Column>
+}

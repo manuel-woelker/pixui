@@ -296,3 +296,76 @@ follow Rust containers. Settings are checked during compilation, never
 translated, and do not depend on entities or callback payloads. Dynamic layouts
 and inline leaf layout attributes remain separate work; leaves use exported
 `layout` values.
+
+## Imports and reusable components
+
+A file may import another single-`ui` module before its declaration:
+
+```text
+import Buttons from './buttons.pixui';
+
+ui Example domain 'showcase' {
+    <Column><Buttons /><Buttons /></Column>
+}
+```
+
+Aliases are local to the importing file. Imported templates resolve host exports
+and slice directives in their own lexical scope; they cannot capture caller loop
+locals or event parameters. There are no template parameters, children/slots or
+call-site attributes yet. Wrap a composed component in a container for layout.
+
+Supply source text through `SourceBundle` or a host `SourceResolver`, then call
+`bundle::install` on `Application` or `ApplicationHandle::install_bundle`.
+`SourceBundle::add` accepts embedded `include_str!` contents. The compiler does
+not open files. Relative `.`/`..` imports are normalized against the importer;
+paths cannot escape an in-memory bundle root. Aliases cannot collide with leaf
+components or reserved tags. Missing modules, cycles and incompatible domains
+report source locations. `BundleLimits` bounds module count, graph depth and
+aggregate source bytes. Installation rolls back registrations and messages if
+any module fails. Single-file `compile` still works without imports; otherwise
+it reports that a resolver/bundle is required.
+
+`InstalledBundle::component(canonical_id)` returns an opaque `ComponentRef`.
+`Application::register_template` registers a Rust `LivePart` with the same type.
+`Environment::template(alias, reference)` exports a static tag. References
+belong to one application and remain valid until shutdown; registrations are
+append-only and should happen during setup, not every frame.
+
+Store references in reflected data to select components dynamically:
+
+```text
+{for entry in entities.navigation.entries =>
+    <Button label=entry.title @activate=showcase.select(id: entry.id) />
+}
+{for entry in entities.navigation.entries =>
+    {match entry.id == entities.navigation.selected;
+        true => <Dynamic component=entry.component />,
+        false => <></>,
+    }
+}
+```
+
+`Dynamic` requires exactly one `component` expression of type `ComponentRef`.
+It uses the same runtime node as a static imported tag. No string-to-component
+lookup, source compilation or filesystem access occurs during rendering.
+Definitions share the owning UI's translation domain; imported explicit domains
+must match the installation domain. Data-dependent foreign references and domain
+mismatches fail at the render site.
+
+Each occurrence has independent mounted state. The same reference retains state;
+a changed reference unmounts its subtree, resets state and changes its identity
+path. Switching back mounts fresh local state. Application data stays intact.
+Rendering rejects recursive references, nesting over 64 component boundaries and
+walks over 100,000 expanded nodes. Errors preserve the last published frame and
+geometry. Source origins include both the dynamic call site and callee errors.
+
+For code-defined navigation titles, use
+`Application::localized_text(domain, source)` (also on its handle). This returns
+a reflected `LocalizedText`, resolved in String-valued props or string
+interpolation using each presentation's language. It uses the existing i18n
+catalog and source fallback; inactive titles and registered templates are
+exportable without opening windows. Only parameterless host messages are
+supported. Ordinary application Strings remain untranslated, and localized
+handles cannot be used as resource filenames. `ComponentId<T>` continues to mean
+a registered leaf type; `ComponentRef` identifies a reusable subtree, and an
+occurrence path identifies one mount.
