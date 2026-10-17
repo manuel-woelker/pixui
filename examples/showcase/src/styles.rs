@@ -33,6 +33,7 @@ fn danger(tokens: &ThemeTokens) -> PaintStyle {
 fn gradient(tokens: &ThemeTokens) -> PaintStyle {
     let mut style = primary(tokens);
     style.fill = Some(LinearGradient::horizontal(tokens.accent, tokens.danger).into());
+    style.corner_radius = 10.0;
     style
 }
 pub fn register(application: &ApplicationHandle) -> PixuiResult<()> {
@@ -59,6 +60,13 @@ pub fn register(application: &ApplicationHandle) -> PixuiResult<()> {
             "mono".into(),
             StylePatch {
                 font: Some(ThemeFont::Mono),
+                ..Default::default()
+            },
+        );
+        family.variants.insert(
+            "rounded".into(),
+            StylePatch {
+                corner_radius: Some(12.0),
                 ..Default::default()
             },
         );

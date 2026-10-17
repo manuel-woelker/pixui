@@ -118,6 +118,68 @@ impl Canvas {
         }
     }
 
+    fn rounded(&mut self, rect: Rect, requested_radius: f32, brush: Brush, border: Option<f32>) {
+        use crate::rounded_rect::{coverage, inset, radius};
+        let visible = rect.intersect(*self.clips.last().expect("viewport clip"));
+        if visible.width <= 0.0 || visible.height <= 0.0 {
+            return;
+        }
+        let radius = radius(rect, requested_radius);
+        let inner = border.map(|width| (inset(rect, width), (radius - width).max(0.0)));
+        let projection = if let Brush::LinearGradient(gradient) = brush {
+            let (start, end) = gradient.endpoints(rect);
+            let dx = end.x - start.x;
+            let dy = end.y - start.y;
+            let length_squared = dx * dx + dy * dy;
+            Some((start, dx / length_squared, dy / length_squared))
+        } else {
+            None
+        };
+        let left = (visible.x * self.scale)
+            .floor()
+            .clamp(0.0, self.width as f32) as usize;
+        let top = (visible.y * self.scale)
+            .floor()
+            .clamp(0.0, self.height as f32) as usize;
+        let right = ((visible.x + visible.width) * self.scale)
+            .ceil()
+            .clamp(0.0, self.width as f32) as usize;
+        let bottom = ((visible.y + visible.height) * self.scale)
+            .ceil()
+            .clamp(0.0, self.height as f32) as usize;
+        for y in top..bottom {
+            for x in left..right {
+                let point = Point {
+                    x: (x as f32 + 0.5) / self.scale,
+                    y: (y as f32 + 0.5) / self.scale,
+                };
+                if !visible.contains(point) {
+                    continue;
+                }
+                let mut alpha = coverage(rect, radius, point, self.scale);
+                if let Some((inner, radius)) = inner {
+                    alpha = (alpha - coverage(inner, radius, point, self.scale)).max(0.0);
+                }
+                if alpha == 0.0 {
+                    continue;
+                }
+                let color = match brush {
+                    Brush::Solid(color) => color,
+                    Brush::LinearGradient(gradient) => {
+                        let (start, dx, dy) = projection.expect("gradient projection");
+                        gradient.color_at((point.x - start.x) * dx + (point.y - start.y) * dy)
+                    }
+                };
+                let pixel = &mut self.pixels[y * self.width as usize + x];
+                let blend = |channel: u8, shift: u32| {
+                    (f32::from(channel) * alpha + ((*pixel >> shift) & 255) as f32 * (1.0 - alpha))
+                        .round() as u32
+                };
+                *pixel = (blend(color.0, 16) << 16) | (blend(color.1, 8) << 8) | blend(color.2, 0);
+            }
+        }
+    }
+
     fn fill(&mut self, rect: Rect, Color(red, green, blue): Color) {
         let rect = rect.intersect(*self.clips.last().expect("viewport clip"));
         let left = (rect.x * self.scale).floor().clamp(0.0, self.width as f32) as usize;
@@ -170,11 +232,28 @@ pub fn paint<'a>(
     for command in &display.commands {
         let command = input.resolve(command)?;
         match &command {
-            DrawCommand::FillRect { rect, brush } => match brush {
+            DrawCommand::FillRect {
+                rect,
+                brush,
+                corner_radius,
+            } if *corner_radius > 0.0 => {
+                canvas.rounded(*rect, *corner_radius, *brush, None);
+            }
+            DrawCommand::FillRect { rect, brush, .. } => match brush {
                 Brush::Solid(color) => canvas.fill(*rect, *color),
                 Brush::LinearGradient(gradient) => canvas.gradient(*rect, *gradient),
             },
-            DrawCommand::StrokeRect { rect, color, width } => {
+            DrawCommand::StrokeRect {
+                rect,
+                color,
+                width,
+                corner_radius,
+            } if *corner_radius > 0.0 => {
+                canvas.rounded(*rect, *corner_radius, (*color).into(), Some(*width));
+            }
+            DrawCommand::StrokeRect {
+                rect, color, width, ..
+            } => {
                 let thickness = width.min(rect.width).min(rect.height);
                 for strip in [
                     Rect {

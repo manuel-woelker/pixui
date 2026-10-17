@@ -6,6 +6,7 @@ ui StylesDemo domain 'showcase' {
         <Button label="Quiet" styles=styles.quiet @activate=increment() />
         <Button label="Danger" styles=styles.danger @activate=increment() />
         <Button label="Gradient" styles=styles.gradient @activate=increment() />
+        <Button label="Rounded" styles=styles.rounded @activate=increment() />
         <Button label="Compact" styles=styles.compact @activate=increment() />
         <Button label="Monospace" styles=styles.mono @activate=increment() />
         <Button label="Local purple override" styles=styles.purple @activate=increment() />

@@ -14,6 +14,8 @@ pub struct Border {
 pub struct PaintStyle {
     pub fill: Option<Brush>,
     pub border: Option<Border>,
+    /// Uniform visual radius in logical pixels; clamped to half the shorter side.
+    pub corner_radius: f32,
     pub foreground: Color,
     pub font: ThemeFont,
     pub font_size: f32,
@@ -25,6 +27,7 @@ impl PaintStyle {
         Self {
             fill: None,
             border: None,
+            corner_radius: 0.0,
             foreground: tokens.foreground,
             font: tokens.font.clone(),
             font_size: tokens.font_size,
@@ -36,7 +39,9 @@ impl PaintStyle {
         FontConfig::new(self.font.face()?, self.font_size, scale)
     }
     pub fn validate(&self, scale: f32) -> PixuiResult<()> {
-        if !self.inset.is_finite()
+        if !self.corner_radius.is_finite()
+            || self.corner_radius < 0.0
+            || !self.inset.is_finite()
             || self.inset < 0.0
             || !self.minimum_height.is_finite()
             || self.minimum_height < 0.0
@@ -58,6 +63,7 @@ impl PaintStyle {
 pub struct StylePatch {
     pub fill: Option<Option<Brush>>,
     pub border: Option<Option<Border>>,
+    pub corner_radius: Option<f32>,
     pub foreground: Option<Color>,
     pub font: Option<ThemeFont>,
     pub font_size: Option<f32>,
@@ -71,6 +77,9 @@ impl StylePatch {
         }
         if let Some(value) = self.border {
             style.border = value;
+        }
+        if let Some(value) = self.corner_radius {
+            style.corner_radius = value;
         }
         if let Some(value) = self.foreground {
             style.foreground = value;

@@ -175,7 +175,11 @@ impl Scene {
         for command in &display.commands {
             let command = input.resolve(command)?;
             match &command {
-                DrawCommand::FillRect { rect, brush } => {
+                DrawCommand::FillRect {
+                    rect,
+                    brush,
+                    corner_radius,
+                } => {
                     let paint = match brush {
                         Brush::Solid(c) => Paint::color(color(*c)),
                         Brush::LinearGradient(gradient) => {
@@ -190,13 +194,50 @@ impl Scene {
                             )
                         }
                     };
+                    let shape = if *corner_radius > 0.0 {
+                        let mut shape = Path::new();
+                        shape.rounded_rect(
+                            rect.x,
+                            rect.y,
+                            rect.width,
+                            rect.height,
+                            crate::rounded_rect::radius(*rect, *corner_radius),
+                        );
+                        shape
+                    } else {
+                        solid_path(*rect, scale)
+                    };
                     self.canvas
-                        .fill_path(&solid_path(*rect, scale), &paint.with_anti_alias(false));
+                        .fill_path(&shape, &paint.with_anti_alias(*corner_radius > 0.0));
                 }
                 DrawCommand::StrokeRect {
                     rect,
                     color: c,
                     width,
+                    corner_radius,
+                } if *corner_radius > 0.0 => {
+                    let radius = crate::rounded_rect::radius(*rect, *corner_radius);
+                    let mut shape = Path::new();
+                    shape.rounded_rect(rect.x, rect.y, rect.width, rect.height, radius);
+                    let inner = crate::rounded_rect::inset(*rect, *width);
+                    if inner.width > 0.0 && inner.height > 0.0 {
+                        shape.rounded_rect(
+                            inner.x,
+                            inner.y,
+                            inner.width,
+                            inner.height,
+                            (radius - width).max(0.0),
+                        );
+                        // Hole winding also directs the antialias fringe inward.
+                        shape.solidity(femtovg::Solidity::Hole);
+                    }
+                    self.canvas.fill_path(&shape, &Paint::color(color(*c)));
+                }
+                DrawCommand::StrokeRect {
+                    rect,
+                    color: c,
+                    width,
+                    ..
                 } => {
                     // Existing strokes lie inside the rectangle rather than being
                     // centered on its boundary. Four strips preserve that contract.

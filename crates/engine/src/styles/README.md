@@ -182,3 +182,23 @@ Gradient brushes live in the deduplicated output style table. Commands still
 carry only a style index. Both software and GPU backends support the same fills;
 the GPU uses native gradient paints without generating images or textures.
 Hover/active/disabled patches can replace the entire brush without relayout.
+
+## Rounded corners
+
+Set `PaintStyle::corner_radius` or `StylePatch::corner_radius` to a nonnegative,
+finite logical-pixel radius. The default is zero (square corners); the renderer
+clamps larger radii to half the shorter rectangle dimension, allowing pill
+shapes without knowing the final size. For example, a variant can use
+`StylePatch { corner_radius: Some(12.0), ..Default::default() }`.
+
+Styled fills (including gradients) and borders share this radius. Borders stay
+inside the original rectangle; their inner radius is the clamped outer radius
+minus the border width, floored at zero. A border thicker than half the shorter
+side fills the rounded shape. Rounded edges are antialiased by both backends;
+the software fallback uses pixel coverage and the GPU uses native paths.
+
+Radius is paint geometry only. It does not change layout, intrinsic size,
+rectangular hitboxes, focus navigation or child/image clipping. Painters must
+explicitly assign the desired radius to each slot (including separate focus
+slots). Interaction patches still change only brushes/colors. Raw rectangle
+commands retain their square behavior.

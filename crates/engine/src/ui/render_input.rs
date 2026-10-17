@@ -15,12 +15,14 @@ use pixui_base::{PixuiResult, pixui_error};
 pub struct RenderStyle {
     pub fill: Option<Brush>,
     pub border: Option<Border>,
+    pub corner_radius: f32,
     pub foreground: Color,
     pub font: Option<FontIndex>,
 }
 type StyleKey = (
     Option<BrushKey>,
     Option<(Color, u32)>,
+    u32,
     Color,
     Option<FontIndex>,
 );
@@ -30,6 +32,11 @@ impl RenderStyle {
             self.fill.map(Brush::key),
             self.border
                 .map(|border| (border.color, border.width.to_bits())),
+            if self.corner_radius == 0.0 {
+                0
+            } else {
+                self.corner_radius.to_bits()
+            },
             self.foreground,
             self.font,
         )
@@ -62,11 +69,13 @@ pub enum ResolvedCommand<'a> {
     FillRect {
         rect: Rect,
         brush: Brush,
+        corner_radius: f32,
     },
     StrokeRect {
         rect: Rect,
         color: Color,
         width: f32,
+        corner_radius: f32,
     },
     DrawText {
         origin: Point,
@@ -91,6 +100,9 @@ impl<'a> RenderInput<'a> {
     }
     pub fn validate(&self) -> PixuiResult<()> {
         for style in self.styles {
+            if !style.corner_radius.is_finite() || style.corner_radius < 0.0 {
+                return Err(pixui_error!("invalid render style corner radius"));
+            }
             if let Some(fill) = style.fill {
                 fill.validate()?;
             }
@@ -114,11 +126,13 @@ impl<'a> RenderInput<'a> {
             DrawCommand::FillRect { rect, color } => ResolvedCommand::FillRect {
                 rect: *rect,
                 brush: (*color).into(),
+                corner_radius: 0.0,
             },
             DrawCommand::StrokeRect { rect, color, width } => ResolvedCommand::StrokeRect {
                 rect: *rect,
                 color: *color,
                 width: *width,
+                corner_radius: 0.0,
             },
             DrawCommand::DrawText {
                 origin,
@@ -132,6 +146,7 @@ impl<'a> RenderInput<'a> {
                 color: *color,
             },
             DrawCommand::StyledFillRect { rect, style } => ResolvedCommand::FillRect {
+                corner_radius: self.style(*style)?.corner_radius,
                 rect: *rect,
                 brush: self
                     .style(*style)?
@@ -147,6 +162,7 @@ impl<'a> RenderInput<'a> {
                     rect: *rect,
                     color: border.color,
                     width: border.width,
+                    corner_radius: self.style(*style)?.corner_radius,
                 }
             }
             DrawCommand::StyledText {

@@ -71,6 +71,7 @@ impl DisplayListBuilder {
             .map(|style| super::render_input::RenderStyle {
                 fill: style.fill,
                 border: style.border,
+                corner_radius: style.corner_radius,
                 foreground: style.foreground,
                 font: None,
             })

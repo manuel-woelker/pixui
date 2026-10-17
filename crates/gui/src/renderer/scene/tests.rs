@@ -659,6 +659,7 @@ fn linear_gradients_match_software_with_clipping_and_scaling() {
         let styles = [RenderStyle {
             fill: Some(gradient.into()),
             border: None,
+            corner_radius: 0.0,
             foreground: Color(0, 0, 0),
             font: None,
         }];
@@ -681,4 +682,81 @@ fn linear_gradients_match_software_with_clipping_and_scaling() {
         0,
         "gradient brushes allocate no textures"
     );
+}
+
+#[test]
+fn rounded_fills_and_inside_borders_match_software_geometry() {
+    use pixui_engine::{
+        styles::{brush::LinearGradient, index::StyleIndex, style::Border},
+        ui::render_input::RenderStyle,
+    };
+    let Some(gpu) = gpu() else { return };
+    let mut scene = Scene::new(gpu.device.clone(), gpu.queue.clone(), DEFAULT_CACHE_BYTES).unwrap();
+    let bounds = Rect {
+        x: 2.0,
+        y: 2.0,
+        width: 24.0,
+        height: 16.0,
+    };
+    for radius in [0.0, 8.0, 1000.0] {
+        for border_width in [2.0, 30.0] {
+            let display = DisplayList {
+                commands: vec![
+                    pixui_engine::ui::display_list::DrawCommand::StyledFillRect {
+                        rect: bounds,
+                        style: StyleIndex { index: 0 },
+                    },
+                    pixui_engine::ui::display_list::DrawCommand::StyledStrokeRect {
+                        rect: bounds,
+                        style: StyleIndex { index: 0 },
+                    },
+                ],
+                ..Default::default()
+            };
+            let styles = [RenderStyle {
+                fill: Some(
+                    LinearGradient::horizontal(Color(20, 180, 40), Color(80, 80, 200)).into(),
+                ),
+                border: Some(Border {
+                    color: Color(240, 40, 20),
+                    width: border_width,
+                }),
+                corner_radius: radius,
+                foreground: Color(0, 0, 0),
+                font: None,
+            }];
+            for scale in [1.0, 2.0] {
+                let input = RenderInput {
+                    display: &display,
+                    styles: &styles,
+                };
+                let actual = render(&mut scene, &gpu, input, scale);
+                let expected = crate::painter::paint(input, 64, 64, scale).unwrap();
+                let mut difference = 0u64;
+                for (rgba, rgb) in actual.as_chunks::<4>().0.iter().zip(&expected) {
+                    for (channel, shift) in [(0, 16), (1, 8), (2, 0)] {
+                        difference += (i16::from(rgba[channel]) - ((rgb >> shift) & 255) as i16)
+                            .unsigned_abs() as u64;
+                    }
+                }
+                // Edge coverage differs between distance-field CPU antialiasing
+                // and tessellated GPU paths; the overall shape must agree.
+                assert!(
+                    difference < 4096 * 3,
+                    "radius {radius}, border {border_width}, scale {scale}: {difference}"
+                );
+                let at = |x: usize, y: usize| {
+                    &actual[((y as f32 * scale) as usize * 64 + (x as f32 * scale) as usize) * 4..]
+                        [..3]
+                };
+                assert_eq!(at(14, 3), [240, 40, 20]);
+                if radius > 0.0 {
+                    assert_eq!(at(2, 2), [0, 0, 0]);
+                }
+                if border_width > 8.0 {
+                    assert_eq!(at(14, 10), [240, 40, 20]);
+                }
+            }
+        }
+    }
 }

@@ -88,11 +88,24 @@ pub(crate) fn create(
             "gradient",
             StyleAssignment::new(app.styles().family("showcase.gradient")?),
         ),
+        ("rounded", primary.clone().variant("rounded")),
         ("compact", primary.clone().variant("compact")),
         ("mono", primary.clone().variant("mono")),
         ("purple", primary.patch(crate::styles::local_color())),
     ] {
-        env.styles(name, vec![SlotAssignment::new("body", assignment)])?;
+        let mut slots = vec![SlotAssignment::new("body", assignment)];
+        if matches!(name, "rounded" | "gradient") {
+            slots.push(SlotAssignment::new(
+                "focus_ring",
+                StyleAssignment::new(app.styles().family("focus")?).patch(
+                    pixui_engine::styles::style::StylePatch {
+                        corner_radius: Some(if name == "rounded" { 12.0 } else { 10.0 }),
+                        ..Default::default()
+                    },
+                ),
+            ));
+        }
+        env.styles(name, slots)?;
     }
     Ok(env)
 }

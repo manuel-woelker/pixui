@@ -398,6 +398,7 @@ fn style_gallery_resolves_variants_local_overrides_and_per_window_fonts() {
             "Quiet",
             "Danger",
             "Gradient",
+            "Rounded",
             "Compact",
             "Monospace",
             "Local purple override",

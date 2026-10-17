@@ -407,6 +407,7 @@ fn output_validation_rejects_unbound_styles_missing_properties_and_bad_fonts() {
     let styles = vec![RenderStyle {
         fill: None,
         border: None,
+        corner_radius: 0.0,
         foreground: Color(0, 0, 0),
         font: None,
     }];
@@ -445,6 +446,7 @@ fn output_validation_rejects_unbound_styles_missing_properties_and_bad_fonts() {
     let styles = vec![RenderStyle {
         fill: None,
         border: None,
+        corner_radius: 0.0,
         foreground: Color(0, 0, 0),
         font: Some(FontIndex::from_raw(99)),
     }];
@@ -701,6 +703,88 @@ fn malformed_gradients_are_rejected_by_worker_and_render_input_validation() {
         let styles = [RenderStyle {
             fill: Some(brush),
             border: None,
+            corner_radius: 0.0,
+            foreground: Color(0, 0, 0),
+            font: None,
+        }];
+        assert!(
+            RenderInput {
+                display: &display,
+                styles: &styles
+            }
+            .validate()
+            .is_err()
+        );
+    }
+}
+
+#[test]
+fn corner_radius_defaults_patches_validation_and_deduplication() {
+    let mut app = Application::default();
+    let (id, assignment) = button_part(&mut app);
+    assert_eq!(
+        body(&ThemeTokens::for_theme(Theme::Light)).corner_radius,
+        0.0
+    );
+    let tree = LivePart::Composite(CompositePart {
+        parts: [0.0, 8.0, 8.0]
+            .into_iter()
+            .map(|radius| {
+                ComponentPart::typed(id, |_, _| {
+                    Ok(ButtonProps {
+                        label: "Radius".into(),
+                    })
+                })
+                .with_style(
+                    "body",
+                    assignment.clone().patch(StylePatch {
+                        corner_radius: Some(radius),
+                        ..Default::default()
+                    }),
+                )
+                .into()
+            })
+            .collect(),
+    });
+    let first = draw(&app, &tree, &PresentationSettings::default());
+    assert_eq!(
+        first
+            .styles
+            .iter()
+            .filter(|style| style.corner_radius == 8.0)
+            .count(),
+        1
+    );
+    assert!(first.styles.iter().any(|style| style.corner_radius == 0.0));
+    let input = RenderInput {
+        display: &first.display_list,
+        styles: &first.styles,
+    };
+    let radii: Vec<_> = first
+        .display_list
+        .commands
+        .iter()
+        .filter_map(|command| match input.resolve(command).unwrap() {
+            ResolvedCommand::FillRect { corner_radius, .. } => Some(corner_radius),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(&radii[radii.len() - 3..], [0.0, 8.0, 8.0]);
+    for radius in [-1.0, f32::INFINITY, f32::NAN] {
+        let assignment = assignment.clone().patch(StylePatch {
+            corner_radius: Some(radius),
+            ..Default::default()
+        });
+        assert!(
+            app.styles()
+                .resolve(&assignment, Theme::Light, 1.0, Default::default())
+                .is_err()
+        );
+        let display = Default::default();
+        let styles = [pixui_engine::ui::render_input::RenderStyle {
+            fill: None,
+            border: None,
+            corner_radius: radius,
             foreground: Color(0, 0, 0),
             font: None,
         }];

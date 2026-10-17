@@ -360,6 +360,7 @@ fn gradients_use_original_bounds_when_clipped_and_scale_at_pixel_centers() {
     let styles = [RenderStyle {
         fill: Some(gradient.into()),
         border: None,
+        corner_radius: 0.0,
         foreground: Color(0, 0, 0),
         font: None,
     }];
