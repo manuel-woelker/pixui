@@ -16,6 +16,7 @@ pub struct ResourceReloadBuilder {
     pub(crate) application: ApplicationHandle,
     pub(crate) images: bool,
     pub(crate) catalogs: Vec<CatalogTarget>,
+    pub(crate) ui_bundles: Vec<super::ui_bundle::UiTarget>,
     pub(crate) quiet: Duration,
 }
 impl ResourceReloadBuilder {
@@ -24,6 +25,7 @@ impl ResourceReloadBuilder {
             application,
             images: false,
             catalogs: Vec::new(),
+            ui_bundles: Vec::new(),
             quiet: Duration::from_millis(200),
         }
     }
@@ -54,7 +56,7 @@ impl ResourceReloadBuilder {
                 "catalog needs a domain and a translation language"
             ));
         }
-        if self.catalogs.len() >= MAX_TARGETS
+        if self.catalogs.len() + self.ui_bundles.len() >= MAX_TARGETS
             || self
                 .catalogs
                 .iter()
@@ -70,6 +72,39 @@ impl ResourceReloadBuilder {
             domain,
             language,
             format,
+        });
+        Ok(self)
+    }
+    /// Reload an installed bundle from filesystem paths matching its canonical
+    /// module IDs. Each accepted graph clears UI state, preserving model values.
+    /// The environment is the allowlist supplied at initial installation.
+    pub fn ui_bundle(
+        mut self,
+        filesystem: Arc<dyn ResourceFilesystem>,
+        bundle: &crate::ui_language::bundle::InstalledBundle,
+    ) -> PixuiResult<Self> {
+        let id = bundle.id();
+        if self.ui_bundles.iter().any(|target| target.bundle == id)
+            || self.catalogs.len() + self.ui_bundles.len() >= MAX_TARGETS
+        {
+            return Err(pixui_error!(
+                "duplicate UI bundle target or too many reload targets"
+            ));
+        }
+        let entries = self
+            .application
+            .inspect(move |app| Ok(app.bundle_snapshot(id)?.entries))?;
+        if entries.is_empty() {
+            return Err(pixui_error!("UI bundle has no source entries"));
+        }
+        let paths = entries
+            .into_iter()
+            .map(ResourcePath::new)
+            .collect::<PixuiResult<std::collections::BTreeSet<_>>>()?;
+        self.ui_bundles.push(super::ui_bundle::UiTarget {
+            filesystem,
+            bundle: id,
+            paths: Arc::new(std::sync::Mutex::new(paths)),
         });
         Ok(self)
     }

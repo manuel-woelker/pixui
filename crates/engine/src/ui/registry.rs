@@ -53,6 +53,49 @@ pub struct UiRegistry {
 }
 
 impl UiRegistry {
+    /// Source replacement invalidates all retained trees and interaction tokens.
+    /// Application values and native window subscriptions remain intact.
+    pub(crate) fn reset_after_source_reload(&mut self) {
+        self.text_sessions.clear();
+        self.pending_clipboards.clear();
+        self.text_capture = None;
+        self.pointer_presses.clear();
+        self.pending_actions.clear();
+        self.focus_sources.clear();
+        self.hover_sources.clear();
+        for definition in self.definitions.values_mut() {
+            definition.state = Default::default();
+            definition.identity_epoch = definition
+                .identity_epoch
+                .checked_add(1)
+                .expect("UI identity epoch exhausted");
+        }
+        for instance in self.instances.values_mut() {
+            instance.identity_epoch = self.definitions[&instance.definition].identity_epoch;
+            instance.state = Default::default();
+            instance.layout = Default::default();
+            instance.layout_cache = Default::default();
+            instance.geometry_stale = true;
+            instance.compatible_revision =
+                super::display_list::RenderRevision(instance.revision.0.saturating_add(1));
+            instance.redraw_only = false;
+            instance.dirty = true;
+            instance.window_properties_dirty = true;
+            instance.pointer_position = None;
+            instance.painted_focus = None;
+            instance.painted_hover = None;
+            instance.last_render = None;
+            instance.diagnostics_dirty = false;
+            let visible = instance.overlay.visible;
+            instance.overlay = Default::default();
+            instance.overlay.visible = visible;
+            instance.native_text_input = Default::default();
+            instance.outputs.window_commands.publish(
+                super::window_properties::WindowCommand::SetTextInput(Default::default()),
+            );
+        }
+    }
+
     pub(crate) fn validate_styles(
         &self,
         painters: &crate::painters::registry::PainterRegistry,
@@ -100,6 +143,7 @@ impl UiRegistry {
         self.instances.insert(
             id,
             UiInstance {
+                identity_epoch: self.definitions[&definition].identity_epoch,
                 definition,
                 state: LiveState::new(),
                 settings,
@@ -264,6 +308,9 @@ impl UiRegistry {
             } => {
                 if paint_revision.0 == 0 || paint_revision > instance.revision {
                     return Err(pixui_error!("invalid presented paint revision"));
+                }
+                if instance.geometry_stale || paint_revision < instance.compatible_revision {
+                    return Ok(None);
                 }
                 instance
                     .overlay
@@ -731,11 +778,13 @@ impl UiRegistry {
                     instance.painted_focus =
                         focus.clone().map(|path| super::focus::ComponentInstanceId {
                             definition: instance.definition,
+                            epoch: instance.identity_epoch,
                             path,
                         });
                     instance.painted_hover =
                         hover.clone().map(|path| super::focus::ComponentInstanceId {
                             definition: instance.definition,
+                            epoch: instance.identity_epoch,
                             path,
                         });
                     if self.hover_sources.get(&instance.definition) == Some(id) {
@@ -765,6 +814,7 @@ impl UiRegistry {
                             })
                             .map(|path| super::focus::ComponentInstanceId {
                                 definition: instance.definition,
+                                epoch: instance.identity_epoch,
                                 path,
                             });
                         if definition.state.focus != retained {
@@ -838,6 +888,7 @@ impl UiRegistry {
         let definition = instance.definition;
         if let Some(target) = &target
             && (target.definition() != definition
+                || target.epoch != instance.identity_epoch
                 || instance.geometry_stale
                 || !instance
                     .layout
@@ -1074,6 +1125,7 @@ fn update_window_properties(
 fn component_id(instance: &UiInstance, index: usize) -> super::focus::ComponentInstanceId {
     super::focus::ComponentInstanceId {
         definition: instance.definition,
+        epoch: instance.identity_epoch,
         path: instance.layout.component_paths[index].clone(),
     }
 }

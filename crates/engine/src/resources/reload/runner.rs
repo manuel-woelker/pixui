@@ -54,6 +54,14 @@ impl Coordinator {
                 initial: true,
                 last_error: None,
             })
+            .chain(builder.ui_bundles.iter().map(|target| Target {
+                source: Source::Ui(target.clone()),
+                path: crate::resources::path::ResourcePath::new("ui-bundle").expect("static path"),
+                schedule: Schedule::new(Instant::now(), builder.quiet),
+                accepted: None,
+                initial: true,
+                last_error: None,
+            }))
             .collect();
         let mut coordinator = Self {
             builder,
@@ -160,13 +168,17 @@ impl Coordinator {
         let target = &self.targets[index];
         let version = target.schedule.revision.load(Ordering::Acquire);
         let before = target.stamp();
-        let result = target.read().and_then(|bytes| {
-            let hash = blake3::hash(&bytes);
-            if target.accepted == Some(hash) {
-                return Ok((hash, None));
-            }
-            Ok((hash, Some(target.source.decode(&bytes)?)))
-        });
+        let result = if let Source::Ui(ui) = &target.source {
+            ui.prepare(&self.builder.application, target.accepted, &self.shared)
+        } else {
+            target.read().and_then(|bytes| {
+                let hash = blake3::hash(&bytes);
+                if target.accepted == Some(hash) {
+                    return Ok((hash, None));
+                }
+                Ok((hash, Some(target.source.decode(&bytes)?)))
+            })
+        };
         // File events during read/decode invalidate the result before delivery.
         self.drain();
         let target = &mut self.targets[index];
@@ -207,6 +219,12 @@ impl Coordinator {
                     if installed {
                         target.accepted = Some(flight.hash);
                         target.last_error = None;
+                    }
+                    if !installed
+                        && matches!(target.source, Source::Ui(_))
+                        && target.schedule.due.is_none()
+                    {
+                        target.schedule.dirty(Instant::now(), self.builder.quiet);
                     }
                     if installed || target.schedule.due.is_none() {
                         target.initial = false;

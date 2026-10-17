@@ -1,6 +1,6 @@
 # UI language hot reloading
 
-Status: proposed.
+Status: complete; automated checks and native verification passed.
 
 ## Goal
 
@@ -175,22 +175,22 @@ runtime data-dependent evaluation succeeds.
 
 ## Implementation checklist
 
-- [ ] Separate detached bundle preparation from atomic application integration;
+- [x] Separate detached bundle preparation from atomic application integration;
   preserve the synchronous API and existing compiler diagnostics/tests.
-- [ ] Add stable bundle registrations, replacement revisions, root bindings,
+- [x] Add stable bundle registrations, replacement revisions, root bindings,
   export signature checks and tombstones without per-edit registry growth.
-- [ ] Add filesystem source snapshots and dependency manifests, sharing resource
+- [x] Add filesystem source snapshots and dependency manifests, sharing resource
   reads, limits, watches, quiet periods, retries and bounded delivery.
-- [ ] Extend reload builder/session/targets for bundles and environment refresh;
+- [x] Extend reload builder/session/targets for bundles and environment refresh;
   reject obsolete session, configuration and compilation results atomically.
-- [ ] Implement the centralized UI state/cache/interaction reset and fresh
+- [x] Implement the centralized UI state/cache/interaction reset and fresh
   revision boundary, including hidden windows and native text-input shutdown.
-- [ ] Enable watched `.pixui` bundles in the showcase and todo where applicable;
+- [x] Enable watched `.pixui` bundles in the showcase and todo where applicable;
   preserve embedded sources for disabled reload and translation extraction.
-- [ ] Update architecture documentation, language/resource reload documentation
+- [x] Update architecture documentation, language/resource reload documentation
   and example instructions, including reset behavior and failure recovery.
-- [ ] Add the verification below and run `./n check` after each unit of work.
-- [ ] Verify native behavior in two windows before moving the plan to completed.
+- [x] Add the verification below and run `./n check` after each unit of work.
+- [x] Verify native behavior in two windows before moving the plan to completed.
 
 ## Verification
 
@@ -237,3 +237,44 @@ runtime data-dependent evaluation succeeds.
   invent an empty successfully installed graph.
 - Diagnostics use existing tracing/source reports initially. An in-window error
   panel and a user-facing “UI state reset” indicator are optional later work.
+
+## Implementation notes
+
+- Plan committed as `c484ca9` before implementation.
+- Detached graphs use private owner-zero relocation symbols; no temporary
+  application is constructed. Loader-side i18n registration uses a revisioned
+  translation snapshot; worker acceptance swaps it only if configuration still
+  matches. Normal bundle installation shares the preparation/link stages.
+- The first compilation/reload pipeline unit passed `./n check`.
+- Todo currently defines its UI entirely in Rust, so it has no `.pixui` bundle
+  to watch. Its image/catalog reload remains enabled; source reload is exercised
+  in the showcase rather than migrating the todo UI as unrelated work.
+- The showcase installs its shell and pages as one bundle with module IDs rooted
+  at `examples/showcase/ui`. The host-only dynamic style example wraps a live
+  reference instead of editing a cloned page. Disabled reload/extraction use
+  embedded source snapshots. Initial disk errors retain that baseline and guard.
+- Registry slots are stable and bundle revisions track whole-graph replacement;
+  per-entry revisions are unnecessary with the conservative global UI reset.
+  Focus handles additionally carry a definition epoch. Animation request
+  counters are retained as monotonic watermarks while prior scheduling output is
+  discarded.
+- Reload environments retain the explicit startup allowlist. Configuration
+  stamps cover template, style, host-registration and translation revisions.
+  Candidate i18n work happens on the loader, with stale snapshots rejected
+  before mutation.
+- Native two-window verification passed, confirmed by the user on 2026-10-17.
+- Automated verification: detached preparation is `Send`; a lowering hook
+  records execution on the background thread. Unit tests cover signature/root
+  rejection, stable references, tombstone restoration, constant slot counts and
+  obsolete configuration/base revisions without partial mutations.
+- Native-watch integration tests cover imported graph updates in two instances,
+  hidden-instance Unknown state, stale focus/input/IME/paste, retained model
+  data, invalid-source recovery, creation of imports, runtime-render
+  failure/recovery, unchanged saves, initial failure recovery, layer overrides,
+  atomic renames and malformed UTF-8. UI, PO and image jobs also run together in
+  one session.
+- Blocking filesystem tests confirm worker actions/inspection remain responsive.
+  Snapshot requests use nonblocking admission and cancellable reply polling;
+  stopping a source reload does not wait for a busy worker or queue capacity.
+- `./n check` passed after pipeline, showcase/reset and final lifecycle/test
+  units. All implementation and verification checklist items are complete.

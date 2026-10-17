@@ -50,13 +50,20 @@ impl ResourceReloadSession {
             }
             roots.extend(catalog_roots);
         }
+        for target in &builder.ui_bundles {
+            let ui_roots = target.filesystem.watch_roots();
+            if ui_roots.is_empty() {
+                return Err(pixui_error!("UI filesystem has no native watch roots"));
+            }
+            roots.extend(ui_roots);
+        }
         if roots.is_empty() {
             return Err(pixui_error!("reload session has no watch targets"));
         }
         let (hints, receiver) = bounded(256);
         let shared = Arc::new(Shared::new(
             hints,
-            super::shared::MAX_TARGETS - builder.catalogs.len(),
+            super::shared::MAX_TARGETS - builder.catalogs.len() - builder.ui_bundles.len(),
         ));
         let callback = shared.clone();
         let mut last_backend_error = None;

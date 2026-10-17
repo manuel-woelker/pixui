@@ -111,6 +111,7 @@ impl ApplicationHandle {
         &self,
     ) -> PixuiResult<crate::painters::standard::StandardComponents> {
         self.request(|application| {
+            application.ui_configuration_revision += 1;
             crate::painters::standard::register_components(&mut application.components)
         })?
         .wait()
@@ -118,6 +119,7 @@ impl ApplicationHandle {
 
     pub fn register_standard_painters(&self) -> PixuiResult<()> {
         self.request(|application| {
+            application.ui_configuration_revision += 1;
             crate::painters::standard::register_painters(
                 &mut application.painters,
                 &application.components,

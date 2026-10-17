@@ -111,13 +111,18 @@ The example enables native directory watching by default. To disable it:
 ./t cargo run -p pixui-example-showcase -- --no-hot-reload
 ```
 
-Edit `assets/images/pixui-logo.png` or this example's German PO file while the
-windows are open. Images (including native icons) and translated text/titles
-update after a short quiet period. Invalid/incomplete files keep the last good
-version until a valid save. With `--no-hot-reload`, catalogs use the embedded
-baseline. `--hot-reload` explicitly enables watching again.
-Translation export never starts a watcher, regardless of these flags.
-See [resource hot reload](../../crates/engine/src/resources/reload/README.md).
+Edit files under `ui/` (including imported composite components),
+`assets/images/pixui-logo.png`, or this example's German PO file while the
+windows are open. UI bundles, images (including native icons), and translated
+text/titles update after a short quiet period. Invalid/incomplete files keep the
+last good version until a valid save. Accepted UI edits reset focus, selection,
+scroll and component-local state in both windows, preserving application data
+and window settings. Image/PO updates do not perform this reset. Public
+prop/slot signatures and configured UI entry points must stay compatible. With
+`--no-hot-reload`, UI sources and catalogs use the embedded baseline.
+`--hot-reload` explicitly enables watching again. Translation export never
+starts a watcher, regardless of these flags. See
+[resource hot reload](../../crates/engine/src/resources/reload/README.md).
 
 ## Layout
 

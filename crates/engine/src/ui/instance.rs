@@ -112,6 +112,7 @@ impl LayoutState {
 /// Shared focus, hover and requested scrolling belong to the definition.
 /// Stale discrete input is rejected and old motion is discarded.
 pub struct UiInstance {
+    pub(crate) identity_epoch: u64,
     pub(crate) definition: UiDefinitionId,
     pub(crate) state: LiveState,
     pub(crate) settings: PresentationSettings,
@@ -154,6 +155,7 @@ impl UiInstance {
             .ok_or_else(|| pixui_base::pixui_error!("unknown component index"))?;
         Ok(super::focus::ComponentInstanceId {
             definition: self.definition,
+            epoch: self.identity_epoch,
             path: path.clone(),
         })
     }

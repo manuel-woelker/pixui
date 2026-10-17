@@ -11,7 +11,6 @@ use pixui_engine::{
         activation::ActionBinding, definition::UiDefinition, presentation::PresentationSettings,
         window_properties::WindowProperties,
     },
-    ui_language::compiler::compile,
 };
 
 /// UI declarations live in source templates; Rust supplies exports, composition,
@@ -20,17 +19,7 @@ pub fn definition(
     app: &ApplicationHandle,
     components: StandardComponents,
 ) -> PixuiResult<UiDefinition> {
-    register_pages(app, components)?;
-    let root = app.inspect(move |app| {
-        let env = crate::environment::create(app, components)?;
-        Ok(compile(
-            "examples/showcase/ui/showcase.pixui",
-            include_str!("../ui/showcase.pixui"),
-            &env,
-        )
-        .map_err(|errors| pixui_error!("{errors}"))?
-        .into_template())
-    })?;
+    let root = register_pages(app, components)?;
     let slice = app.inspect(|app| Ok(app.slice_named("showcase")?.id()))?;
     let count = app.entity_ref::<u64>(slice, "count")?;
     Ok(UiDefinition::new("showcase", root)
@@ -46,7 +35,10 @@ pub fn definition(
 
 /// Compile all views once, including inactive ones. The UI has no duplicated
 /// page names or page-count assumptions; this is the single navigation list.
-fn register_pages(app: &ApplicationHandle, components: StandardComponents) -> PixuiResult<()> {
+fn register_pages(
+    app: &ApplicationHandle,
+    components: StandardComponents,
+) -> PixuiResult<LivePart> {
     use crate::model::{actions::ShowcaseActions, data::NavigationEntry};
     use pixui_engine::ui_language::{bundle::BundleLimits, source::bundle::SourceBundle};
     let env = app.inspect(move |app| crate::environment::create(app, components))?;
@@ -54,63 +46,65 @@ fn register_pages(app: &ApplicationHandle, components: StandardComponents) -> Pi
         (
             0,
             "Buttons",
-            "examples/showcase/ui/buttons.pixui",
+            "buttons.pixui",
             include_str!("../ui/buttons.pixui"),
         ),
         (
             1,
             "Checkboxes",
-            "examples/showcase/ui/checkboxes.pixui",
+            "checkboxes.pixui",
             include_str!("../ui/checkboxes.pixui"),
         ),
         (
             2,
             "Images",
-            "examples/showcase/ui/images.pixui",
+            "images.pixui",
             include_str!("../ui/images.pixui"),
         ),
         (
             3,
             "Collections",
-            "examples/showcase/ui/collections.pixui",
+            "collections.pixui",
             include_str!("../ui/collections.pixui"),
         ),
         (
             4,
             "Text and translations",
-            "examples/showcase/ui/text.pixui",
+            "text.pixui",
             include_str!("../ui/text.pixui"),
         ),
         (
             5,
             "Styles",
-            "examples/showcase/ui/styles.pixui",
+            "styles.pixui",
             include_str!("../ui/styles.pixui"),
         ),
         (
             6,
             "Layout",
-            "examples/showcase/ui/layout.pixui",
+            "layout.pixui",
             include_str!("../ui/layout.pixui"),
         ),
         (
             7,
             "UI language",
-            "examples/showcase/ui/language.pixui",
+            "language.pixui",
             include_str!("../ui/language.pixui"),
         ),
     ];
     let mut sources = SourceBundle::new();
-    sources.add(
-        "examples/showcase/ui/common.pixui",
-        include_str!("../ui/common.pixui"),
-    )?;
+    sources.add("common.pixui", include_str!("../ui/common.pixui"))?;
     for (_, _, id, text) in pages {
         sources.add(id, text)?;
     }
+    sources.add("showcase.pixui", include_str!("../ui/showcase.pixui"))?;
     let installed = app.install_bundle(
         sources,
-        pages.iter().map(|(_, _, id, _)| (*id).to_owned()).collect(),
+        pages
+            .iter()
+            .map(|(_, _, id, _)| (*id).to_owned())
+            .chain(std::iter::once("showcase.pixui".into()))
+            .collect(),
         env,
         "showcase",
         BundleLimits::default(),
@@ -119,12 +113,16 @@ fn register_pages(app: &ApplicationHandle, components: StandardComponents) -> Pi
     for (id, title, module, _) in pages {
         let mut component = installed.component(module)?;
         if id == 5 {
-            let mut styles = app.inspect(move |app| app.clone_template(component))?;
-            let LivePart::Container(container) = &mut styles else {
-                return Err(pixui_error!("styles template must have a container root"));
-            };
-            container.children.push(dynamic_button(components)?);
-            component = app.register_template("styles-with-dynamic-example", "showcase", styles)?;
+            let styles = pixui_engine::layout::container::ContainerPart::column()
+                .with_gap(12.0)
+                .with_children(vec![
+                    LivePart::Dynamic(pixui_engine::live_model::part::DynamicPart::new(
+                        Expression::component(component),
+                    )),
+                    dynamic_button(components)?,
+                ]);
+            component =
+                app.register_template("styles-with-dynamic-example", "showcase", styles.into())?;
         }
         entries.push(NavigationEntry {
             id,
@@ -133,7 +131,11 @@ fn register_pages(app: &ApplicationHandle, components: StandardComponents) -> Pi
         });
     }
     ShowcaseActions::bind(app)?.install_navigation(entries)?;
-    Ok(())
+    Ok(LivePart::Dynamic(
+        pixui_engine::live_model::part::DynamicPart::new(Expression::component(
+            installed.component("showcase.pixui")?,
+        )),
+    ))
 }
 
 fn dynamic_button(components: StandardComponents) -> PixuiResult<LivePart> {

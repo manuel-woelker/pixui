@@ -15,6 +15,9 @@ mod tests;
 mod event_tests;
 
 pub mod bundle;
+mod bundle_link;
+pub(crate) mod bundle_prepare;
+pub mod bundle_registration;
 #[cfg(test)]
 mod composite_tests;
 #[cfg(test)]
@@ -23,3 +26,5 @@ mod composition_tests;
 mod container_tests;
 #[cfg(test)]
 mod image_tests;
+#[cfg(test)]
+mod reload_tests;

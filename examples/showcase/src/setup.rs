@@ -46,6 +46,13 @@ pub fn hot_reload(
     let session =
         pixui_engine::resources::reload::builder::ResourceReloadBuilder::new(application.clone())
             .watch_images()
+            .ui_bundle(
+                Arc::new(DirectoryFilesystem::new(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/ui"
+                ))?),
+                &application.inspect(|app| app.bundle_for_entry("showcase.pixui"))?,
+            )?
             .catalog(
                 Arc::new(DirectoryFilesystem::new(concat!(
                     env!("CARGO_MANIFEST_DIR"),
@@ -57,6 +64,10 @@ pub fn hot_reload(
                 Arc::new(pixui_engine::i18n::po::PoFormat),
             )?
             .start()?;
-    session.wait_initial(std::time::Duration::from_secs(5))?;
+    if let Err(error) = session.wait_initial(std::time::Duration::from_secs(5)) {
+        eprintln!(
+            "Initial resource reload failed; keeping the embedded UI and watching for recovery: {error:?}"
+        );
+    }
     Ok(session)
 }

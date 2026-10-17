@@ -31,6 +31,7 @@ struct Language {
 /// as separate applications; construct a fresh registry instead.
 #[derive(Clone)]
 pub struct TranslationRegistry {
+    revision: u64,
     owner: u64,
     messages: Vec<Option<Message>>,
     indices: BTreeMap<(String, MessageKey), usize>,
@@ -43,6 +44,7 @@ impl Default for TranslationRegistry {
             .expect("i18n registry identity exhausted");
         Self {
             owner,
+            revision: 0,
             messages: vec![None],
             indices: BTreeMap::new(),
             languages: vec![Language {
@@ -54,6 +56,9 @@ impl Default for TranslationRegistry {
     }
 }
 impl TranslationRegistry {
+    pub(crate) fn revision(&self) -> u64 {
+        self.revision
+    }
     /// Select the source tag before registering additional languages.
     pub fn set_source_language(&mut self, tag: &str) -> PixuiResult<()> {
         if self.languages.len() != 1 {
@@ -61,6 +66,7 @@ impl TranslationRegistry {
                 "configure source language before translations"
             ));
         }
+        self.revision += 1;
         self.languages[0].tag = language_tag(tag)?;
         Ok(())
     }
@@ -75,6 +81,7 @@ impl TranslationRegistry {
             return Ok(self.language_index(slot));
         }
         let slot = self.languages.len();
+        self.revision += 1;
         self.languages.push(Language {
             tag,
             templates: vec![None; self.messages.len()],
@@ -158,6 +165,7 @@ impl TranslationRegistry {
         expression: &I18nExpression,
         source: CompiledTemplate,
     ) -> PixuiResult<MessageIndex> {
+        self.revision += 1;
         let key = (domain.to_owned(), expression.key.clone());
         let slot = if let Some(&slot) = self.indices.get(&key) {
             let message = self.messages[slot].as_mut().expect("registered message");
@@ -282,6 +290,7 @@ impl TranslationRegistry {
             }
         }
         target.catalogs.insert(domain.into(), compiled);
+        self.revision += 1;
         Ok(report)
     }
     pub(crate) fn template(

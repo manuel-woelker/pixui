@@ -49,11 +49,13 @@ See [the language reference](../crates/engine/src/ui_language/README.md) and
 compiled templates share traversal, state identity, layout, painters and
 renderers.
 
-Reusable subtrees are installed in an append-only application registry.
-`ComponentRef` is an opaque application-local identity; it owns no tree and is
-separate from registered leaf `ComponentId<T>` values. Source imports are
-checked as a bounded graph through host-controlled source resolvers and
-installed transactionally with their translation declarations. Default UI
+Reusable subtrees use stable slots in an application registry. Rust
+registrations append; watched source bundles atomically replace their owned
+slots. Removed source exports leave unavailable tombstones rather than reusable
+identities. `ComponentRef` is an opaque application-local identity; it owns no
+tree and is separate from registered leaf `ComponentId<T>` values. Source
+imports are checked as a bounded graph through host-controlled source resolvers
+and installed transactionally with their translation declarations. Default UI
 aliases and `<Dynamic component=... />` share the zero-argument reference node.
 Every mounted occurrence retains its own subtree state/template copy; changing
 references unmounts it and changes the component identity path. Dynamic contexts
@@ -720,11 +722,11 @@ and layered sources expose native roots without changing ordinary resource
 lookup. Images subscribe by requested logical path; catalog targets explicitly
 bind a path to a domain, language, and format adapter.
 
-Both use one pipeline: native event hints, per-target debounce, bounded
-background reads, image decoding or catalog parsing, then prepared updates
-through the existing application command queue. Content hashes suppress
-unchanged data; session identity, configuration checks, and revisions discard
-obsolete updates. The worker replaces image snapshots directly and
+Images, catalogs and UI bundles use one pipeline: native event hints, per-target
+debounce, bounded background reads, image decoding or catalog parsing, then
+prepared updates through the existing application command queue. Content hashes
+suppress unchanged data; session identity, configuration checks, and revisions
+discard obsolete updates. The worker replaces image snapshots directly and
 transactionally installs catalogs, invalidating UIs and native metadata. Hidden
 windows skip painting.
 
@@ -735,6 +737,24 @@ preserve last-good values; directory layers retain their normal fallback rules.
 The external guard cancels and joins the loader without waiting for queue
 capacity. It must not be owned by the application worker, since the service
 holds an application sender.
+
+UI bundles additionally prepare complete checked import graphs on the resource
+loader thread against immutable host exports and a revisioned translation
+snapshot. Internal imports use private relocation symbols. The worker validates
+configuration/base revisions, links stable module/export references and swaps
+candidate templates/translations atomically. It never reads UI source files or
+runs the language compiler on this reload path. Failed source preparation leaves
+the installed graph and its state intact. Identical source hashes do not
+reinstall.
+
+Successful source replacement resets all UI definitions' interaction state and
+all instances' retained physical trees/layout caches. This deliberately covers
+data-selected Dynamic references without an affected-instance index. Collection
+and entity values, windows, channels and presentation settings survive; hidden
+instances prepare only when shown. Opaque focus epochs and monotonic render/text
+session IDs prevent stale input from selecting a new control at an old path.
+Old outputs remain immutable, but their geometry is disabled after the swap.
+A runtime failure may retain their visible pixels until a valid frame renders.
 
 See [hot reload](../crates/engine/src/resources/reload/README.md) and
 [DR-015](<decisions/DR-015 Reload resources through a shared background pipeline.md>)

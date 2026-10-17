@@ -220,9 +220,10 @@ filename/line/column for runtime errors; failed registration remains
 transactional. `CompiledDefinition::install` registers the whole definition;
 `into_template` embeds it in another definition.
 
-File loading is caller-owned (`include_str!` or explicit text reads). Imports,
-source components, source hot reload, arbitrary code, and native metadata syntax
-are deferred. The resource/image/catalog hot-reload mechanism remains separate.
+File loading is host-controlled (`include_str!`, source resolvers or optional
+filesystem bundle watching). Imports and source components are described below.
+Source hot reload uses the existing resource loader; arbitrary code and native
+metadata syntax remain outside the language.
 
 See the [showcase source](../../../../examples/showcase/ui/language.pixui) and
 [host bindings](../../../../examples/showcase/src/language_demo.rs).
@@ -454,3 +455,26 @@ supported. Ordinary application Strings remain untranslated, and localized
 handles cannot be used as resource filenames. `ComponentId<T>` continues to mean
 a registered leaf type; `ComponentRef` identifies a reusable subtree, and an
 occurrence path identifies one mount.
+
+## Source hot reload
+
+Start `ResourceReloadBuilder::ui_bundle(filesystem, &installed_bundle)`
+alongside image and PO targets. The loader checks a complete import graph
+off-thread and the application worker links it atomically into stable
+`ComponentRef` slots. Use `DynamicPart` wrappers for live host composition;
+cloned templates and previously obtained `CompositeExport` bodies are immutable
+snapshots.
+
+Reload rejects changes to existing public prop/slot signatures and removal of
+configured entry UIs. Private definitions and compatible public bodies may
+change freely; removed non-root exports become tombstones. Invalid source keeps
+the last working graph, and creating a missing import recovers automatically.
+
+A successful source reload resets all mounted UI state and interaction handles,
+including focus, selection and scrolling, while retaining model data, window
+subscriptions and presentation settings. This conservative policy also covers
+references selected dynamically from application data. It is independent of
+image/PO reload, which retains its existing state behavior.
+
+See [resource hot reload](../resources/reload/README.md) for filesystem mapping,
+startup, cancellation, limits and stale-result handling.

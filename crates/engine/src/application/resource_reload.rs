@@ -15,6 +15,27 @@ use pixui_base::{PixuiResult, pixui_error};
 use std::sync::Arc;
 
 impl ApplicationHandle {
+    /// Nonblocking snapshot admission lets the loader honor cancellation even
+    /// when the worker is busy or its bounded queue is full.
+    pub(crate) fn try_bundle_snapshot(
+        &self,
+        id: crate::ui_language::bundle_registration::BundleId,
+    ) -> Result<
+        ApplicationReply<crate::ui_language::bundle_registration::BundleSnapshot>,
+        TrySendError<crate::ui_language::bundle_registration::BundleId>,
+    > {
+        let (reply, receiver) = bounded(1);
+        self.sender
+            .try_send(ApplicationCommand::Task(Box::new(move |app| {
+                let _ = reply.send(app.bundle_snapshot(id));
+            })))
+            .map_err(|error| match error {
+                TrySendError::Full(_) => TrySendError::Full(id),
+                TrySendError::Disconnected(_) => TrySendError::Disconnected(id),
+            })?;
+        Ok(ApplicationReply::new(receiver))
+    }
+
     pub(crate) fn reload_image_loader(&self) -> PixuiResult<ImageLoader> {
         self.inspect(|app| {
             app.image_service

@@ -33,9 +33,11 @@ pub type FocusResolver = for<'a> fn(
 
 /// An occurrence within one registered definition, not a registered component
 /// type. Obtain from a UiInstance's published layout; IDs contain no geometry.
+/// Source reload advances an opaque epoch, invalidating old occurrence handles.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ComponentInstanceId {
     pub(crate) definition: UiDefinitionId,
+    pub(crate) epoch: u64,
     pub(crate) path: ComponentPath,
 }
 

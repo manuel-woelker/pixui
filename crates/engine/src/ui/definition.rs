@@ -21,6 +21,7 @@ pub struct UiDefinitionState {
 }
 
 pub struct UiDefinition {
+    pub(crate) identity_epoch: u64,
     pub(crate) source_origin: Option<crate::ui_language::source::origin::Origin>,
     pub(crate) name: String,
     pub(crate) translation_domain: String,
@@ -36,6 +37,7 @@ impl UiDefinition {
     pub fn new(name: impl Into<String>, template: LivePart) -> Self {
         let name = name.into();
         Self {
+            identity_epoch: 0,
             source_origin: None,
             translation_domain: name.clone(),
             name,

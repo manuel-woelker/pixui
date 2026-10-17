@@ -26,6 +26,8 @@ use super::{
 /// `Default` creates bare state for adapters and tests that need direct access.
 #[derive(Default)]
 pub struct Application {
+    pub(crate) bundles: Vec<crate::ui_language::bundle_registration::BundleRecord>,
+    pub(crate) ui_configuration_revision: u64,
     pub(crate) templates: crate::composition::registry::Registry,
     pub(crate) components: ComponentRegistry,
     pub(crate) painters: PainterRegistry,
@@ -82,11 +84,13 @@ impl Application {
         &mut self,
         name: impl Into<String>,
     ) -> PixuiResult<ComponentId<C>> {
+        self.ui_configuration_revision += 1;
         self.components.register(name)
     }
 
     /// Registers appearance independently of component identity and behavior.
     pub fn register_painter<C: Component>(&mut self, painter: impl Painter<C>) -> PixuiResult<()> {
+        self.ui_configuration_revision += 1;
         painter.register(&mut self.painters, &self.components, &mut self.styles)
     }
 
@@ -134,6 +138,7 @@ impl Application {
         &mut self,
         defaults: Vec<crate::styles::slots::SlotAssignment>,
     ) -> PixuiResult<()> {
+        self.ui_configuration_revision += 1;
         self.painters
             .register_styled::<C, P>(&self.components, &self.styles, defaults)
     }

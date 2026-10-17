@@ -31,6 +31,7 @@ pub(crate) struct CatalogTarget {
 pub(crate) enum Source {
     Image(ImageLoader),
     Catalog(CatalogTarget),
+    Ui(super::ui_bundle::UiTarget),
 }
 pub(crate) struct Target {
     pub source: Source,
@@ -45,16 +46,19 @@ impl Source {
         match self {
             Self::Image(loader) => loader.filesystem().as_ref(),
             Self::Catalog(catalog) => catalog.filesystem.as_ref(),
+            Self::Ui(target) => target.filesystem.as_ref(),
         }
     }
     pub fn limit(&self) -> usize {
         match self {
             Self::Image(loader) => loader.encoded_limit(),
             Self::Catalog(_) => 16 * 1024 * 1024,
+            Self::Ui(_) => 0,
         }
     }
     pub fn decode(&self, bytes: &[u8]) -> PixuiResult<Payload> {
         match self {
+            Self::Ui(_) => Err(pixui_error!("UI bundles require graph preparation")),
             Self::Image(loader) => Ok(Payload::Image(loader.decode(bytes)?)),
             Self::Catalog(catalog) => Ok(Payload::Catalog(
                 catalog.format.import(
@@ -67,6 +71,9 @@ impl Source {
 }
 impl Target {
     pub fn affected(&self, paths: &[PathBuf]) -> bool {
+        if let Source::Ui(target) = &self.source {
+            return target.affected(paths);
+        }
         self.source.filesystem().watch_roots().iter().any(|root| {
             let file = root.join(self.path.as_str());
             paths
@@ -77,7 +84,10 @@ impl Target {
     pub fn read(&self) -> PixuiResult<Vec<u8>> {
         read_bounded(self.source.filesystem(), &self.path, self.source.limit())
     }
-    pub fn stamp(&self) -> Vec<Option<(u64, Option<SystemTime>)>> {
+    pub fn stamp(&self) -> Vec<Option<FileStamp>> {
+        if let Source::Ui(target) = &self.source {
+            return target.stamp();
+        }
         self.source
             .filesystem()
             .watch_roots()
@@ -86,7 +96,8 @@ impl Target {
             .collect()
     }
 }
-fn stamp(path: &Path) -> Option<(u64, Option<SystemTime>)> {
+pub(super) type FileStamp = (u64, Option<SystemTime>);
+pub(super) fn stamp(path: &Path) -> Option<FileStamp> {
     std::fs::metadata(path)
         .ok()
         .map(|m| (m.len(), m.modified().ok()))
@@ -95,6 +106,7 @@ fn stamp(path: &Path) -> Option<(u64, Option<SystemTime>)> {
 pub(crate) enum Payload {
     Image(Image),
     Catalog(TranslationCatalog),
+    Ui(Box<super::ui_bundle::UiPrepared>),
 }
 pub(crate) struct Prepared {
     pub shared: Arc<Shared>,
@@ -119,6 +131,17 @@ impl Prepared {
             return Ok(false);
         }
         match (self.source, self.payload) {
+            (Source::Ui(target), Payload::Ui(prepared)) => {
+                if target.bundle != prepared.bundle {
+                    return Ok(false);
+                }
+                return app.accept_bundle(
+                    prepared.bundle,
+                    prepared.revision,
+                    prepared.stamp,
+                    prepared.value,
+                );
+            }
             (Source::Image(loader), Payload::Image(image)) => {
                 let service = app.image_service.get_mut();
                 if !service

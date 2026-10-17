@@ -14,6 +14,8 @@ pub(crate) struct Entry {
 pub(crate) struct Registry {
     owner: u64,
     entries: Vec<Entry>,
+    removed: std::collections::HashSet<usize>,
+    revision: u64,
 }
 impl Default for Registry {
     fn default() -> Self {
@@ -24,10 +26,35 @@ impl Default for Registry {
         Self {
             owner,
             entries: vec![],
+            removed: Default::default(),
+            revision: 0,
         }
     }
 }
 impl Registry {
+    pub fn owner(&self) -> u64 {
+        self.owner
+    }
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
+    pub fn replace(&mut self, reference: ComponentRef, entry: Entry) -> PixuiResult<()> {
+        if reference.owner != self.owner || reference.index >= self.entries.len() {
+            return Err(pixui_error!("foreign component reference"));
+        }
+        self.entries[reference.index] = entry;
+        self.removed.remove(&reference.index);
+        self.revision += 1;
+        Ok(())
+    }
+    pub fn remove(&mut self, reference: ComponentRef) {
+        self.entries[reference.index].template = std::sync::Arc::new(LivePart::Composite(
+            crate::live_model::part::CompositePart { parts: vec![] },
+        ));
+        self.removed.insert(reference.index);
+        self.revision += 1;
+    }
+
     pub fn validate_styles(
         &self,
         painters: &crate::painters::registry::PainterRegistry,
@@ -97,11 +124,15 @@ impl Registry {
             index: self.entries.len(),
         };
         self.entries.push(entry);
+        self.revision += 1;
         Ok(reference)
     }
     pub fn get(&self, reference: ComponentRef) -> PixuiResult<&Entry> {
         if reference.owner != self.owner {
             return Err(pixui_error!("foreign component reference"));
+        }
+        if self.removed.contains(&reference.index) {
+            return Err(pixui_error!("removed UI component export"));
         }
         self.entries
             .get(reference.index)
