@@ -609,3 +609,76 @@ fn controlled_input_selection_and_caret_draw_with_both_renderers() {
         }
     }
 }
+
+#[test]
+fn linear_gradients_match_software_with_clipping_and_scaling() {
+    use pixui_engine::{
+        styles::{brush::LinearGradient, index::StyleIndex},
+        ui::render_input::RenderStyle,
+    };
+    let Some(gpu) = gpu() else { return };
+    let mut scene = Scene::new(gpu.device.clone(), gpu.queue.clone(), DEFAULT_CACHE_BYTES).unwrap();
+    let horizontal = LinearGradient::horizontal(Color(10, 50, 100), Color(220, 140, 20));
+    for gradient in [
+        horizontal,
+        LinearGradient::vertical(horizontal.start_color, horizontal.end_color),
+        LinearGradient {
+            start: Point { x: 0.25, y: 0.25 },
+            end: Point { x: 0.75, y: 0.75 },
+            ..horizontal
+        },
+        LinearGradient {
+            start: horizontal.end,
+            end: horizontal.start,
+            ..horizontal
+        },
+    ] {
+        let display = DisplayList {
+            commands: vec![
+                pixui_engine::ui::display_list::DrawCommand::PushClip {
+                    rect: Rect {
+                        x: 4.0,
+                        y: 4.0,
+                        width: 20.0,
+                        height: 20.0,
+                    },
+                },
+                pixui_engine::ui::display_list::DrawCommand::StyledFillRect {
+                    rect: Rect {
+                        x: 0.0,
+                        y: 0.0,
+                        width: 32.0,
+                        height: 32.0,
+                    },
+                    style: StyleIndex { index: 0 },
+                },
+                pixui_engine::ui::display_list::DrawCommand::PopClip,
+            ],
+            ..Default::default()
+        };
+        let styles = [RenderStyle {
+            fill: Some(gradient.into()),
+            border: None,
+            foreground: Color(0, 0, 0),
+            font: None,
+        }];
+        for scale in [1.0, 2.0] {
+            let input = RenderInput {
+                display: &display,
+                styles: &styles,
+            };
+            let actual = render(&mut scene, &gpu, input, scale);
+            let expected = crate::painter::paint(input, 64, 64, scale).unwrap();
+            for (rgba, rgb) in actual.as_chunks::<4>().0.iter().zip(expected) {
+                for (channel, shift) in [(0, 16), (1, 8), (2, 0)] {
+                    assert!((i16::from(rgba[channel]) - ((rgb >> shift) & 255) as i16).abs() <= 1);
+                }
+            }
+        }
+    }
+    assert_eq!(
+        scene.stats().uploads,
+        0,
+        "gradient brushes allocate no textures"
+    );
+}

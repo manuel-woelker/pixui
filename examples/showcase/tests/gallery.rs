@@ -397,6 +397,7 @@ fn style_gallery_resolves_variants_local_overrides_and_per_window_fonts() {
             "Primary",
             "Quiet",
             "Danger",
+            "Gradient",
             "Compact",
             "Monospace",
             "Local purple override",
@@ -409,9 +410,15 @@ fn style_gallery_resolves_variants_local_overrides_and_per_window_fonts() {
         assert!(output.display_list.commands.iter().any(|command| matches!(
             input.resolve(command).unwrap(),
             ResolvedCommand::FillRect {
-                color: pixui_engine::ui::display_list::Color(100, 45, 150),
+                brush: pixui_engine::styles::brush::Brush::Solid(
+                    pixui_engine::ui::display_list::Color(100, 45, 150)
+                ),
                 ..
             }
+        )));
+        assert!(output.styles.iter().any(|style| matches!(
+            style.fill,
+            Some(pixui_engine::styles::brush::Brush::LinearGradient(_))
         )));
     }
     assert_ne!(first.styles, second.styles);

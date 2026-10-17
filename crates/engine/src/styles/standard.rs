@@ -9,7 +9,7 @@ use super::{
 use pixui_base::PixuiResult;
 fn body(tokens: &ThemeTokens) -> PaintStyle {
     let mut style = PaintStyle::text(tokens);
-    style.fill = Some(tokens.surface);
+    style.fill = Some(tokens.surface.into());
     style
 }
 fn checkbox(tokens: &ThemeTokens) -> PaintStyle {
@@ -46,17 +46,17 @@ fn box_style(tokens: &ThemeTokens) -> PaintStyle {
 }
 fn mark(tokens: &ThemeTokens) -> PaintStyle {
     let mut style = PaintStyle::text(tokens);
-    style.fill = Some(tokens.accent);
+    style.fill = Some(tokens.accent.into());
     style
 }
 fn caret(tokens: &ThemeTokens) -> PaintStyle {
     let mut style = PaintStyle::text(tokens);
-    style.fill = Some(tokens.foreground);
+    style.fill = Some(tokens.foreground.into());
     style
 }
 fn selection(tokens: &ThemeTokens) -> PaintStyle {
     let mut style = PaintStyle::text(tokens);
-    style.fill = Some(tokens.selection);
+    style.fill = Some(tokens.selection.into());
     style
 }
 fn input(tokens: &ThemeTokens) -> PaintStyle {
@@ -88,7 +88,7 @@ pub fn assignments(
             let mut family = StyleFamily::new(recipe);
             if name == "control" {
                 family.active_tokens = Some(|tokens| super::style::StatePatch {
-                    fill: Some(tokens.accent),
+                    fill: Some(tokens.accent.into()),
                     ..Default::default()
                 });
             }

@@ -3,6 +3,7 @@ use pixui_base::PixuiResult;
 use pixui_engine::{
     application::application_handle::ApplicationHandle,
     styles::{
+        brush::LinearGradient,
         family::StyleFamily,
         style::{Border, PaintStyle, StylePatch},
         theme::{ThemeFont, ThemeTokens},
@@ -11,7 +12,7 @@ use pixui_engine::{
 };
 fn primary(tokens: &ThemeTokens) -> PaintStyle {
     let mut style = PaintStyle::text(tokens);
-    style.fill = Some(tokens.accent);
+    style.fill = Some(tokens.accent.into());
     style.foreground = tokens.on_accent;
     style
 }
@@ -26,7 +27,12 @@ fn quiet(tokens: &ThemeTokens) -> PaintStyle {
 }
 fn danger(tokens: &ThemeTokens) -> PaintStyle {
     let mut style = primary(tokens);
-    style.fill = Some(tokens.danger);
+    style.fill = Some(tokens.danger.into());
+    style
+}
+fn gradient(tokens: &ThemeTokens) -> PaintStyle {
+    let mut style = primary(tokens);
+    style.fill = Some(LinearGradient::horizontal(tokens.accent, tokens.danger).into());
     style
 }
 pub fn register(application: &ApplicationHandle) -> PixuiResult<()> {
@@ -37,6 +43,7 @@ pub fn register(application: &ApplicationHandle) -> PixuiResult<()> {
         ),
         ("showcase.quiet", quiet),
         ("showcase.danger", danger),
+        ("showcase.gradient", gradient),
     ] {
         let mut family = StyleFamily::new(recipe);
         family.variants.insert(
@@ -65,7 +72,7 @@ pub fn register(application: &ApplicationHandle) -> PixuiResult<()> {
 /// continue using the registered family unchanged.
 pub fn local_color() -> StylePatch {
     StylePatch {
-        fill: Some(Some(Color(100, 45, 150))),
+        fill: Some(Some(Color(100, 45, 150).into())),
         ..Default::default()
     }
 }

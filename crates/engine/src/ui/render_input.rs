@@ -5,17 +5,21 @@ use super::{
     geometry::{Point, Rect},
     text::resource::FontIndex,
 };
-use crate::styles::{index::StyleIndex, style::Border};
+use crate::styles::{
+    brush::{Brush, BrushKey},
+    index::StyleIndex,
+    style::Border,
+};
 use pixui_base::{PixuiResult, pixui_error};
 #[derive(Clone, Debug, PartialEq)]
 pub struct RenderStyle {
-    pub fill: Option<Color>,
+    pub fill: Option<Brush>,
     pub border: Option<Border>,
     pub foreground: Color,
     pub font: Option<FontIndex>,
 }
 type StyleKey = (
-    Option<Color>,
+    Option<BrushKey>,
     Option<(Color, u32)>,
     Color,
     Option<FontIndex>,
@@ -23,7 +27,7 @@ type StyleKey = (
 impl RenderStyle {
     pub(crate) fn key(&self) -> StyleKey {
         (
-            self.fill,
+            self.fill.map(Brush::key),
             self.border
                 .map(|border| (border.color, border.width.to_bits())),
             self.foreground,
@@ -57,7 +61,7 @@ impl<'a> From<&'a RenderOutput> for RenderInput<'a> {
 pub enum ResolvedCommand<'a> {
     FillRect {
         rect: Rect,
-        color: Color,
+        brush: Brush,
     },
     StrokeRect {
         rect: Rect,
@@ -87,6 +91,9 @@ impl<'a> RenderInput<'a> {
     }
     pub fn validate(&self) -> PixuiResult<()> {
         for style in self.styles {
+            if let Some(fill) = style.fill {
+                fill.validate()?;
+            }
             if style
                 .border
                 .is_some_and(|border| !border.width.is_finite() || border.width <= 0.0)
@@ -106,7 +113,7 @@ impl<'a> RenderInput<'a> {
         Ok(match command {
             DrawCommand::FillRect { rect, color } => ResolvedCommand::FillRect {
                 rect: *rect,
-                color: *color,
+                brush: (*color).into(),
             },
             DrawCommand::StrokeRect { rect, color, width } => ResolvedCommand::StrokeRect {
                 rect: *rect,
@@ -126,7 +133,7 @@ impl<'a> RenderInput<'a> {
             },
             DrawCommand::StyledFillRect { rect, style } => ResolvedCommand::FillRect {
                 rect: *rect,
-                color: self
+                brush: self
                     .style(*style)?
                     .fill
                     .ok_or_else(|| pixui_error!("style has no fill"))?,

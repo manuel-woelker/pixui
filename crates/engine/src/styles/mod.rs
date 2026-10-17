@@ -1,3 +1,4 @@
+pub mod brush;
 pub mod family;
 pub mod index;
 pub mod registry;

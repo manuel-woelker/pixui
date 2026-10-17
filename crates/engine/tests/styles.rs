@@ -25,7 +25,7 @@ mod fixtures {
 }
 fn body(tokens: &ThemeTokens) -> PaintStyle {
     let mut style = PaintStyle::text(tokens);
-    style.fill = Some(tokens.surface);
+    style.fill = Some(tokens.surface.into());
     style
 }
 #[test]
@@ -76,20 +76,20 @@ fn variants_states_and_local_removal_have_deterministic_precedence() {
     family.variants.insert(
         "primary".into(),
         StylePatch {
-            fill: Some(Some(Color(1, 2, 3))),
+            fill: Some(Some(Color(1, 2, 3).into())),
             ..Default::default()
         },
     );
     family.active = StatePatch {
-        fill: Some(Color(4, 5, 6)),
+        fill: Some(Color(4, 5, 6).into()),
         ..Default::default()
     };
     family.hover = StatePatch {
-        fill: Some(Color(7, 8, 9)),
+        fill: Some(Color(7, 8, 9).into()),
         ..Default::default()
     };
     family.disabled = StatePatch {
-        fill: Some(Color(10, 11, 12)),
+        fill: Some(Color(10, 11, 12).into()),
         ..Default::default()
     };
     let id = registry.register("button", family).unwrap();
@@ -101,18 +101,24 @@ fn variants_states_and_local_removal_have_deterministic_precedence() {
     };
     assert_eq!(
         resolve(&assignment, StyleStates::default()).fill,
-        Some(Color(1, 2, 3))
+        Some(Color(1, 2, 3).into())
     );
     let all = StyleStates {
         active: true,
         hovered: true,
         disabled: true,
     };
-    assert_eq!(resolve(&assignment, all).fill, Some(Color(10, 11, 12)));
+    assert_eq!(
+        resolve(&assignment, all).fill,
+        Some(Color(10, 11, 12).into())
+    );
     assignment.patch.fill = Some(None);
     assert_eq!(resolve(&assignment, all).fill, None);
-    assignment.hover.fill = Some(Color(13, 14, 15));
-    assert_eq!(resolve(&assignment, all).fill, Some(Color(13, 14, 15)));
+    assignment.hover.fill = Some(Color(13, 14, 15).into());
+    assert_eq!(
+        resolve(&assignment, all).fill,
+        Some(Color(13, 14, 15).into())
+    );
     assert!(
         registry
             .resolve(
@@ -223,7 +229,7 @@ fn occurrences_bind_independent_styles_and_old_outputs_keep_their_fonts() {
                 .with_style(
                     "body",
                     assignment.clone().patch(StylePatch {
-                        fill: Some(Some(Color(99, 45, 140))),
+                        fill: Some(Some(Color(99, 45, 140).into())),
                         font: Some(ThemeFont::Mono),
                         font_size: Some(20.0),
                         minimum_height: Some(64.0),
@@ -249,15 +255,15 @@ fn occurrences_bind_independent_styles_and_old_outputs_keep_their_fonts() {
         .commands
         .iter()
         .filter_map(|command| match input.resolve(command).unwrap() {
-            ResolvedCommand::FillRect { color, .. } => Some(color),
+            ResolvedCommand::FillRect { brush, .. } => Some(brush),
             _ => None,
         })
         .collect();
     assert_eq!(
         &colors[1..],
         [
-            app.styles().tokens(Theme::Light).surface,
-            Color(99, 45, 140)
+            app.styles().tokens(Theme::Light).surface.into(),
+            Color(99, 45, 140).into()
         ]
     );
     assert_eq!(first.display_list.fonts.len(), 2);
@@ -472,7 +478,7 @@ fn solver_probes_reuse_recipes_and_hover_reuses_font_snapshots_without_relayout(
         body(tokens)
     });
     family.hover = StatePatch {
-        fill: Some(Color(20, 40, 80)),
+        fill: Some(Color(20, 40, 80).into()),
         ..Default::default()
     };
     app.register_style("counted", family).unwrap();
@@ -577,7 +583,7 @@ fn runtime_replacement_invalidates_visible_windows_and_defers_hidden_ones_atomic
             family,
             StyleFamily::new(|tokens| {
                 let mut style = body(tokens);
-                style.fill = Some(Color(40, 70, 100));
+                style.fill = Some(Color(40, 70, 100).into());
                 style
             }),
         )
@@ -595,4 +601,116 @@ fn runtime_replacement_invalidates_visible_windows_and_defers_hidden_ones_atomic
     assert_eq!(next.styles, shown.styles);
     RenderInput::from(&first).validate().unwrap();
     RenderInput::from(&shown).validate().unwrap();
+}
+
+#[test]
+fn gradient_styles_deduplicate_preserve_old_outputs_and_accept_state_overrides() {
+    use pixui_engine::styles::brush::LinearGradient;
+    let mut app = Application::default();
+    let (id, mut assignment) = button_part(&mut app);
+    let gradient = LinearGradient::horizontal(Color(10, 20, 30), Color(200, 150, 100));
+    assignment.patch.fill = Some(Some(gradient.into()));
+    let tree = LivePart::Composite(CompositePart {
+        parts: (0..2)
+            .map(|_| {
+                ComponentPart::typed(id, |_, _| {
+                    Ok(ButtonProps {
+                        label: "Gradient".into(),
+                    })
+                })
+                .with_style("body", assignment.clone())
+                .into()
+            })
+            .collect(),
+    });
+    let first = draw(&app, &tree, &PresentationSettings::default());
+    assert_eq!(
+        first
+            .styles
+            .iter()
+            .filter(|style| style.fill == Some(gradient.into()))
+            .count(),
+        1
+    );
+    let mut hovered = assignment.clone();
+    let vertical = LinearGradient::vertical(Color(1, 2, 3), Color(4, 5, 6));
+    hovered.hover.fill = Some(vertical.into());
+    assert_eq!(
+        app.styles()
+            .resolve(
+                &hovered,
+                Theme::Light,
+                1.0,
+                StyleStates {
+                    hovered: true,
+                    ..Default::default()
+                }
+            )
+            .unwrap()
+            .fill,
+        Some(vertical.into())
+    );
+    let second = draw(
+        &app,
+        &tree,
+        &PresentationSettings {
+            theme: Theme::Dark,
+            scale_factor: 2.0,
+            ..Default::default()
+        },
+    );
+    assert!(
+        second
+            .styles
+            .iter()
+            .any(|style| style.fill == Some(gradient.into()))
+    );
+    assert!(
+        first
+            .styles
+            .iter()
+            .any(|style| style.fill == Some(gradient.into()))
+    );
+}
+
+#[test]
+fn malformed_gradients_are_rejected_by_worker_and_render_input_validation() {
+    use pixui_engine::{
+        styles::brush::{Brush, LinearGradient},
+        ui::{geometry::Point, render_input::RenderStyle},
+    };
+    let valid = LinearGradient::horizontal(Color(0, 0, 0), Color(255, 255, 255));
+    for start in [
+        Point {
+            x: f32::NAN,
+            y: 0.0,
+        },
+        Point {
+            x: f32::INFINITY,
+            y: 0.0,
+        },
+        Point { x: -0.1, y: 0.0 },
+        Point { x: 1.1, y: 0.0 },
+        valid.end,
+    ] {
+        let brush = Brush::LinearGradient(LinearGradient { start, ..valid });
+        let mut style = PaintStyle::text(&ThemeTokens::for_theme(Theme::Light));
+        style.fill = Some(brush);
+        assert!(style.validate(1.0).is_err());
+        let display = Default::default();
+        let styles = [RenderStyle {
+            fill: Some(brush),
+            border: None,
+            foreground: Color(0, 0, 0),
+            font: None,
+        }];
+        assert!(
+            RenderInput {
+                display: &display,
+                styles: &styles
+            }
+            .validate()
+            .is_err()
+        );
+    }
 }

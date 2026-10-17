@@ -84,6 +84,10 @@ pub(crate) fn create(
             "danger",
             StyleAssignment::new(app.styles().family("showcase.danger")?),
         ),
+        (
+            "gradient",
+            StyleAssignment::new(app.styles().family("showcase.gradient")?),
+        ),
         ("compact", primary.clone().variant("compact")),
         ("mono", primary.clone().variant("mono")),
         ("purple", primary.patch(crate::styles::local_color())),

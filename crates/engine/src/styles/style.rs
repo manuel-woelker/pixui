@@ -1,5 +1,8 @@
 //! Concrete worker styles and sparse overrides. Outer layout stays in LayoutStyle.
-use super::theme::{ThemeFont, ThemeTokens};
+use super::{
+    brush::Brush,
+    theme::{ThemeFont, ThemeTokens},
+};
 use crate::ui::{display_list::Color, text::font::FontConfig};
 use pixui_base::{PixuiResult, pixui_error};
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -9,7 +12,7 @@ pub struct Border {
 }
 #[derive(Clone)]
 pub struct PaintStyle {
-    pub fill: Option<Color>,
+    pub fill: Option<Brush>,
     pub border: Option<Border>,
     pub foreground: Color,
     pub font: ThemeFont,
@@ -43,6 +46,9 @@ impl PaintStyle {
         {
             return Err(pixui_error!("invalid style metrics"));
         }
+        if let Some(fill) = self.fill {
+            fill.validate()?;
+        }
         self.font_config(scale)?;
         Ok(())
     }
@@ -50,7 +56,7 @@ impl PaintStyle {
 /// None leaves a field unchanged. Some(None) explicitly removes fill/border.
 #[derive(Clone, Default)]
 pub struct StylePatch {
-    pub fill: Option<Option<Color>>,
+    pub fill: Option<Option<Brush>>,
     pub border: Option<Option<Border>>,
     pub foreground: Option<Color>,
     pub font: Option<ThemeFont>,
@@ -83,11 +89,12 @@ impl StylePatch {
         }
     }
 }
-/// Interaction patches cannot change metrics or add/remove a border. This keeps
+/// Interaction patches replace brushes/colors, but cannot change metrics or
+/// add/remove a border. This keeps
 /// measurement valid when hover is recomputed after layout.
 #[derive(Clone, Copy, Default)]
 pub struct StatePatch {
-    pub fill: Option<Color>,
+    pub fill: Option<Brush>,
     pub foreground: Option<Color>,
     pub border: Option<Color>,
 }

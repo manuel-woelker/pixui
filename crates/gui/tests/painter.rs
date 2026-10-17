@@ -336,3 +336,102 @@ fn rgba_source_over_preserves_background_and_blends_once() {
         vec![0x14283c, 0x6e4637, 0xc86432]
     );
 }
+
+#[test]
+fn gradients_use_original_bounds_when_clipped_and_scale_at_pixel_centers() {
+    use pixui_engine::{
+        styles::{brush::LinearGradient, index::StyleIndex},
+        ui::render_input::{RenderInput, RenderStyle},
+    };
+    let gradient = LinearGradient::horizontal(Color(0, 0, 0), Color(200, 100, 40));
+    let mut display = DisplayList {
+        commands: vec![
+            DrawCommand::PushClip {
+                rect: rect(2.0, 1.0, 4.0, 2.0),
+            },
+            DrawCommand::StyledFillRect {
+                rect: rect(0.0, 0.0, 8.0, 4.0),
+                style: StyleIndex { index: 0 },
+            },
+            DrawCommand::PopClip,
+        ],
+        ..Default::default()
+    };
+    let styles = [RenderStyle {
+        fill: Some(gradient.into()),
+        border: None,
+        foreground: Color(0, 0, 0),
+        font: None,
+    }];
+    for scale in [1.0, 2.0] {
+        let width = (8.0 * scale) as usize;
+        let pixels = paint(
+            RenderInput {
+                display: &display,
+                styles: &styles,
+            },
+            width as u32,
+            (4.0 * scale) as u32,
+            scale,
+        )
+        .unwrap();
+        for (index, pixel) in pixels.into_iter().enumerate() {
+            let x = (index % width) as f32 / scale + 0.5 / scale;
+            let y = (index / width) as f32 / scale + 0.5 / scale;
+            let expected = if (2.0..6.0).contains(&x) && (1.0..3.0).contains(&y) {
+                gradient.color_at(x / 8.0)
+            } else {
+                Color(0, 0, 0)
+            };
+            assert_eq!(
+                pixel,
+                (u32::from(expected.0) << 16)
+                    | (u32::from(expected.1) << 8)
+                    | u32::from(expected.2)
+            );
+        }
+    }
+    // A diagonal with an inset segment clamps outside its endpoint range.
+    let gradient = LinearGradient {
+        start: Point { x: 0.25, y: 0.25 },
+        end: Point { x: 0.75, y: 0.75 },
+        ..gradient
+    };
+    display.commands = vec![DrawCommand::StyledFillRect {
+        rect: rect(0.0, 0.0, 4.0, 4.0),
+        style: StyleIndex { index: 0 },
+    }];
+    let styles = [RenderStyle {
+        fill: Some(gradient.into()),
+        ..styles[0].clone()
+    }];
+    let pixels = paint(
+        RenderInput {
+            display: &display,
+            styles: &styles,
+        },
+        4,
+        4,
+        1.0,
+    )
+    .unwrap();
+    assert_eq!(pixels[0], 0);
+    assert_eq!(pixels[15], 0xc86428);
+    assert_eq!(pixels[6], 0x643214);
+    let styles = [RenderStyle {
+        fill: Some(LinearGradient::vertical(Color(0, 0, 0), Color(200, 100, 40)).into()),
+        ..styles[0].clone()
+    }];
+    let pixels = paint(
+        RenderInput {
+            display: &display,
+            styles: &styles,
+        },
+        4,
+        4,
+        1.0,
+    )
+    .unwrap();
+    assert_eq!(pixels[0], pixels[3]);
+    assert_ne!(pixels[0], pixels[12]);
+}

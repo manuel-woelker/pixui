@@ -3,8 +3,8 @@
 Styles belong to the application; painters declare which slots they consume.
 Theme tokens supply semantic colors, fonts and control metrics. A family is a
 pure function from tokens to a concrete `PaintStyle`, with named variant patches
-and interaction color patches. Light and Dark token sets can be replaced for
-branding without modifying painters.
+and interaction brush/color patches. Light and Dark token sets can be replaced
+for branding without modifying painters.
 
 ## Reflected slots
 
@@ -54,7 +54,7 @@ let mut app = Application::default();
 let button = app.register_component::<ButtonComponent>("button")?;
 let family = app.register_style("emphasis", StyleFamily::new(|tokens| {
     let mut style = PaintStyle::text(tokens);
-    style.fill = Some(tokens.accent);
+    style.fill = Some(tokens.accent.into());
     style.foreground = tokens.on_accent;
     style
 }))?;
@@ -96,11 +96,12 @@ props/state; the engine adds shared hover after layout. Focus uses a separate
 slot, drawn by the painter when focused. Disabled styling does not disable
 activation or keyboard focus. No pressed state is inferred.
 
-Interaction patches contain only colors. They cannot change fonts, insets,
-minimum height, border width or border presence. This lets stationary-pointer
-hover be recomputed after layout without another measurement pass. The base
-recipe and dynamic assignment resolver run once; solver probes reuse the same
-bound painter and concrete styles. State color refresh does not rerun recipes.
+Interaction patches contain only fills and colors. They cannot change fonts,
+insets, minimum height, border width or border presence. This lets
+stationary-pointer hover be recomputed after layout without another measurement
+pass. The base recipe and dynamic assignment resolver run once; solver probes
+reuse the same bound painter and concrete styles. State fill/color refresh does
+not rerun recipes.
 
 Font size, inset and minimum control height are painter metrics. Outer padding,
 margins, flex/grid rules and fixed sizes remain in `LayoutStyle`. A fixed layout
@@ -146,12 +147,38 @@ geometry revisions. Hidden instances defer painting until shown. Logical focus,
 selection and keyed component state remain shared and survive valid restyling.
 Hover-only color changes retain the existing geometry compatibility policy.
 
-The first version supports opaque fills, borders, text fonts/colors and scalar
-insets/minimum heights. There is no inheritance, selector language, cascade,
-transition, radius, shadow, gradient or automatic layout-style coupling. Text
-input uses one common foreground for selected and unselected text; choose a
-selection fill with sufficient contrast. Distinct selected-text foregrounds
-would require extra clipped text commands.
+The styles support opaque solid/linear-gradient fills, borders, text
+fonts/colors and scalar insets/minimum heights. There is no inheritance,
+selector language, cascade, transition, radius, shadow or automatic layout-style
+coupling. Text input uses one common foreground for selected and unselected
+text; choose a selection fill with sufficient contrast. Distinct selected-text
+foregrounds would require extra clipped text commands.
 
 See the showcase's **Styles** page for recipes, variants, local overrides,
 dynamic assignments and different window fonts.
+
+## Background brushes
+
+`PaintStyle::fill`, ordinary patches and interaction patches use `Brush`.
+Use `color.into()` for a solid fill, or a two-color `LinearGradient`:
+
+```rust
+use pixui_engine::{styles::{brush::LinearGradient, style::PaintStyle},
+    styles::theme::ThemeTokens, ui::presentation::Theme};
+let tokens = ThemeTokens::for_theme(Theme::Light);
+let mut style = PaintStyle::text(&tokens);
+style.fill = Some(LinearGradient::horizontal(tokens.accent, tokens.danger).into());
+```
+
+`vertical` runs top to bottom; custom `start`/`end` points support diagonals and
+reversed directions. Coordinates are relative to the original filled rectangle
+from (0, 0) to (1, 1), independent of clipping and display scale. Endpoints must
+be finite, within that range and distinct; invalid styles are rejected before
+publication. Encoded sRGB channels interpolate between two opaque colors and
+clamp beyond the endpoints. Alpha, radial gradients and multiple stops are not
+yet supported. Borders and text continue to use solid colors.
+
+Gradient brushes live in the deduplicated output style table. Commands still
+carry only a style index. Both software and GPU backends support the same fills;
+the GPU uses native gradient paints without generating images or textures.
+Hover/active/disabled patches can replace the entire brush without relayout.

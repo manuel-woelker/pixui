@@ -2,6 +2,7 @@
 use super::{glyphs, texture_cache::TextureCache};
 use femtovg::{Canvas, ImageFlags, ImageSource, Paint, Path, renderer::WGPURenderer};
 use pixui_base::{PixuiResult, pixui_error};
+use pixui_engine::styles::brush::Brush;
 use pixui_engine::ui::{
     display_list::Color,
     geometry::Rect,
@@ -174,10 +175,24 @@ impl Scene {
         for command in &display.commands {
             let command = input.resolve(command)?;
             match &command {
-                DrawCommand::FillRect { rect, color: c } => self.canvas.fill_path(
-                    &solid_path(*rect, scale),
-                    &Paint::color(color(*c)).with_anti_alias(false),
-                ),
+                DrawCommand::FillRect { rect, brush } => {
+                    let paint = match brush {
+                        Brush::Solid(c) => Paint::color(color(*c)),
+                        Brush::LinearGradient(gradient) => {
+                            let (start, end) = gradient.endpoints(*rect);
+                            Paint::linear_gradient(
+                                start.x,
+                                start.y,
+                                end.x,
+                                end.y,
+                                color(gradient.start_color),
+                                color(gradient.end_color),
+                            )
+                        }
+                    };
+                    self.canvas
+                        .fill_path(&solid_path(*rect, scale), &paint.with_anti_alias(false));
+                }
                 DrawCommand::StrokeRect {
                     rect,
                     color: c,

@@ -1,6 +1,7 @@
 //! Deterministic CPU painter for owned display lists, also usable without windows.
 
 use pixui_base::{PixuiResult, pixui_error};
+use pixui_engine::styles::brush::{Brush, LinearGradient};
 use pixui_engine::ui::{
     display_list::Color,
     geometry::{Point, Rect},
@@ -81,6 +82,42 @@ impl Canvas {
         }
     }
 
+    fn gradient(&mut self, rect: Rect, gradient: LinearGradient) {
+        let visible = rect.intersect(*self.clips.last().expect("viewport clip"));
+        if visible.width <= 0.0 || visible.height <= 0.0 {
+            return;
+        }
+        let (start, end) = gradient.endpoints(rect);
+        let dx = end.x - start.x;
+        let dy = end.y - start.y;
+        let length_squared = dx * dx + dy * dy;
+        let left = (visible.x * self.scale)
+            .floor()
+            .clamp(0.0, self.width as f32) as usize;
+        let top = (visible.y * self.scale)
+            .floor()
+            .clamp(0.0, self.height as f32) as usize;
+        let right = ((visible.x + visible.width) * self.scale)
+            .ceil()
+            .clamp(0.0, self.width as f32) as usize;
+        let bottom = ((visible.y + visible.height) * self.scale)
+            .ceil()
+            .clamp(0.0, self.height as f32) as usize;
+        // Project pixel centers onto the gradient in the unclipped rectangle.
+        // Compute the coefficients once; clipping must not restart the gradient.
+        let step = dx / (self.scale * length_squared);
+        for y in top..bottom {
+            let row = (((left as f32 + 0.5) / self.scale - start.x) * dx
+                + ((y as f32 + 0.5) / self.scale - start.y) * dy)
+                / length_squared;
+            for x in left..right {
+                let Color(r, g, b) = gradient.color_at(row + (x - left) as f32 * step);
+                self.pixels[y * self.width as usize + x] =
+                    (u32::from(r) << 16) | (u32::from(g) << 8) | u32::from(b);
+            }
+        }
+    }
+
     fn fill(&mut self, rect: Rect, Color(red, green, blue): Color) {
         let rect = rect.intersect(*self.clips.last().expect("viewport clip"));
         let left = (rect.x * self.scale).floor().clamp(0.0, self.width as f32) as usize;
@@ -133,7 +170,10 @@ pub fn paint<'a>(
     for command in &display.commands {
         let command = input.resolve(command)?;
         match &command {
-            DrawCommand::FillRect { rect, color } => canvas.fill(*rect, *color),
+            DrawCommand::FillRect { rect, brush } => match brush {
+                Brush::Solid(color) => canvas.fill(*rect, *color),
+                Brush::LinearGradient(gradient) => canvas.gradient(*rect, *gradient),
+            },
             DrawCommand::StrokeRect { rect, color, width } => {
                 let thickness = width.min(rect.width).min(rect.height);
                 for strip in [
