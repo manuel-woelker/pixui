@@ -159,12 +159,18 @@ impl UiRegistry {
             || revision.0 == 0
             || instance.geometry_stale
         {
+            let current = instance.revision;
             self.pointer_presses.remove(&id);
             if matches!(input, UiInput::PointerMoved(_) | UiInput::PointerLeft) {
                 return Ok(false);
             }
             if target.is_some() || matches!(input, UiInput::MouseButton { .. }) {
-                return Err(pixui_error!("stale UI input revision"));
+                return Err(pixui_base::report(
+                    crate::ui::input_error::StaleInputRevision {
+                        presented: revision,
+                        current,
+                    },
+                ));
             }
             return Ok(false);
         }

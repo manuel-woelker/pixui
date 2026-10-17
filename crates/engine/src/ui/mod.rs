@@ -6,6 +6,7 @@ pub mod focus;
 pub mod geometry;
 pub mod image;
 pub mod input;
+pub mod input_error;
 mod input_handler;
 pub mod instance;
 pub mod mailbox;

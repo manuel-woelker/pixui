@@ -225,7 +225,12 @@ impl UiRegistry {
             || revision < instance.compatible_revision
             || revision > instance.revision
         {
-            return Err(pixui_error!("stale UI input revision"));
+            return Err(pixui_base::report(
+                crate::ui::input_error::StaleInputRevision {
+                    presented: revision,
+                    current: instance.revision,
+                },
+            ));
         }
         if instance.geometry_stale {
             return Err(pixui_error!("text input awaits successful preparation"));

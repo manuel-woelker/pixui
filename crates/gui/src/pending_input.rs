@@ -48,7 +48,11 @@ impl PendingInput {
         for reply in self.replies.drain(..) {
             match reply.try_recv() {
                 Ok(Ok(())) => {}
-                Ok(Err(error)) => eprintln!("UI event rejected: {error:?}"),
+                Ok(Err(error)) => {
+                    if !obsolete_input(&error) {
+                        eprintln!("UI event rejected: {error:?}");
+                    }
+                }
                 Err(TryRecvError::Empty) => pending.push(reply),
                 Err(TryRecvError::Disconnected) => {
                     return Err(pixui_error!("application worker stopped"));
@@ -76,6 +80,15 @@ impl PendingInput {
     }
 }
 
+// Expected asynchronous rejection is not an application failure. Keep all
+// other errors visible, including invalid zero/future revision protocol errors.
+fn obsolete_input(error: &pixui_base::PixuiError) -> bool {
+    error
+        .current_context()
+        .downcast_ref::<pixui_engine::ui::input_error::StaleInputRevision>()
+        .is_some_and(|error| error.is_obsolete())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -87,6 +100,22 @@ mod tests {
             input::UiInput, presentation::PresentationSettings,
         },
     };
+
+    #[test]
+    fn only_obsolete_published_input_is_silently_discarded() {
+        use pixui_engine::ui::input_error::StaleInputRevision;
+        for (presented, current, obsolete) in
+            [(1, 2, true), (2, 2, true), (0, 2, false), (3, 2, false)]
+        {
+            let error = pixui_base::report(StaleInputRevision {
+                presented: RenderRevision(presented),
+                current: RenderRevision(current),
+            });
+            assert_eq!(obsolete_input(&error), obsolete);
+        }
+        assert!(!obsolete_input(&pixui_error!("action failed")));
+        assert!(!obsolete_input(&pixui_error!("stale UI input revision")));
+    }
 
     #[test]
     fn adjacent_updates_coalesce_and_discrete_order_survives_overflow() {

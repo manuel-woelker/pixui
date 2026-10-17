@@ -415,7 +415,12 @@ impl UiRegistry {
             if matches!(intent, InputIntent::Hover(_)) {
                 return Ok(None);
             }
-            return Err(pixui_error!("stale UI input revision"));
+            return Err(pixui_base::report(
+                crate::ui::input_error::StaleInputRevision {
+                    presented: revision,
+                    current: instance.revision,
+                },
+            ));
         }
         let definition = instance.definition;
         let state = &mut self

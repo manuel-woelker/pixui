@@ -293,7 +293,13 @@ fn current_click_invokes_action_but_stale_deleted_and_closed_targets_fail() {
             .done))
             .unwrap()
     );
-    assert!(click(&app, &initial).is_err());
+    let rejected = click(&app, &initial).unwrap_err();
+    assert!(
+        rejected
+            .current_context()
+            .downcast_ref::<pixui_engine::ui::input_error::StaleInputRevision>()
+            .is_some_and(|error| error.is_obsolete())
+    );
     app.ui_command(UiCommand::Input {
         instance: id,
         revision: initial.revision,
