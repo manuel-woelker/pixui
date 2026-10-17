@@ -1,7 +1,7 @@
 //! Recursive-descent markup with Pratt expressions and bounded child recovery.
 use crate::ui_language::{
     ast::{
-        definition::{Definition, Import},
+        definition::{Component, Definition, Import, ImportMember, Module, Parameter},
         expression::Name,
         part::{Arm, Attribute, Part, PartKind},
     },
@@ -14,7 +14,20 @@ use crate::ui_language::{
 };
 
 pub(super) type ParseResult<T> = Result<T, Diagnostic>;
+/// Convenience entry parser for legacy entry-only callers. Use parse_module
+/// when inspecting reusable declarations as well as the optional UI entry.
 pub fn parse(source: &Source) -> Result<Definition, Vec<Diagnostic>> {
+    let module = parse_module(source)?;
+    module.entry.ok_or_else(|| {
+        vec![Diagnostic::new(
+            Stage::Parser,
+            "P005",
+            module.span,
+            "expected a ui entry definition",
+        )]
+    })
+}
+pub fn parse_module(source: &Source) -> Result<Module, Vec<Diagnostic>> {
     let tokens = lex(source)?;
     let mut parser = Parser {
         source,
@@ -23,7 +36,7 @@ pub fn parse(source: &Source) -> Result<Definition, Vec<Diagnostic>> {
         depth: 0,
         errors: vec![],
     };
-    match parser.definition() {
+    match parser.module() {
         Ok(definition) if parser.errors.is_empty() => Ok(definition),
         Ok(_) => Err(parser.errors),
         Err(error) => {
@@ -95,46 +108,145 @@ impl Parser<'_> {
             Ok(())
         }
     }
-    fn definition(&mut self) -> ParseResult<Definition> {
+    fn module(&mut self) -> ParseResult<Module> {
         let mut imports = vec![];
-        while matches!(&self.token().kind, TokenKind::Name(name) if name == "import") {
-            let start = self.take().span;
-            let alias = self.name()?;
-            self.keyword("from")?;
-            let token = self.take();
-            let TokenKind::String {
-                translated: false,
-                value,
-            } = token.kind
-            else {
-                return Err(Diagnostic::new(
-                    Stage::Parser,
-                    "P004",
-                    token.span,
-                    "import path must be an untranslated single-quoted literal",
-                ));
-            };
-            if value.contains(['{', '}', '\\']) {
-                return Err(Diagnostic::new(
-                    Stage::Parser,
-                    "P004",
-                    token.span,
-                    "import path cannot contain interpolation or escapes",
-                ));
+        let mut components = vec![];
+        let mut entry = None;
+        while !self.is(&TokenKind::Eof) {
+            match &self.token().kind {
+                TokenKind::Name(word) if word == "use" => {
+                    if !components.is_empty() || entry.is_some() { return Err(self.error("use declarations must precede component/ui declarations")); }
+                    imports.push(self.use_import()?);
+                }
+                TokenKind::Name(word) if word == "import" => return Err(self.error("import has been replaced by use; write use Alias from 'file' or use { Name } from 'file'")),
+                TokenKind::Name(word) if word == "component" || word == "export" => {
+                    if components.len() >= 256 { return Err(self.error("module component declaration limit exceeded")); }
+                    components.push(self.component()?);
+                }
+                TokenKind::Name(word) if word == "ui" => {
+                    if entry.is_some() { return Err(self.error("a module may have at most one ui entry")); }
+                    let mut definition = self.definition()?;
+                    definition.imports = imports.clone();
+                    entry = Some(definition);
+                }
+                _ => return Err(self.error("expected use, component, export component, or ui")),
             }
-            let path = Name {
-                value,
-                span: token.span,
-            };
-            let end = self.expect(TokenKind::Semicolon)?.span;
-            imports.push(Import {
-                alias,
-                path,
-                span: start.join(end),
-            });
         }
+        if entry.is_none() && components.is_empty() {
+            return Err(self.error("module must declare a component or ui"));
+        }
+        Ok(Module {
+            imports,
+            components,
+            entry,
+            span: self
+                .source
+                .span(0, self.source.text.len())
+                .expect("whole source"),
+        })
+    }
+    fn use_import(&mut self) -> ParseResult<Import> {
+        let start = self.keyword("use")?.span;
+        let mut members = vec![];
+        let alias = if self.consume(&TokenKind::LeftBrace).is_some() {
+            while !self.is(&TokenKind::RightBrace) {
+                if members.len() >= 256 {
+                    return Err(self.error("use member limit exceeded"));
+                }
+                let name = self.name()?;
+                let alias = if matches!(&self.token().kind, TokenKind::Name(word) if word == "as") {
+                    self.take();
+                    self.name()?
+                } else {
+                    name.clone()
+                };
+                let span = name.span.join(alias.span);
+                members.push(ImportMember { name, alias, span });
+                if self.consume(&TokenKind::Comma).is_none() {
+                    break;
+                }
+            }
+            self.expect(TokenKind::RightBrace)?;
+            members
+                .first()
+                .ok_or_else(|| self.error("named use must select at least one export"))?
+                .alias
+                .clone()
+        } else {
+            self.name()?
+        };
+        self.keyword("from")?;
+        let token = self.take();
+        let TokenKind::String {
+            translated: false,
+            value,
+        } = token.kind
+        else {
+            return Err(Diagnostic::new(
+                Stage::Parser,
+                "P004",
+                token.span,
+                "use path must be an untranslated single-quoted literal",
+            ));
+        };
+        if value.contains(['{', '}', '\\']) {
+            return Err(Diagnostic::new(
+                Stage::Parser,
+                "P004",
+                token.span,
+                "use path cannot contain interpolation or escapes",
+            ));
+        }
+        let path = Name {
+            value,
+            span: token.span,
+        };
+        let end = self.expect(TokenKind::Semicolon)?.span;
+        Ok(Import {
+            alias,
+            members,
+            path,
+            span: start.join(end),
+        })
+    }
+    fn component(&mut self) -> ParseResult<Component> {
+        let export = if matches!(&self.token().kind, TokenKind::Name(word) if word == "export") {
+            Some(self.take().span)
+        } else {
+            None
+        };
+        let start = self.keyword("component")?.span;
+        let name = self.name()?;
+        self.expect(TokenKind::LeftParen)?;
+        let mut parameters = vec![];
+        while !self.is(&TokenKind::RightParen) {
+            if parameters.len() >= 64 {
+                return Err(self.error("component parameter limit exceeded"));
+            }
+            let name = self.name()?;
+            self.expect(TokenKind::Colon)?;
+            let ty = self.name()?;
+            let span = name.span.join(ty.span);
+            parameters.push(Parameter { name, ty, span });
+            if self.consume(&TokenKind::Comma).is_none() {
+                break;
+            }
+        }
+        self.expect(TokenKind::RightParen)?;
+        self.expect(TokenKind::LeftBrace)?;
+        let body = self.part()?;
+        let end = self.expect(TokenKind::RightBrace)?.span;
+        Ok(Component {
+            name,
+            parameters,
+            body,
+            export,
+            span: export.unwrap_or(start).join(end),
+        })
+    }
+    fn definition(&mut self) -> ParseResult<Definition> {
         let ui_start = self.keyword("ui")?.span;
-        let start = imports.first().map_or(ui_start, |import| import.span);
+        let start = ui_start;
         let name = self.name()?;
         let domain = if matches!(&self.token().kind,TokenKind::Name(name) if name=="domain") {
             self.take();
@@ -162,9 +274,8 @@ impl Parser<'_> {
         self.expect(TokenKind::LeftBrace)?;
         let root = self.part()?;
         let end = self.expect(TokenKind::RightBrace)?.span;
-        self.expect(TokenKind::Eof)?;
         Ok(Definition {
-            imports,
+            imports: vec![],
             name,
             domain,
             root,

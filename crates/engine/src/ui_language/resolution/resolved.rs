@@ -11,6 +11,10 @@ use crate::ui_language::{
 };
 #[derive(Clone)]
 pub enum Root {
+    Prop {
+        index: usize,
+        ty: super::environment::ValueType,
+    },
     Layout(Box<crate::layout::style::LayoutStyle>),
     Styles(Vec<crate::styles::slots::SlotAssignment>),
     Data(Box<DataExport>),
@@ -61,6 +65,12 @@ pub struct ResolvedPart {
     pub kind: PartKind,
 }
 pub enum PartKind {
+    Invoke {
+        definition: std::sync::Arc<crate::composition::definition::CompositeDefinition>,
+        attributes: Vec<(crate::ui_language::ast::expression::Name, Expression)>,
+        children: Vec<ResolvedPart>,
+    },
+    Slot,
     Dynamic(Expression),
     Element {
         component: Option<ComponentExport>,

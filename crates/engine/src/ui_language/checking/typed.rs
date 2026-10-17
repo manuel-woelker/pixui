@@ -54,6 +54,12 @@ pub struct TypedPart {
     pub kind: PartKind,
 }
 pub enum PartKind {
+    Invoke {
+        definition: std::sync::Arc<crate::composition::definition::CompositeDefinition>,
+        props: Vec<(Expression, ValueType)>,
+        children: Vec<TypedPart>,
+    },
+    Slot,
     Dynamic(Expression),
     Component {
         export: ComponentExport,

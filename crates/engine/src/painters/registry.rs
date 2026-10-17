@@ -294,8 +294,16 @@ impl PainterRegistry {
     ) -> PixuiResult<()> {
         use crate::live_model::part::LivePart;
         let mut pending = vec![template];
+        let mut composite_seen = std::collections::HashSet::new();
         while let Some(part) = pending.pop() {
             match part {
+                LivePart::Invoke(part) => {
+                    if composite_seen.insert(part.definition.id) {
+                        pending.push(&part.definition.body);
+                    }
+                    pending.push(&part.children);
+                }
+                LivePart::Slot => {}
                 LivePart::Dynamic(_) => {}
 
                 LivePart::Composite(part) => pending.extend(&part.parts),

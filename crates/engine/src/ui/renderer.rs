@@ -218,6 +218,7 @@ pub(crate) fn render_with_pointer(
                 pending.extend(state.parts.iter().rev())
             }
             PartState::ForLoop(state) => pending.extend(state.items.iter().rev()),
+            PartState::Invoke(state) | PartState::Slot(state) => pending.push(&state.state),
             PartState::Dynamic(state) => pending.push(&state.state),
             PartState::Match(state) if state.selected.is_some() => pending.push(&state.part),
             _ => {}

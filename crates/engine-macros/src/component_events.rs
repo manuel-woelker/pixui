@@ -123,7 +123,7 @@ pub(crate) fn expand(
                 || pattern.subpat.is_some()
                 || matches!(
                     field.to_string().as_str(),
-                    "event" | "entities" | "collections" | "layouts" | "styles"
+                    "event" | "entities" | "collections" | "layouts" | "styles" | "props"
                 )
             {
                 return Err(syn::Error::new(
@@ -200,6 +200,10 @@ mod tests {
             ),
             (
                 "trait E { fn x(&self, event: String) -> PixuiResult<()>; }",
+                "reserved",
+            ),
+            (
+                "trait E { fn x(&self, props: String) -> PixuiResult<()>; }",
                 "reserved",
             ),
             ("trait E { fn x(&self) -> bool; }", "PixuiResult"),

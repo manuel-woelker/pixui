@@ -92,7 +92,7 @@ fn dynamic_paths_reuse_snapshots_retain_failed_frames_and_recover() {
             )?;
             Ok(compile(
                 "worker-image.pixui",
-                "ui Images {<Image path=entities.filename layout=layouts.logo />}",
+                "component ResourceImage(path: ResourcePath) {<Image path=props.path layout=layouts.logo />} ui Images {<ResourceImage path=entities.filename />}",
                 &env,
             )
             .unwrap()

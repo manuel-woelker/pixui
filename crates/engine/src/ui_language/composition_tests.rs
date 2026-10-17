@@ -225,16 +225,16 @@ fn import_graphs_share_dependencies_keep_aliases_lexical_and_export_inactive_mes
     sources
         .add(
             "pages/one.pixui",
-            "import Shared from '../common.pixui'; ui One {<Shared />}",
+            "use Shared from '../common.pixui'; ui One {<Shared />}",
         )
         .unwrap();
     sources
         .add(
             "two.pixui",
-            "import Shared from './common.pixui'; ui Two {<Shared />}",
+            "use Shared from './common.pixui'; ui Two {<Shared />}",
         )
         .unwrap();
-    sources.add("root.pixui", "import One from './pages/one.pixui'; import Two from './two.pixui'; ui Root {<> <One /> <Two /> </>}").unwrap();
+    sources.add("root.pixui", "use One from './pages/one.pixui'; use Two from './two.pixui'; ui Root {<> <One /> <Two /> </>}").unwrap();
     let installed = install(
         &mut app,
         &sources,
@@ -259,7 +259,7 @@ fn import_graphs_share_dependencies_keep_aliases_lexical_and_export_inactive_mes
     assert!(
         compile(
             "single.pixui",
-            "import One from './one.pixui'; ui X {<One />}",
+            "use One from './one.pixui'; ui X {<One />}",
             &env
         )
         .err()
@@ -277,37 +277,37 @@ fn import_failures_are_source_located_and_transactional() {
     let (mut app, env) = fixture();
     for (root, child, message) in [
         (
-            "import Child from './child.pixui'; ui X {<Child />}",
-            "import Root from './root.pixui'; ui Child {<Root />}",
+            "use Child from './child.pixui'; ui X {<Child />}",
+            "use Root from './root.pixui'; ui Child {<Root />}",
             "cyclic",
         ),
         (
-            "import Child from './absent.pixui'; ui X {<Child />}",
+            "use Child from './absent.pixui'; ui X {<Child />}",
             "ui Child {<></>}",
             "unknown source",
         ),
         (
-            "import Child from '../escape.pixui'; ui X {<Child />}",
+            "use Child from '../escape.pixui'; ui X {<Child />}",
             "ui Child {<></>}",
             "escapes",
         ),
         (
-            "import Label from './child.pixui'; ui X {<Label />}",
+            "use Label from './child.pixui'; ui X {<Label />}",
             "ui Child {<Label text=\"Uncommitted\" />}",
             "conflicting",
         ),
         (
-            "import A from './child.pixui'; import A from './child.pixui'; ui X {<A />}",
+            "use A from './child.pixui'; use A from './child.pixui'; ui X {<A />}",
             "ui Child {<></>}",
-            "duplicate import",
+            "duplicate use",
         ),
         (
-            "import A from './child.pixui'; ui X {<A />}",
+            "use A from './child.pixui'; ui X {<A />}",
             "ui Child {<Label text=true />}",
             "child.pixui",
         ),
         (
-            "import A from './child.pixui'; ui X {<A />}",
+            "use A from './child.pixui'; ui X {<A />}",
             "ui Child domain 'other' {<></>}",
             "incompatible",
         ),
@@ -331,14 +331,14 @@ fn import_failures_are_source_located_and_transactional() {
         assert_eq!(app.template_count(), 0);
     }
     for source in [
-        "import A from \"child.pixui\"; ui X {<A />}",
-        "import A from './{name}.pixui'; ui X {<A />}",
+        "use A from \"child.pixui\"; ui X {<A />}",
+        "use A from './{name}.pixui'; ui X {<A />}",
     ] {
         assert!(compile("bad-import.pixui", source, &env).is_err());
     }
     let mut bundle = SourceBundle::new();
     bundle
-        .add("root.pixui", "import A from './child.pixui'; ui X {<A />}")
+        .add("root.pixui", "use A from './child.pixui'; ui X {<A />}")
         .unwrap();
     bundle.add("child.pixui", "ui Child {<></>}").unwrap();
     for limits in [

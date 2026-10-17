@@ -101,6 +101,10 @@ fn register_pages(app: &ApplicationHandle, components: StandardComponents) -> Pi
         ),
     ];
     let mut sources = SourceBundle::new();
+    sources.add(
+        "examples/showcase/ui/common.pixui",
+        include_str!("../ui/common.pixui"),
+    )?;
     for (_, _, id, text) in pages {
         sources.add(id, text)?;
     }

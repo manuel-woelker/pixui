@@ -15,6 +15,7 @@ pub enum Severity {
 }
 #[derive(Clone, Debug)]
 pub struct Label {
+    pub source: Option<crate::ui_language::source::snapshot::Source>,
     pub span: Span,
     pub message: String,
 }
@@ -40,8 +41,21 @@ impl Diagnostic {
             notes: vec![],
         }
     }
+    pub fn declaration(
+        mut self,
+        origin: &crate::ui_language::source::origin::Origin,
+        message: impl Into<String>,
+    ) -> Self {
+        self.secondary.push(Label {
+            source: Some(origin.source.clone()),
+            span: origin.span,
+            message: message.into(),
+        });
+        self
+    }
     pub fn secondary(mut self, span: Span, message: impl Into<String>) -> Self {
         self.secondary.push(Label {
+            source: None,
             span,
             message: message.into(),
         });

@@ -127,8 +127,16 @@ impl ComponentRegistry {
     /// Validates the entire template, including empty loop bodies and inactive match arms.
     pub fn validate(&self, template: &LivePart, painters: &PainterRegistry) -> PixuiResult<()> {
         let mut pending = vec![template];
+        let mut composite_seen = std::collections::HashSet::new();
         while let Some(part) = pending.pop() {
             match part {
+                LivePart::Invoke(part) => {
+                    if composite_seen.insert(part.definition.id) {
+                        pending.push(&part.definition.body);
+                    }
+                    pending.push(&part.children);
+                }
+                LivePart::Slot => {}
                 LivePart::Dynamic(_) => {}
 
                 LivePart::Composite(composite) => pending.extend(&composite.parts),
@@ -177,38 +185,25 @@ impl ComponentRegistry {
 
     /// Resolves declaration names before publication; input uses indices only.
     pub(crate) fn resolve_events(&self, template: &mut LivePart) -> PixuiResult<()> {
-        let mut pending = vec![template];
-        while let Some(part) = pending.pop() {
-            match part {
-                LivePart::Dynamic(_) => {}
-
-                LivePart::Composite(part) => pending.extend(&mut part.parts),
-                LivePart::Container(part) => pending.extend(&mut part.children),
-                LivePart::ForLoop(part) => pending.push(&mut part.body),
-                LivePart::Match(part) => pending.extend(
-                    part.candidates
-                        .iter_mut()
-                        .map(|candidate| &mut candidate.part),
-                ),
-                LivePart::Component(part) => {
-                    if let Some(address) = part.component_address() {
-                        let descriptor = self.resolve(address)?;
-                        for event in &mut part.events {
-                            event.index = Some(
-                                descriptor
-                                    .events
-                                    .iter()
-                                    .position(|declared| declared.name == event.name)
-                                    .ok_or_else(|| {
-                                        pixui_error!("unknown component event `{}`", event.name)
-                                    })?,
-                            );
-                        }
-                    }
+        crate::composition::traversal::prepare(template, |part| {
+            if let LivePart::Component(part) = part
+                && let Some(address) = part.component_address()
+            {
+                let descriptor = self.resolve(address)?;
+                for event in &mut part.events {
+                    event.index = Some(
+                        descriptor
+                            .events
+                            .iter()
+                            .position(|declared| declared.name == event.name)
+                            .ok_or_else(|| {
+                                pixui_error!("unknown component event `{}`", event.name)
+                            })?,
+                    );
                 }
             }
-        }
-        Ok(())
+            Ok(())
+        })
     }
 
     pub(crate) fn initialize(

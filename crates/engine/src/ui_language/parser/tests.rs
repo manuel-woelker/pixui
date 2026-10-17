@@ -115,3 +115,32 @@ fn character_deletions_do_not_panic_or_produce_invalid_spans() {
         }
     }
 }
+
+#[test]
+fn module_declarations_parameters_and_use_aliases_keep_precise_spans() {
+    let source = Source::new(
+        "module.pixui",
+        "use { Card as Panel } from './common.pixui'; export component Badge(title: String, children: Children) {<Panel><Children /></Panel>} ui X {<Badge title='text' />} ",
+    );
+    let module = super::parse::parse_module(&source).unwrap();
+    assert_eq!(source.slice(module.span), Some(source.text.as_ref()));
+    let import = &module.imports[0];
+    assert_eq!(source.slice(import.members[0].name.span), Some("Card"));
+    assert_eq!(source.slice(import.members[0].alias.span), Some("Panel"));
+    assert_eq!(source.slice(import.path.span), Some("'./common.pixui'"));
+    let declaration = &module.components[0];
+    assert_eq!(source.slice(declaration.export.unwrap()), Some("export"));
+    assert_eq!(
+        source.slice(declaration.parameters[0].name.span),
+        Some("title")
+    );
+    assert_eq!(
+        source.slice(declaration.parameters[0].ty.span),
+        Some("String")
+    );
+    assert_eq!(
+        source.slice(declaration.parameters[1].span),
+        Some("children: Children")
+    );
+    assert_eq!(source.slice(module.entry.unwrap().name.span), Some("X"));
+}

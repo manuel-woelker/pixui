@@ -5,7 +5,17 @@ use crate::application::app::Application;
 
 /// Read-only inputs for expressions: application storage and an optional current value.
 /// Results borrow these inputs rather than owning or copying application data.
+/// A slot restores caller lexical inputs while retaining current expansion ancestry.
+pub(crate) struct SlotFrame<'a> {
+    pub template: &'a crate::live_model::part::LivePart,
+    pub caller: &'a ExpressionContext<'a>,
+    pub site: u64,
+}
+
 pub struct ExpressionContext<'a> {
+    props: &'a [DynamicObject<'a>],
+    slot: Option<&'a SlotFrame<'a>>,
+    invocations: Vec<u64>,
     pub(crate) domain: Option<&'a str>,
     pub(crate) components: Vec<crate::composition::component_ref::ComponentRef>,
     event: Option<&'a DynamicObject<'a>>,
@@ -22,6 +32,9 @@ impl<'a> ExpressionContext<'a> {
     /// Application expressions are available; no current field context is set.
     pub fn new(application: &'a Application) -> Self {
         Self {
+            props: &[],
+            slot: None,
+            invocations: vec![],
             domain: None,
             components: vec![],
             event: None,
@@ -35,6 +48,9 @@ impl<'a> ExpressionContext<'a> {
     /// Field expressions are available without application storage.
     pub fn from_value(value: &'a DynamicObject<'a>) -> Self {
         Self {
+            props: &[],
+            slot: None,
+            invocations: vec![],
             domain: None,
             components: vec![],
             event: None,
@@ -64,7 +80,9 @@ impl<'a> ExpressionContext<'a> {
         &self,
         reference: crate::composition::component_ref::ComponentRef,
     ) -> PixuiResult<ExpressionContext<'a>> {
-        if self.components.len() >= 64 || self.components.contains(&reference) {
+        if self.components.len() + self.invocations.len() >= 64
+            || self.components.contains(&reference)
+        {
             return Err(pixui_error!(
                 "recursive or excessively nested dynamic component"
             ));
@@ -79,10 +97,58 @@ impl<'a> ExpressionContext<'a> {
         let mut next = Self::new(self.application()?).with_language(self.language);
         next.domain = Some(&entry.domain);
         next.components = self.components.clone();
+        next.invocations = self.invocations.clone();
         next.components.push(reference);
         Ok(next)
     }
 
+    pub(crate) fn prop(&self, index: usize) -> PixuiResult<&'a DynamicObject<'a>> {
+        self.props
+            .get(index)
+            .ok_or_else(|| pixui_error!("composite prop frame is not bound"))
+    }
+    pub(crate) fn slot(&self) -> PixuiResult<&'a SlotFrame<'a>> {
+        self.slot
+            .ok_or_else(|| pixui_error!("children slot is not bound"))
+    }
+    pub(crate) fn with_invocation<'b>(
+        &self,
+        id: u64,
+        props: &'b [DynamicObject<'b>],
+        slot: Option<&'b SlotFrame<'b>>,
+    ) -> PixuiResult<ExpressionContext<'b>>
+    where
+        'a: 'b,
+    {
+        if self.components.len() + self.invocations.len() >= 64 {
+            return Err(pixui_error!(
+                "recursive or excessively nested composite component"
+            ));
+        }
+        let mut next = ExpressionContext::new(self.application()?)
+            .with_language(self.language)
+            .with_domain(self.domain);
+        next.components = self.components.clone();
+        next.invocations = self.invocations.clone();
+        next.invocations.push(id);
+        next.props = props;
+        next.slot = slot;
+        Ok(next)
+    }
+    pub(crate) fn with_ancestry(&self, current: &ExpressionContext<'_>) -> ExpressionContext<'a> {
+        ExpressionContext {
+            domain: self.domain,
+            components: current.components.clone(),
+            invocations: current.invocations.clone(),
+            props: self.props,
+            slot: self.slot,
+            event: self.event,
+            application: self.application,
+            language: self.language,
+            locals: self.locals.clone(),
+            value: self.value,
+        }
+    }
     pub(crate) fn with_domain(mut self, domain: Option<&'a str>) -> Self {
         self.domain = domain;
         self
@@ -141,6 +207,9 @@ impl<'a> ExpressionContext<'a> {
         let mut locals = self.locals.clone();
         locals.push((value, address));
         ExpressionContext {
+            props: self.props,
+            slot: self.slot,
+            invocations: self.invocations.clone(),
             domain: self.domain,
             components: self.components.clone(),
             event: self.event,

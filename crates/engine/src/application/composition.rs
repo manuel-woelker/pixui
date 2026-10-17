@@ -27,7 +27,15 @@ impl Application {
         domain: &str,
         template: LivePart,
     ) -> PixuiResult<ComponentRef> {
-        let name = name.into();
+        self.register_template_inner(name.into(), domain, template, false)
+    }
+    fn register_template_inner(
+        &mut self,
+        name: String,
+        domain: &str,
+        template: LivePart,
+        unbound: bool,
+    ) -> PixuiResult<ComponentRef> {
         if name.is_empty() {
             return Err(pixui_error!("empty component reference name"));
         }
@@ -43,11 +51,32 @@ impl Application {
         crate::i18n::registration::register(&mut definition, &mut translations)?;
         let reference = self.templates.insert(Entry {
             name,
+            unbound,
             domain: domain.into(),
             template: std::sync::Arc::new(definition.template),
         })?;
         self.translations = translations;
         Ok(reference)
+    }
+    /// Install a named source export, retaining its signature for static calls.
+    /// Its opaque reference remains zero-argument at the Dynamic boundary.
+    pub fn register_composite(
+        &mut self,
+        domain: &str,
+        export: &crate::composition::definition::CompositeExport,
+    ) -> PixuiResult<crate::composition::definition::CompositeExport> {
+        let mut definition = export.definition.as_ref().clone();
+        let reference = self.register_template_inner(
+            definition.name.clone(),
+            domain,
+            definition.body.clone(),
+            !definition.props.is_empty() || definition.children,
+        )?;
+        definition.body = self.clone_template(reference)?;
+        Ok(crate::composition::definition::CompositeExport {
+            definition: std::sync::Arc::new(definition),
+            reference: Some(reference),
+        })
     }
     /// Declare a parameterless host message through the existing i18n registry.
     /// Catalog extraction works without rendering or creating a window.

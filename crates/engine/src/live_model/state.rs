@@ -31,6 +31,8 @@ impl LiveState {
 pub enum PartState {
     #[default]
     Unknown,
+    Invoke(MountedState),
+    Slot(MountedState),
     Dynamic(DynamicState),
     Component(ComponentState),
     Composite(CompositeState),
@@ -134,6 +136,14 @@ impl LiveState {
                         .and_then(|keys| keys.iter().position(|candidate| candidate == key));
                     index.and_then(|index| state.items.get_mut(index))
                 }
+                (PartState::Invoke(state), PathSegment::Invoke(id))
+                | (PartState::Slot(state), PathSegment::Slot(id)) => {
+                    if state.id == Some(*id) {
+                        Some(state.state.as_mut())
+                    } else {
+                        None
+                    }
+                }
                 (PartState::Dynamic(state), PathSegment::Dynamic(reference)) => {
                     if state.reference == Some(*reference) {
                         Some(state.state.as_mut())
@@ -164,6 +174,15 @@ impl LiveState {
 #[derive(Default)]
 pub struct DynamicState {
     pub reference: Option<crate::composition::component_ref::ComponentRef>,
+    pub template: Option<Box<super::part::LivePart>>,
+    pub state: Box<PartState>,
+}
+
+/// Mounted body for a static invocation or projected child slot. Props and
+/// caller borrows are scoped to preparation and never stored in this state.
+#[derive(Default)]
+pub struct MountedState {
+    pub id: Option<u64>,
     pub template: Option<Box<super::part::LivePart>>,
     pub state: Box<PartState>,
 }

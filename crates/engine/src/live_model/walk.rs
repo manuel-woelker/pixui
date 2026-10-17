@@ -81,6 +81,70 @@ fn walk_at<V: Visitor>(
         })?;
         reconcile(part, state, context)?;
         match (part, state) {
+            (LivePart::Invoke(part), PartState::Invoke(state)) => {
+                let result = (|| {
+                    let values = part
+                        .values
+                        .iter()
+                        .map(|(expression, ty)| {
+                            let value = evaluate(context, expression)?;
+                            let snapshot = (ty.snapshot)(&value)?;
+                            DynamicObject::from_send((ty.send)(snapshot.as_ref())?, ty.descriptor)
+                        })
+                        .collect::<PixuiResult<Vec<_>>>()?;
+                    if values.len() != part.definition.props.len() {
+                        return Err(pixui_error!(
+                            "component `{}` requires bound props",
+                            part.definition.name
+                        ));
+                    }
+                    let slot = crate::expression::context::SlotFrame {
+                        template: &part.children,
+                        caller: context,
+                        site: part.site,
+                    };
+                    let next = context.with_invocation(
+                        part.definition.id,
+                        &values,
+                        part.definition.children.then_some(&slot),
+                    )?;
+                    if state.id != Some(part.definition.id) {
+                        *state = super::state::MountedState {
+                            id: Some(part.definition.id),
+                            template: Some(Box::new(part.definition.body.clone())),
+                            state: Box::new(PartState::Unknown),
+                        };
+                    }
+                    walk_at(
+                        state.template.as_mut().expect("mounted composite"),
+                        &mut state.state,
+                        &next,
+                        visitor,
+                        path.child(PathSegment::Invoke(part.definition.id)),
+                        visited,
+                    )
+                })();
+                result.map_err(|error| part.origin.error(error))?;
+            }
+            (LivePart::Slot, PartState::Slot(state)) => {
+                let slot = context.slot()?;
+                let restored = slot.caller.with_ancestry(context);
+                if state.id != Some(slot.site) {
+                    *state = super::state::MountedState {
+                        id: Some(slot.site),
+                        template: Some(Box::new(slot.template.clone())),
+                        state: Box::new(PartState::Unknown),
+                    };
+                }
+                walk_at(
+                    state.template.as_mut().expect("mounted slot"),
+                    &mut state.state,
+                    &restored,
+                    visitor,
+                    path.child(PathSegment::Slot(slot.site)),
+                    visited,
+                )?;
+            }
             (LivePart::Dynamic(part), PartState::Dynamic(state)) => {
                 let result = (|| {
                     let value = evaluate(context, &part.component)?;
@@ -88,6 +152,12 @@ fn walk_at<V: Visitor>(
                         .downcast_ref::<crate::composition::component_ref::ComponentRef>()
                         .ok_or_else(|| pixui_error!("dynamic component requires ComponentRef"))?;
                     let entry = context.application()?.templates.get(reference)?;
+                    if entry.unbound {
+                        return Err(pixui_error!(
+                            "component `{}` requires a static invocation with props or children",
+                            entry.name
+                        ));
+                    }
                     if let Some(domain) = &part.domain
                         && domain != &entry.domain
                     {
@@ -303,6 +373,16 @@ fn reconcile(
                 .parts
                 .resize_with(container.children.len(), || PartState::Unknown);
         }
+        LivePart::Invoke(_) => {
+            if !matches!(state, PartState::Invoke(_)) {
+                *state = PartState::Invoke(Default::default());
+            }
+        }
+        LivePart::Slot => {
+            if !matches!(state, PartState::Slot(_)) {
+                *state = PartState::Slot(Default::default());
+            }
+        }
         LivePart::Dynamic(_) => {
             if !matches!(state, PartState::Dynamic(_)) {
                 *state = PartState::Dynamic(Default::default());
@@ -351,6 +431,8 @@ mod tests {
                 LivePart::Container(_) => self.output.push_str("Container\n"),
                 LivePart::Component(_) => self.output.push_str("Component\n"),
                 LivePart::ForLoop(_) => self.output.push_str("ForLoop\n"),
+                LivePart::Invoke(_) => self.output.push_str("Invoke\n"),
+                LivePart::Slot => self.output.push_str("Slot\n"),
                 LivePart::Dynamic(_) => self.output.push_str("Dynamic\n"),
                 LivePart::Match(_) => self.output.push_str("Match\n"),
             }
@@ -467,6 +549,8 @@ mod tests {
                 LivePart::Container(_) => "Container",
                 LivePart::Component(_) => "Component",
                 LivePart::ForLoop(_) => "ForLoop",
+                LivePart::Invoke(_) => "Invoke",
+                LivePart::Slot => "Slot",
                 LivePart::Dynamic(_) => "Dynamic",
                 LivePart::Match(_) => "Match",
             };

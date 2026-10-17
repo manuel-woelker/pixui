@@ -63,6 +63,82 @@ impl Resolver<'_> {
                 attributes,
                 children,
             } => {
+                if let Some(name) = name {
+                    if name.value == "Children" {
+                        if !self.environment.children_slot
+                            || !attributes.is_empty()
+                            || !children.is_empty()
+                        {
+                            return Err(Diagnostic::new(
+                                Stage::Resolution,
+                                "R016",
+                                part.span,
+                                "Children requires a declared children: Children slot and accepts no attributes or children",
+                            ));
+                        }
+                        return Ok(ResolvedPart {
+                            syntax: part.clone(),
+                            kind: PartKind::Slot,
+                        });
+                    }
+                    if let Some(definition) = self.environment.composites.get(&name.value).cloned()
+                    {
+                        if !definition.children && !children.is_empty() {
+                            return Err(Diagnostic::new(
+                                Stage::Resolution,
+                                "R016",
+                                part.span,
+                                "composite does not declare a child slot",
+                            )
+                            .declaration(&definition.origin, "component declared here"));
+                        }
+                        let mut seen = std::collections::HashMap::new();
+                        let mut values = vec![];
+                        for attribute in attributes {
+                            if let Some(previous) =
+                                seen.insert(attribute.name.value.clone(), attribute.name.span)
+                            {
+                                return Err(Diagnostic::new(
+                                    Stage::Resolution,
+                                    "R002",
+                                    attribute.name.span,
+                                    "duplicate composite prop",
+                                )
+                                .secondary(previous, "first prop"));
+                            }
+                            if !definition
+                                .props
+                                .iter()
+                                .any(|prop| prop.name == attribute.name.value)
+                            {
+                                return Err(Diagnostic::new(
+                                    Stage::Resolution,
+                                    "R016",
+                                    attribute.name.span,
+                                    format!(
+                                        "unknown prop `{}` on composite `{}`",
+                                        attribute.name.value, definition.name
+                                    ),
+                                )
+                                .declaration(&definition.origin, "component declared here"));
+                            }
+                            values
+                                .push((attribute.name.clone(), self.expression(&attribute.value)?));
+                        }
+                        let children = children
+                            .iter()
+                            .map(|child| self.part(child))
+                            .collect::<Result<Vec<_>, _>>()?;
+                        return Ok(ResolvedPart {
+                            syntax: part.clone(),
+                            kind: PartKind::Invoke {
+                                definition,
+                                attributes: values,
+                                children,
+                            },
+                        });
+                    }
+                }
                 if let Some(name) = name
                     && (name.value == "Dynamic"
                         || self.environment.templates.contains_key(&name.value))
@@ -258,6 +334,14 @@ impl Resolver<'_> {
                 sequence,
                 body,
             } => {
+                if binding.value == "props" {
+                    return Err(Diagnostic::new(
+                        Stage::Resolution,
+                        "R017",
+                        binding.span,
+                        "props is reserved for composite parameters",
+                    ));
+                }
                 let sequence = self.expression(sequence)?;
                 self.locals.push(binding.value.clone());
                 let body = self.part(body);
@@ -361,7 +445,37 @@ impl Resolver<'_> {
                     });
                 }
 
-                let (root, skip) = if let Some(payload) = self.event.filter(|payload| {
+                let (root, skip) = if first.value == "props" {
+                    let name = path.get(1).ok_or_else(|| {
+                        Diagnostic::new(
+                            Stage::Resolution,
+                            "R017",
+                            first.span,
+                            "props requires a declared field",
+                        )
+                    })?;
+                    let (index, prop) = self
+                        .environment
+                        .props
+                        .iter()
+                        .enumerate()
+                        .find(|(_, prop)| prop.name == name.value)
+                        .ok_or_else(|| {
+                            Diagnostic::new(
+                                Stage::Resolution,
+                                "R017",
+                                name.span,
+                                format!("unknown composite prop `{}`", name.value),
+                            )
+                        })?;
+                    (
+                        Root::Prop {
+                            index,
+                            ty: prop.ty.clone(),
+                        },
+                        2,
+                    )
+                } else if let Some(payload) = self.event.filter(|payload| {
                     first.value == "event"
                         || payload
                             .fields()

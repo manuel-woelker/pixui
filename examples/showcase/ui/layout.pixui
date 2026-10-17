@@ -1,3 +1,5 @@
+use { MetricCard, ActionCell } from './common.pixui';
+
 ui LayoutDemo domain 'showcase' {
     <Column width='100%' min_width=0 gap=12 slice='showcase'>
         <Label text="Layout" />
@@ -11,12 +13,12 @@ ui LayoutDemo domain 'showcase' {
             <Column column_span=2 min_width=0 gap=12>
                 <Label text="Overview" />
                 <Grid columns='1fr 1fr 1fr' rows='72px 72px' gap=8>
-                    <Column padding=8 gap=4><Label text="Projects" /><Label text="12" /></Column>
-                    <Column padding=8 gap=4><Label text="Tasks" /><Label text="48" /></Column>
-                    <Column padding=8 gap=4><Label text="Teams" /><Label text="4" /></Column>
-                    <Column padding=8 gap=4><Label text="Releases" /><Label text="7" /></Column>
-                    <Column padding=8 gap=4><Label text="Reviews" /><Label text="16" /></Column>
-                    <Column padding=8 gap=4><Label text="Milestones" /><Label text="3" /></Column>
+                    <MetricCard title="Projects" value='12' />
+                    <MetricCard title="Tasks" value='48' />
+                    <MetricCard title="Teams" value='4' />
+                    <MetricCard title="Releases" value='7' />
+                    <MetricCard title="Reviews" value='16' />
+                    <MetricCard title="Milestones" value='3' />
                 </Grid>
                 <Label text="Counter: {entities.count}" />
             </Column>
@@ -28,12 +30,12 @@ ui LayoutDemo domain 'showcase' {
                 <Label text="Build shipped" />
             </Column>
             <Row column_span=3 min_width=0 gap=8 wrap=true>
-                <Column basis=140 grow=1 min_width=140><Button label="Plan sprint" @activate=increment() /></Column>
-                <Column basis=140 grow=1 min_width=140><Button label="Create task" @activate=increment() /></Column>
-                <Column basis=140 grow=1 min_width=140><Button label="Review work" @activate=increment() /></Column>
-                <Column basis=140 grow=1 min_width=140><Button label="Ship release" @activate=increment() /></Column>
-                <Column basis=140 grow=1 min_width=140><Button label="Invite team" @activate=increment() /></Column>
-                <Column basis=140 grow=1 min_width=140><Button label="Archive project" @activate=increment() /></Column>
+                <ActionCell><Button label="Plan sprint" @activate=increment() /></ActionCell>
+                <ActionCell><Button label="Create task" @activate=increment() /></ActionCell>
+                <ActionCell><Button label="Review work" @activate=increment() /></ActionCell>
+                <ActionCell><Button label="Ship release" @activate=increment() /></ActionCell>
+                <ActionCell><Button label="Invite team" @activate=increment() /></ActionCell>
+                <ActionCell><Button label="Archive project" @activate=increment() /></ActionCell>
             </Row>
         </Grid>
         <Label text="Project board · 36 projects / 216 tasks" />

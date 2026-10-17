@@ -6,11 +6,14 @@ pub fn render(source: &Source, diagnostic: &Diagnostic) -> String {
         "{:?}[{}]: {}\n",
         diagnostic.stage, diagnostic.code, diagnostic.message
     );
-    for (span, message) in std::iter::once((diagnostic.primary, "here")).chain(
-        diagnostic
-            .secondary
-            .iter()
-            .map(|label| (label.span, label.message.as_str())),
+    for (source, span, message) in std::iter::once((source, diagnostic.primary, "here")).chain(
+        diagnostic.secondary.iter().map(|label| {
+            (
+                label.source.as_ref().unwrap_or(source),
+                label.span,
+                label.message.as_str(),
+            )
+        }),
     ) {
         if span.source != source.id {
             continue;

@@ -105,6 +105,20 @@ fn capture(mut expression: Expression, context: &ExpressionContext<'_>) -> Pixui
             let program = Arc::make_mut(program);
             match &mut program.kind {
                 ProgramKind::Path {
+                    root: PathRoot::Prop(index),
+                    ..
+                } => {
+                    let ty = program
+                        .capture_type
+                        .clone()
+                        .ok_or_else(|| pixui_error!("callback prop needs ownership adapter"))?;
+                    let value = (ty.snapshot)(context.prop(*index)?)?;
+                    if let ProgramKind::Path { root, .. } = &mut program.kind {
+                        *root = PathRoot::Data;
+                    }
+                    program.children = vec![constant(value, ty, program.origin.clone())];
+                }
+                ProgramKind::Path {
                     root: PathRoot::Local(depth),
                     ..
                 } => {

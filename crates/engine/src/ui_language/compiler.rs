@@ -8,7 +8,7 @@ use super::{
         report::{Diagnostic, Stage},
     },
     lowering::lower::lower,
-    parser::parse::parse,
+    parser::parse::parse_module,
     resolution::{environment::Environment, resolver::resolve},
     source::snapshot::Source,
 };
@@ -41,23 +41,45 @@ pub fn compile(
     text: &str,
     environment: &Environment,
 ) -> Result<CompiledDefinition, CompileErrors> {
+    let mut module = compile_module(filename, text, environment)?;
+    module.entry.take().ok_or_else(|| {
+        let source = Source::new(filename, text);
+        let span = source.span(0, 0).expect("empty span");
+        CompileErrors {
+            source,
+            diagnostics: vec![Diagnostic::new(
+                Stage::Checking,
+                "T006",
+                span,
+                "module has no ui entry; compile/install it as a library module",
+            )],
+        }
+    })
+}
+/// Compile local/private/exported composites and an optional UI entry without I/O.
+/// External uses require bundle installation through a host source resolver.
+pub fn compile_module(
+    filename: &str,
+    text: &str,
+    environment: &Environment,
+) -> Result<super::checking::composites::CompiledModule, CompileErrors> {
     let source = Source::new(filename, text);
-    let syntax = parse(&source).map_err(|diagnostics| CompileErrors {
+    let syntax = parse_module(&source).map_err(|diagnostics| CompileErrors {
         source: source.clone(),
         diagnostics,
     })?;
     if let Some(import) = syntax.imports.first() {
         return Err(CompileErrors {
-            source: source.clone(),
+            source,
             diagnostics: vec![Diagnostic::new(
                 Stage::Resolution,
                 "R014",
                 import.span,
-                "imports require a source resolver/bundle",
+                "uses require a source resolver/bundle",
             )],
         });
     }
-    compile_syntax(source, syntax, environment)
+    super::checking::composites::compile_module(source, syntax, environment)
 }
 
 pub(crate) fn compile_syntax(

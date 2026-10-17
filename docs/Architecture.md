@@ -53,12 +53,29 @@ Reusable subtrees are installed in an append-only application registry.
 `ComponentRef` is an opaque application-local identity; it owns no tree and is
 separate from registered leaf `ComponentId<T>` values. Source imports are
 checked as a bounded graph through host-controlled source resolvers and
-installed transactionally with their translation declarations. Static aliases
-and `<Dynamic component=... />` lower to the same live node. Every mounted
-occurrence retains its own subtree state/template copy; changing references
-unmounts it and changes the component identity path. Dynamic contexts keep
-application/language access but start a fresh lexical local scope. Recursive
-references and expanded node limits prevent unbounded traversal.
+installed transactionally with their translation declarations. Default UI
+aliases and `<Dynamic component=... />` share the zero-argument reference node.
+Every mounted occurrence retains its own subtree state/template copy; changing
+references unmounts it and changes the component identity path. Dynamic contexts
+keep application/language access but start a fresh lexical local scope.
+Recursive references and expanded node limits prevent unbounded traversal.
+
+Modules can also declare private or `export component` composites and import
+named exports with `use`. Static calls carry checked signatures, field-ordered
+prop evaluators and an optional caller-owned child template. Indexed `props`
+frames are scoped to preparation and refreshed once per walk; mounted state is
+retained across prop changes. `<Children />` restores the caller's lexical
+props, loops and action slice while retaining current expansion ancestry. Calls
+and slots have distinct identity segments and add no implicit layout boxes.
+Deferred events capture owned values as usual, never caller borrows.
+
+Composite definitions form shared immutable DAGs. Validation and mutating event/
+i18n declaration passes process each body once while visiting every call site's
+props and children. Named export metadata supports static checking and
+cross-file declaration labels. Dynamic references to definitions requiring
+props/slots reject unbound invocation; arbitrary dynamic prop maps are not part
+of this API. Library modules may omit a UI entry; their named exports use the
+existing installation transaction and definition-wide translation domain.
 
 Code-defined titles use opaque `LocalizedText` handles in the existing i18n
 registry. They resolve per presentation and are exportable before first render.

@@ -73,6 +73,42 @@ impl Checker<'_> {
     fn part(&mut self, part: ResolvedPart) -> CheckResult<TypedPart> {
         let span = part.syntax.span;
         let kind = match part.kind {
+            resolved::PartKind::Slot => PartKind::Slot,
+            resolved::PartKind::Invoke {
+                definition,
+                attributes,
+                children,
+            } => {
+                let mut supplied: HashMap<_, _> = attributes
+                    .into_iter()
+                    .map(|(name, value)| (name.value, value))
+                    .collect();
+                let mut props = vec![];
+                for prop in &definition.props {
+                    let expression = supplied.remove(&prop.name).ok_or_else(|| {
+                        self.error(
+                            span,
+                            format!(
+                                "missing prop `{}` for composite `{}`",
+                                prop.name, definition.name
+                            ),
+                        )
+                        .declaration(&prop.origin, "required prop declared here")
+                    })?;
+                    let checked = self
+                        .expression(&expression, Some(prop.ty.descriptor.type_id()))
+                        .map_err(|error| {
+                            error.declaration(&prop.origin, "prop type declared here")
+                        })?;
+                    props.push((checked, prop.ty.clone()));
+                }
+                PartKind::Invoke {
+                    definition,
+                    props,
+                    children: self.children(children),
+                }
+            }
+
             resolved::PartKind::Dynamic(expression) => PartKind::Dynamic(self.expression(
                 &expression,
                 Some(TypeId::of::<crate::composition::component_ref::ComponentRef>()),

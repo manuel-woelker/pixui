@@ -9,6 +9,7 @@ use pixui_reflect::{DynamicObject, FieldIndex};
 use std::any::{Any, TypeId};
 #[derive(Clone)]
 pub enum PathRoot {
+    Prop(usize),
     Local(usize),
     Data,
     Event,
@@ -57,6 +58,7 @@ impl Program {
             } => {
                 let mut value = match root {
                     PathRoot::Local(depth) => context.local(*depth)?.shared_view()?,
+                    PathRoot::Prop(index) => context.prop(*index)?.shared_view()?,
                     PathRoot::Data => evaluate(context, &self.children[0])?,
                     PathRoot::Event => context.event()?.shared_view()?,
                 };

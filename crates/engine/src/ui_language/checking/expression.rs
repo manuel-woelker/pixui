@@ -47,6 +47,7 @@ impl Checker<'_> {
             resolved::ExpressionKind::Path { root, fields } => {
                 let mut descriptor = match root {
                     Root::Data(data) => data.descriptor,
+                    Root::Prop { ty, .. } => ty.descriptor,
                     Root::Event(payload) => payload,
                     Root::Local(depth) => self.locals[self.locals.len() - 1 - depth],
                     Root::Layout(_) | Root::Styles(_) => {

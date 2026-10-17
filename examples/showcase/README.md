@@ -29,7 +29,9 @@ both windows. Switching pages preserves counters, flags, and rows.
 - **Images:** the core image component loads the repository logo through the
   filesystem abstraction. The native window icon shares the same snapshot.
 - **Layout:** a dashboard combines spanning Grid sections, a nested six-card
-  grid, Flex columns and wrapping action rows. Resize either window to compare
+  grid, Flex columns and wrapping action rows. The reusable `MetricCard` and
+  `ActionCell` composites come from [common.pixui](ui/common.pixui), using typed
+  props and caller-scoped child slots. Resize either window to compare
   independent geometry; dashboard buttons increment or reset the shared counter.
   Below it, nested live loops expand 36 project cards with six task rows each
   into more than 600 components. Scroll to explore the board and use F11 to
@@ -60,6 +62,8 @@ Runtime window icons on Wayland require compositor support for
 - [ui/showcase.pixui](ui/showcase.pixui): header, navigation, page selection and
   footer. The other `.pixui` files define the individual panes, including static
   style examples and the nested Grid/Flex dashboard.
+- [ui/common.pixui](ui/common.pixui): exported reusable cards and action cells;
+  [layout.pixui](ui/layout.pixui) imports them with `use`.
 - [environment.rs](src/environment.rs): explicit component, entity, collection,
   action, layout and style exports shared by those templates.
 - [gallery.rs](src/gallery.rs): source-bundle installation, one navigation list

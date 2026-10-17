@@ -1,4 +1,5 @@
 pub mod checker;
+pub mod composites;
 mod container;
 pub mod conversions;
 mod expression;

@@ -34,6 +34,11 @@ pub struct DataExport {
 /// Environments are application-local. Duplicate exports are rejected atomically.
 #[derive(Clone)]
 pub struct Environment {
+    pub(crate) composites:
+        HashMap<String, std::sync::Arc<crate::composition::definition::CompositeDefinition>>,
+    pub(crate) prop_types: HashMap<String, ValueType>,
+    pub(crate) props: Vec<crate::composition::definition::Prop>,
+    pub(crate) children_slot: bool,
     pub(crate) templates: HashMap<String, ComponentRef>,
     pub(crate) components: HashMap<String, ComponentExport>,
     pub(crate) collections: HashMap<String, DataExport>,
@@ -54,6 +59,10 @@ impl Default for Environment {
 impl Environment {
     pub fn new() -> Self {
         let mut env = Self {
+            composites: HashMap::new(),
+            prop_types: HashMap::new(),
+            props: vec![],
+            children_slot: false,
             templates: HashMap::new(),
             components: HashMap::new(),
             collections: HashMap::new(),
@@ -66,18 +75,60 @@ impl Environment {
             layouts: HashMap::new(),
             styles: HashMap::new(),
         };
-        macro_rules! types {($($ty:ty),*)=>{$(env.value_type::<$ty>();)*};}
+        macro_rules! types {($($ty:ty),*)=>{$(env.value_type::<$ty>(); env.prop_types.insert(stringify!($ty).into(), ValueType::of::<$ty>());)*};}
         types!(
             String, bool, i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128, usize, f32, f64
         );
         env.value_type::<crate::resources::path::ResourcePath>();
         env.value_type::<ComponentRef>();
         env.value_type::<crate::composition::localized_text::LocalizedText>();
+        env.prop_types.insert(
+            "ResourcePath".into(),
+            ValueType::of::<crate::resources::path::ResourcePath>(),
+        );
+        env.prop_types.insert(
+            "LocalizedText".into(),
+            ValueType::of::<crate::composition::localized_text::LocalizedText>(),
+        );
+        env.prop_types
+            .insert("ComponentRef".into(), ValueType::of::<ComponentRef>());
         env
+    }
+    /// Export a checked named composite (source body plus prop/slot signature).
+    pub fn composite(
+        &mut self,
+        alias: &str,
+        export: &crate::composition::definition::CompositeExport,
+    ) -> PixuiResult<()> {
+        self.composite_definition(alias, export.definition.clone())
+    }
+    pub(crate) fn composite_definition(
+        &mut self,
+        alias: &str,
+        definition: std::sync::Arc<crate::composition::definition::CompositeDefinition>,
+    ) -> PixuiResult<()> {
+        if matches!(alias, "Row" | "Column" | "Grid" | "Dynamic" | "Children")
+            || self.components.contains_key(alias)
+            || self.templates.contains_key(alias)
+        {
+            return Err(pixui_error!(
+                "reserved or conflicting composite alias `{alias}`"
+            ));
+        }
+        insert(&mut self.composites, alias, definition)
+    }
+    /// Type names in source props are opt-in aliases with existing ownership bounds.
+    pub fn prop_type<T: Reflect + Clone + Send + Sync>(&mut self, name: &str) -> PixuiResult<()> {
+        if name == "Children" {
+            return Err(pixui_error!("Children is reserved for the child slot"));
+        }
+        insert(&mut self.prop_types, name, ValueType::of::<T>())?;
+        self.value_type::<T>();
+        Ok(())
     }
     /// Export an already registered reusable subtree under a static tag alias.
     pub fn template(&mut self, name: &str, reference: ComponentRef) -> PixuiResult<()> {
-        if matches!(name, "Row" | "Column" | "Grid" | "Dynamic")
+        if matches!(name, "Row" | "Column" | "Grid" | "Dynamic" | "Children")
             || self.components.contains_key(name)
         {
             return Err(pixui_error!(
@@ -102,12 +153,12 @@ impl Environment {
     where
         C::Props: Reflect,
     {
-        if matches!(name, "Row" | "Column" | "Grid" | "Dynamic") {
+        if matches!(name, "Row" | "Column" | "Grid" | "Dynamic" | "Children") {
             return Err(pixui_error!(
                 "component alias is reserved for a layout container"
             ));
         }
-        if self.templates.contains_key(name) {
+        if self.templates.contains_key(name) || self.composites.contains_key(name) {
             return Err(pixui_error!("component alias collides with template alias"));
         }
         let props = C::Props::type_descriptor();

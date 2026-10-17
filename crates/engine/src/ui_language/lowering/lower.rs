@@ -36,6 +36,26 @@ fn part(part: TypedPart, source: &Source) -> PixuiResult<LivePart> {
         span: part.span,
     };
     let result = match part.kind {
+        typed::PartKind::Slot => LivePart::Slot,
+        typed::PartKind::Invoke {
+            definition,
+            props,
+            children,
+        } => LivePart::Invoke(crate::composition::definition::InvocationPart {
+            definition,
+            values: props
+                .into_iter()
+                .map(|(value, ty)| Ok((expression(value, source)?, ty)))
+                .collect::<PixuiResult<Vec<_>>>()?,
+            children: Box::new(LivePart::Composite(CompositePart {
+                parts: children
+                    .into_iter()
+                    .map(|child| self::part(child, source))
+                    .collect::<PixuiResult<Vec<_>>>()?,
+            })),
+            site: crate::composition::definition::CompositeDefinition::next_id(),
+            origin: origin.clone(),
+        }),
         typed::PartKind::Dynamic(value) => {
             LivePart::Dynamic(crate::live_model::part::DynamicPart {
                 component: expression(value, source)?,
@@ -182,6 +202,14 @@ pub fn expression(value: typed::Expression, source: &Source) -> PixuiResult<Expr
                 } => {
                     captured = capture_type;
                     match root {
+                        Root::Prop { index, .. } => (
+                            ProgramKind::Path {
+                                root: PathRoot::Prop(index),
+                                fields,
+                                owned_result: capture_result.clone(),
+                            },
+                            vec![],
+                        ),
                         Root::Local(depth) => (
                             ProgramKind::Path {
                                 root: PathRoot::Local(depth),

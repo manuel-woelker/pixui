@@ -8,6 +8,7 @@ pub(crate) struct Entry {
     pub name: String,
     pub domain: String,
     pub template: std::sync::Arc<LivePart>,
+    pub unbound: bool,
 }
 #[derive(Clone)]
 pub(crate) struct Registry {
@@ -45,8 +46,16 @@ impl Registry {
     pub fn validate(&self, root: &LivePart, domain: &str) -> PixuiResult<()> {
         use crate::expression::{expression::ExpressionKind, program::ProgramKind};
         let mut pending = vec![root];
+        let mut composite_seen = std::collections::HashSet::new();
         while let Some(part) = pending.pop() {
             match part {
+                LivePart::Invoke(part) => {
+                    if composite_seen.insert(part.definition.id) {
+                        pending.push(&part.definition.body);
+                    }
+                    pending.push(&part.children);
+                }
+                LivePart::Slot => {}
                 LivePart::Dynamic(part) => {
                     let reference = match part.component.kind() {
                         ExpressionKind::ComponentRef(reference) => Some(*reference),

@@ -1,0 +1,19 @@
+// Reusable structure has no application state or implicit caller captures.
+export component Card(children: Children) {
+    <Column padding=8 gap=4>
+        <Children />
+    </Column>
+}
+
+export component MetricCard(title: String, value: String) {
+    <Card>
+        <Label text=props.title />
+        <Label text=props.value />
+    </Card>
+}
+
+export component ActionCell(children: Children) {
+    <Column basis=140 grow=1 min_width=140>
+        <Children />
+    </Column>
+}

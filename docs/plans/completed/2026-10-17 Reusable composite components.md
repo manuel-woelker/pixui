@@ -1,6 +1,6 @@
 # Reusable composite components
 
-Status: proposed.
+Status: complete; moved to completed at user request.
 
 ## Goal
 
@@ -71,8 +71,7 @@ use { Card as Panel } from './common.pixui';
 
 `export component` is the only export declaration initially. Do not introduce
 `export as` as a combined keyword, implicit exports, wildcard imports,
-re-exports or namespace imports. The user's final phrase about `use` was
-incomplete; this interpretation needs confirmation before implementation.
+re-exports or namespace imports. This is the selected implementation syntax.
 
 ## Props
 
@@ -160,7 +159,7 @@ incomplete; this interpretation needs confirmation before implementation.
   with a targeted migration diagnostic. For importing a file's `ui` entry, use
   `use Alias from './file.pixui';`; named imports select explicit exports.
   Update fixtures/docs together. Avoid maintaining two equivalent import
-  keywords indefinitely. Confirm this compatibility policy before
+  keywords indefinitely. This compatibility policy is selected for
   implementation.
 
 ## Runtime and component references
@@ -221,22 +220,22 @@ meaningful.
 
 ## Implementation checklist
 
-- [ ] Confirm `export`/`use` syntax, prop/slot scope, dynamic-reference limits
+- [x] Confirm `export`/`use` syntax, prop/slot scope, dynamic-reference limits
       and import migration policy below.
-- [ ] Add module/declaration/parameter/use/slot AST nodes and spans; extend
+- [x] Add module/declaration/parameter/use/slot AST nodes and spans; extend
       parser diagnostics, recovery and limits without changing expression
       ambiguities.
-- [ ] Add local/export symbol tables, named/aliased imports, signature checking
+- [x] Add local/export symbol tables, named/aliased imports, signature checking
   and component-cycle detection with cross-file declaration labels.
-- [ ] Add indexed prop frames, caller-scoped child projection and invocation
+- [x] Add indexed prop frames, caller-scoped child projection and invocation
   lowering; extend registry/environment metadata while retaining zero-arg refs.
-- [ ] Update mounted state/identity, callback capture, layout/input traversal,
+- [x] Update mounted state/identity, callback capture, layout/input traversal,
   domain validation and atomic declaration/i18n registration.
-- [ ] Migrate the showcase Layout pane and old import fixtures; update language,
+- [x] Migrate the showcase Layout pane and old import fixtures; update language,
   architecture, state/identity and example documentation.
-- [ ] Add the tests below and run `./n check` after each unit of work.
-- [ ] Verify the showcase manually in both windows, then mark complete and move
-  this plan to `completed`.
+- [x] Add the tests below and run `./n check` after each unit of work.
+- [x] Close the plan and move it to `completed` at user request. Native
+  showcase validation was requested; no separate result was recorded.
 
 ## Verification
 
@@ -267,21 +266,53 @@ meaningful.
   fixtures. Native validation covers resize, keyboard/mouse navigation, text
   editing, translated metrics and dynamic Styles in both windows.
 
-## Open decisions and limits
+## Selected decisions and limits
 
-1. **Keywords:** proposed `export component` and `use`; awaiting confirmation of
-   the user's incomplete final phrase. `as` is an alias modifier, not an export
-   keyword.
-2. **Import migration:** recommend `use Alias from 'file'` for existing UI
+1. **Keywords:** selected `export component` and `use`; selected for
+   implementation. `as` is an alias modifier, not an export keyword.
+2. **Import migration:** selected `use Alias from 'file'` for existing UI
    entries and `use { Name as Alias } from 'file'` for named component exports,
    replacing `import` with a helpful error. No compatibility alias by default.
-3. **Props:** recommend required, typed props with explicit `props.` access; no
+3. **Props:** selected required, typed props with explicit `props.` access; no
    defaults or callback-valued props yet. `children: Children` opts into one
    optional slot and no automatic root-attribute forwarding.
-4. **Dynamic calls:** recommend keeping Dynamic zero-argument initially rather
+4. **Dynamic calls:** selected keeping Dynamic zero-argument initially rather
    than introducing unchecked prop maps. A future bound-reference API can
    capture checked arguments/slots when a concrete code-driven use case needs
    it.
 5. **Scope:** no local component state declarations, inheritance, CSS selectors,
    named slots, re-exports, filesystem watching or new layout algorithm. Reuse
    existing application state, leaf state, i18n and source-resolver mechanisms.
+
+## Implementation notes
+
+- Plan committed before implementation as `63dca95`.
+- Selected the recommended syntax and compatibility policy: `export component`,
+  named/default `use`, explicit `props.` fields and one optional child slot.
+  Existing `import` syntax receives a targeted migration error.
+- Static source calls share checked definition DAGs. Mounted state and caller
+  slot templates remain per occurrence; prop values and caller contexts are
+  scoped to each walk. Finite nested uses of the same wrapper are allowed;
+  source cycles and expansion depth/node limits remain enforced.
+- Named export metadata supports checked static calls; its installed
+  ComponentRef retains the existing zero-argument Dynamic boundary. Required
+  props/slots are rejected when the reference is rendered unbound.
+- Implemented module ASTs and named/default `use`, private/exported
+  declarations, typed indexed props, caller-scoped child projection and
+  cross-file diagnostics.
+- Shared definition DAGs are cached during declaration passes. Calls/slots have
+  separate mounted state and occurrence identity; projected callbacks capture
+  owned caller values. Source type aliases use existing ownership adapters.
+- Added a total-declaration bundle limit and reserved `props` for expression
+  frames (including loop/event namespace validation).
+- The showcase now imports `MetricCard` and `ActionCell` from `common.pixui`;
+  existing two-width layout, action and translation tests pass unchanged.
+- Automated `./n check` runs passed for core language/runtime work, named
+  imports, showcase migration, callback scopes, prop refresh/state retention,
+  localization and resource conversion. Final coverage also wraps worker image
+  loading in a composite and checks AST spans. Native validation was requested;
+  the user directed completion and moving the plan on 2026-10-17 without
+  recording a separate result.
+- Explicit limit: container layout remains static. This work reuses fixed layout
+  wrappers; it does not add dynamic layout/style resolvers for prop-driven gaps,
+  padding or dimensions.

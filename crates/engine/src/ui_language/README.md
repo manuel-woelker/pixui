@@ -24,10 +24,11 @@ ui Todos domain 'todos' {
 }
 ```
 
-A file contains one named definition with one root part. Use `<>...</>`
-fragments for multiple siblings. Components are leaves; `Row`, `Column`, and
-`Grid` contain children and retain the engine's default clipping behavior. Names
-are ASCII identifiers and case-sensitive. Source text and string contents
+A module contains component declarations and at most one `ui` entry with one
+root part; a library can omit the entry. Use `<>...</>` fragments for siblings.
+Registered leaf components have no children; composites may declare a child
+slot. `Row`, `Column`, and `Grid` retain the engine's default clipping behavior.
+Names are ASCII identifiers and case-sensitive. Source text and string contents
 support UTF-8. Whitespace between children is ignored; implicit text children
 are rejected.
 
@@ -299,37 +300,115 @@ and inline leaf layout attributes remain separate work; leaves use exported
 
 ## Imports and reusable components
 
-A file may import another single-`ui` module before its declaration:
+A module may use another file's `ui` entry or named public components:
 
 ```text
-import Buttons from './buttons.pixui';
+use Buttons from './buttons.pixui';
+use { Card as Panel, MetricCard } from './common.pixui';
 
 ui Example domain 'showcase' {
-    <Column><Buttons /><Buttons /></Column>
+    <Panel>
+        <Buttons />
+        <MetricCard title="Projects" value='12' />
+    </Panel>
 }
 ```
 
-Aliases are local to the importing file. Imported templates resolve host exports
-and slice directives in their own lexical scope; they cannot capture caller loop
-locals or event parameters. There are no template parameters, children/slots or
-call-site attributes yet. Wrap a composed component in a container for layout.
+`use` declarations precede declarations. The old `import` keyword is rejected
+with a migration hint. Aliases are file-local; named uses cannot access private
+components. Duplicate aliases/declarations and collisions with host leaf types,
+other imports or reserved tags are errors. Named exports use `export component`;
+there are no implicit exports, wildcard uses, re-exports or namespaces.
 
 Supply source text through `SourceBundle` or a host `SourceResolver`, then call
 `bundle::install` on `Application` or `ApplicationHandle::install_bundle`.
 `SourceBundle::add` accepts embedded `include_str!` contents. The compiler does
-not open files. Relative `.`/`..` imports are normalized against the importer;
-paths cannot escape an in-memory bundle root. Aliases cannot collide with leaf
-components or reserved tags. Missing modules, cycles and incompatible domains
-report source locations. `BundleLimits` bounds module count, graph depth and
-aggregate source bytes. Installation rolls back registrations and messages if
-any module fails. Single-file `compile` still works without imports; otherwise
-it reports that a resolver/bundle is required.
+not open files. Relative `.`/`..` uses are normalized against the importer;
+paths cannot escape an in-memory bundle root. Missing modules, cycles and
+incompatible domains report source locations. `BundleLimits` bounds module
+count, graph depth, aggregate source bytes and total declarations, including
+private components. Installation rolls back registrations and messages on any
+failure.
 
-`InstalledBundle::component(canonical_id)` returns an opaque `ComponentRef`.
-`Application::register_template` registers a Rust `LivePart` with the same type.
-`Environment::template(alias, reference)` exports a static tag. References
-belong to one application and remain valid until shutdown; registrations are
-append-only and should happen during setup, not every frame.
+`compile` handles a single file with local composites and a `ui`;
+`compile_module` also supports library-only files and returns their exports.
+External uses need a resolver/bundle. `InstalledBundle::component(id)` returns a
+file's optional `ui` reference; for a library, select
+`InstalledBundle::export(id, name)` instead. A named `CompositeExport` carries
+the checked signature; pass it to `Environment::composite(alias, &export)` for
+static host aliases. Its `reference()` returns a ComponentRef after
+installation. `Application::register_composite` installs exports from
+single-file compilation as well.
+
+`Application::register_template` registers Rust live parts as zero-argument
+references. `Environment::template(alias, reference)` exports such a static tag.
+References belong to one application and live until shutdown; register during
+setup, not every frame. Dynamic remains zero-argument: a reference with required
+props or a child slot fails clearly when rendered unbound. Use a checked static
+call for those definitions; no unchecked dynamic prop bags or fabricated
+defaults.
+
+### Props and child slots
+
+```text
+export component Card(children: Children) {
+    <Column padding=8 gap=4><Children /></Column>
+}
+
+component Metric(title: String, value: u64) {
+    <Card>
+        <Label text=props.title />
+        <Label text='{props.value}' />
+    </Card>
+}
+```
+
+Components can call local declarations appearing later in the file. All bodies
+are checked, even unused private ones; declaration cycles are rejected. Props
+are required, typed and read through indexed `props.name` expressions. Built-in
+types include primitives, String, ResourcePath, LocalizedText and ComponentRef.
+Custom names need `Environment::prop_type::<T>(alias)` with the existing
+Reflect/Clone/Send/Sync ownership bounds; arbitrary Rust type names are not
+exposed. Missing, duplicate, unknown or incompatible props report the call site
+and the prop declaration, including across source files.
+
+Each supplied prop evaluates once per reached occurrence per walk, in
+declaration order. Values refresh without resetting mounted state. Contextual
+numeric/path/ localized-text conversions use the receiving type. Translated
+literals remain messages at their call sites; reading String props does not
+translate them again. String values subsequently used as paths must contain
+structural filenames, just like application String values. Prefer ResourcePath
+props for resource wrappers.
+
+`children: Children` opts into one optional ordered slot: zero children projects
+an empty fragment, while multiple children keep source order. Components without
+it reject children. `<Children />` accepts no attributes or children and may
+occur at most once in the declaration's syntax; a surrounding loop may mount
+that one placeholder repeatedly, with independent physical state.
+
+Bodies resolve their own props, imports and default action slices at declaration
+sites. They do not implicitly capture caller loop variables. Projected children
+keep the caller's props, loops and slice; a wrapper's `slice` cannot retarget
+their actions. Nested projection restores the appropriate enclosing caller
+frame. Deferred callbacks capture owned prop/loop snapshots through normal event
+binding. Neither props nor caller borrows are retained in mounted state after
+preparation.
+
+Invocation/slot boundaries add no layout boxes. Explicit body containers control
+layout; put layout around a call or inside its component. Attributes are not
+forwarded automatically onto the root (`layout`, `styles`, `focus`, `slice` and
+events are not special composite call attributes). Container layout settings
+stay static: props do not add dynamic container layout resolvers in this
+milestone.
+
+Shared checked bodies are prepared once per declaration pass. Mounted bodies and
+projected templates remain per occurrence. Prop changes retain state; removing
+an occurrence or changing its definition unmounts state. Separate identity steps
+for calls/slots protect input/focus targets. Finite nested wrappers are allowed;
+source cycles and existing combined expansion-depth/node budgets still prevent
+unbounded traversal. Defaults, optional props, generics, named slots and
+callback-valued props are deferred. `props` is reserved as an expression
+namespace, loop binding and bare event-parameter name.
 
 Store references in reflected data to select components dynamically:
 
@@ -345,12 +424,12 @@ Store references in reflected data to select components dynamically:
 }
 ```
 
-`Dynamic` requires exactly one `component` expression of type `ComponentRef`.
-It uses the same runtime node as a static imported tag. No string-to-component
-lookup, source compilation or filesystem access occurs during rendering.
-Definitions share the owning UI's translation domain; imported explicit domains
-must match the installation domain. Data-dependent foreign references and domain
-mismatches fail at the render site.
+`Dynamic` requires exactly one `component` expression of type `ComponentRef`. It
+retains the zero-argument reference runtime used by default UI imports. No
+string-to-component lookup, source compilation or filesystem access occurs
+during rendering. Definitions share the owning UI's translation domain; imported
+explicit domains must match the installation domain. Data-dependent foreign
+references and domain mismatches fail at the render site.
 
 Each occurrence has independent mounted state. The same reference retains state;
 a changed reference unmounts its subtree, resets state and changes its identity

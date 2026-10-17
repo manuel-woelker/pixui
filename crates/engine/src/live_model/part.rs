@@ -19,6 +19,8 @@ pub type StateFactory = for<'a> fn(&DynamicObject<'a>) -> PixuiResult<GenericCom
 /// Dynamic subtrees are resolved on the worker and have per-occurrence state.
 #[derive(Clone)]
 pub enum LivePart {
+    Invoke(crate::composition::definition::InvocationPart),
+    Slot,
     Dynamic(DynamicPart),
     Composite(CompositePart),
     Container(crate::layout::container::ContainerPart),
